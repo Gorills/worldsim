@@ -197,29 +197,31 @@ double TectonicModel::continental_affinity(Vec3d unit_direction) const {
 TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
     const Vec3d p=normalized(direction);
 
-    std::array<std::uint32_t,3> nearest{0U,0U,0U};
-    std::array<double,3> scores{
-        -std::numeric_limits<double>::infinity(),
-        -std::numeric_limits<double>::infinity(),
-        -std::numeric_limits<double>::infinity()
-    };
+    std::array<double,kPlateCount> plate_scores{};
+    std::uint32_t owner=0;
+    std::uint32_t neighbor=1;
+    for (std::uint32_t i=0;i<kPlateCount;++i)
+        plate_scores[i]=dot(p,plates_[i].seed_direction);
 
-    for (std::uint32_t i=0;i<kPlateCount;++i) {
-        const double score=dot(p,plates_[i].seed_direction);
-        if (score>scores[0]) {
-            scores[2]=scores[1]; nearest[2]=nearest[1];
-            scores[1]=scores[0]; nearest[1]=nearest[0];
-            scores[0]=score; nearest[0]=i;
-        } else if (score>scores[1]) {
-            scores[2]=scores[1]; nearest[2]=nearest[1];
-            scores[1]=score; nearest[1]=i;
-        } else if (score>scores[2]) {
-            scores[2]=score; nearest[2]=i;
+    double owner_score=plate_scores[owner];
+    double neighbor_score=plate_scores[neighbor];
+    if (neighbor_score>owner_score) {
+        std::swap(owner,neighbor);
+        std::swap(owner_score,neighbor_score);
+    }
+    for (std::uint32_t i=2;i<kPlateCount;++i) {
+        const double score=plate_scores[i];
+        if (score>owner_score) {
+            neighbor=owner;
+            neighbor_score=owner_score;
+            owner=i;
+            owner_score=score;
+        } else if (score>neighbor_score) {
+            neighbor=i;
+            neighbor_score=score;
         }
     }
 
-    const std::uint32_t owner=nearest[0];
-    const std::uint32_t neighbor=nearest[1];
     const BoundaryMetrics nearest_boundary=boundary_metrics(
         p,
         plates_[owner],
@@ -229,18 +231,18 @@ TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
         1.0-smoothstep01(nearest_boundary.distance_rad/kBoundaryInfluenceRad);
     const double boundary_forcing=nearest_boundary.convergence*boundary_influence;
 
-    // Macro response blends the three pairwise boundaries formed by the three
-    // nearest plates. This is symmetric across a boundary and avoids directly
-    // imprinting the second-neighbor switch at triple junctions into relief.
+    // Macro response blends all locally competitive plate pairs. Pair metrics
+    // are order-invariant, and the score gate is wider than the 12-degree
+    // influence belt for ordinary neighboring plates. This avoids imprinting
+    // owner/second/third-neighbor switches as hard relief seams.
+    constexpr double kMacroCompetitionScoreGap=0.45;
     double uplift_sum=0.0;
     double divergence_sum=0.0;
-    for (std::size_t a=0;a<nearest.size();++a) {
-        for (std::size_t b=a+1;b<nearest.size();++b) {
-            const BoundaryMetrics metrics=boundary_metrics(
-                p,
-                plates_[nearest[a]],
-                plates_[nearest[b]]
-            );
+    for (std::uint32_t a=0;a<kPlateCount;++a) {
+        if (plate_scores[a]<owner_score-kMacroCompetitionScoreGap) continue;
+        for (std::uint32_t b=a+1;b<kPlateCount;++b) {
+            if (plate_scores[b]<owner_score-kMacroCompetitionScoreGap) continue;
+            const BoundaryMetrics metrics=boundary_metrics(p,plates_[a],plates_[b]);
             const double influence=
                 1.0-smoothstep01(metrics.distance_rad/kMacroBoundaryInfluenceRad);
             uplift_sum+=std::max(metrics.convergence,0.0)*influence;
