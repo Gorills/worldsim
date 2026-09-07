@@ -180,6 +180,24 @@ void test_determinism_and_snapshot() {
     a->schedule_field_impulse(a->world().tick()+2,future_target,mana,9.0e11);
     a->world().emit({a->world().tick(),"test.pending_event",future_target,77,3.5});
     auto snap=a->save_snapshot();
+
+    // Authoritative world-generation semantics changed with tectonic terrain.
+    // Snapshot v2 may contain pre-tectonic geography under the same field
+    // schema, so it must be rejected instead of silently mixing old geography
+    // with new terrain on the next cover resample.
+    check(snap.size()>11,"snapshot header is unexpectedly short");
+    auto legacy_snapshot=snap;
+    legacy_snapshot[8]=std::byte{2};
+    bool rejected_legacy_snapshot=false;
+    try {
+        auto legacy_target=make_default_simulation(123);
+        legacy_target->load_snapshot(legacy_snapshot);
+    } catch (const std::runtime_error&) {
+        rejected_legacy_snapshot=true;
+    }
+    check(rejected_legacy_snapshot,
+          "pre-tectonic snapshot version was accepted by tectonic terrain build");
+
     const Tick tick=a->world().tick();
     a->step(72);
     a->load_snapshot(snap);
