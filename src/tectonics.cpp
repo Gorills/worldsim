@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace worldsim {
 namespace {
@@ -83,35 +82,33 @@ TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
     const Vec3d p=normalized(direction);
 
     std::uint32_t owner=0;
-    double owner_score=dot(p,plates_[0].seed_direction);
-    for (std::uint32_t i=1;i<kPlateCount;++i) {
+    std::uint32_t neighbor=1;
+    double owner_score=dot(p,plates_[owner].seed_direction);
+    double neighbor_score=dot(p,plates_[neighbor].seed_direction);
+    if (neighbor_score>owner_score) {
+        std::swap(owner,neighbor);
+        std::swap(owner_score,neighbor_score);
+    }
+
+    for (std::uint32_t i=2;i<kPlateCount;++i) {
         const double score=dot(p,plates_[i].seed_direction);
         if (score>owner_score) {
+            neighbor=owner;
+            neighbor_score=owner_score;
             owner=i;
             owner_score=score;
-        }
-    }
-
-    std::uint32_t neighbor=owner==0 ? 1U : 0U;
-    double best_distance=std::numeric_limits<double>::infinity();
-    Vec3d best_plane_normal{};
-
-    for (std::uint32_t i=0;i<kPlateCount;++i) {
-        if (i==owner) continue;
-        const Vec3d difference=plates_[owner].seed_direction-plates_[i].seed_direction;
-        const double difference_norm=norm(difference);
-        if (!(difference_norm>0.0)) continue;
-        const Vec3d plane_normal=difference*(1.0/difference_norm);
-        const double side=std::clamp(dot(p,plane_normal),0.0,1.0);
-        const double distance=std::asin(side);
-        if (distance<best_distance) {
-            best_distance=distance;
+        } else if (score>neighbor_score) {
             neighbor=i;
-            best_plane_normal=plane_normal;
+            neighbor_score=score;
         }
     }
 
-    Vec3d boundary_normal=best_plane_normal-p*dot(p,best_plane_normal);
+    const Vec3d difference=plates_[owner].seed_direction-plates_[neighbor].seed_direction;
+    const Vec3d plane_normal=normalized(difference);
+    const double side=std::clamp(dot(p,plane_normal),0.0,1.0);
+    const double best_distance=std::asin(side);
+
+    Vec3d boundary_normal=plane_normal-p*dot(p,plane_normal);
     if (norm(boundary_normal)<1.0e-12) boundary_normal=fallback_tangent(p);
     else boundary_normal=normalized(boundary_normal);
 
