@@ -6,9 +6,10 @@ This document records the architecture and performance decisions for the first w
 
 The slice intentionally contains only static terrain:
 
-- one deterministic continent at approximately Eurasia scale;
-- ocean floor everywhere outside that continent;
+- deterministic planet-scale crust and tectonic macro relief;
+- bounded sphere-native meso/local procedural detail over that macro relief;
 - no rendered or simulated water;
+- no erosion or drainage shaping in the terrain source yet;
 - no climate, hydrology, vegetation, fauna, settlements, or other gameplay domains in the Godot terrain scene;
 - a first-person walker over streamed terrain chunks.
 
@@ -18,15 +19,19 @@ The existing full default simulation remains available for kernel/domain tests a
 
 The authoritative spatial model remains the existing cube-sphere hierarchy. No second flat world model is introduced.
 
-`TerrainGenerator` is a stateless deterministic core service keyed by world seed. It can be sampled either from a unit direction on the planet or from local projected meter coordinates. Geography fields are populated from that same generator, so Godot terrain and simulation geography cannot drift because of separate procedural implementations.
+`TerrainGenerator` is a deterministic core service keyed by world seed. It owns a `TectonicModel` and can be sampled either from a unit direction on the planet or from local projected meter coordinates. Geography fields are populated from that same generator, so Godot terrain and simulation geography cannot drift because of separate procedural implementations.
 
-The walking projection is azimuthal-equidistant and centered at 45° N, 70° E, but it is no longer part of the authoritative terrain-generation path. `sample_projected()` converts local walker meters to a unit direction and delegates to `sample_direction()`. The sphere-native sampler evaluates deterministic 3D value-noise FBM directly from the unit direction and uses a smooth anisotropic spherical cap for the initial continent. This removes the azimuthal antipode singularity from generated geography while preserving one approximately Eurasia-scale landmass with nominal tangent semi-axes of 6,500 km by 2,700 km. A regression test still integrates the level-5 cube-sphere cover and requires generated land area between 40 and 70 million km².
+The walking projection is azimuthal-equidistant and centered at 45° N, 70° E, but it is not part of terrain generation. `sample_projected()` converts local walker meters to a unit direction and delegates to `sample_direction()`. The authoritative sampler now uses `TectonicModel::macro_elevation_m` as its broad hypsometric base. The previous fixed anisotropic continent cap no longer participates in generation. Existing sphere-native FBM remains only as bounded 180 km rolling relief and 900 m local detail, plus a bounded ridged orogenic term modulated by tectonic uplift and continental affinity. Final `land_fraction` is derived from final elevation across a narrow sea-level transition.
 
-This follows the same relevant large-planet practice as Demiurge: terrain is a deterministic function of seed plus spherical position, and its macro pipeline is angular/normalized rather than derived from a global flat map. WorldSim does not copy Demiurge's implementation or tectonics in this change; it uses the principle only to keep one authoritative sphere-native sampling path:
+A regression samples 1,024 sphere directions and requires authoritative elevation to correlate above 0.95 with tectonic macro relief while retaining measurable detail and keeping the detail residual below 1.5 km. A separate level-5 cube-sphere integration keeps seed-42 global land coverage in a broad non-degenerate range and preserves dry land at the existing local-walker origin.
+
+This follows the same relevant large-planet practice as Demiurge: terrain is a deterministic function of seed plus spherical position, and its macro pipeline is angular/normalized rather than derived from a global flat map. WorldSim uses its own analytical tectonic model and does not copy Demiurge's implementation:
 
 - https://github.com/owenyuwono/demiurge
 
 Static geography is re-sampled after actual simulation-cover refinement/coarsening through the module lifecycle. This is required because generic intensive-field refinement copies parent values and therefore cannot create higher-frequency terrain detail by itself.
+
+Because this change replaces the authoritative geography function rather than only a debug view, snapshot compatibility advances to version 3. Version-2 snapshots are rejected: they can contain old fixed-continent geography with the same field schema, which would otherwise be mixed with tectonic terrain when a later LOD cover change triggers geography resampling.
 
 ## Godot large-world strategy
 
@@ -93,9 +98,9 @@ make map
 
 The map deliberately exposes terrain-source defects rather than hiding them. The first global-map pass revealed a radial discontinuity at the antipode of the local azimuthal walking projection. The terrain source is now sphere-native, so that projection is used only to map local walker coordinates to a unit direction and cannot introduce a global terrain singularity. The map remains the visual regression tool for later tectonics and erosion work.
 
-## Tectonic debug model
+## Tectonic model and debug layers
 
-The kernel contains a deterministic query-only `TectonicModel` that is independent from `TerrainGenerator`. It partitions the unit sphere into 16 seeded spherical Voronoi plates. A plate stores only a seed direction and a normalized relative angular-velocity vector; continental/oceanic crust is **not** a per-plate boolean.
+The kernel contains a deterministic query-only `TectonicModel` that partitions the unit sphere into 16 seeded spherical Voronoi plates. `TerrainGenerator` consumes its continuous macro response, while plate ids, forcing, crust affinity, and raw macro relief remain separately inspectable through debug layers. A plate stores only a seed direction and a normalized relative angular-velocity vector; continental/oceanic crust is **not** a per-plate boolean.
 
 For any unit direction the model selects the two nearest plate seeds, treats their spherical bisector as the local diagnostic boundary, and derives:
 
@@ -118,16 +123,16 @@ This follows established sphere-noise practice rather than adding a second flat 
 - https://libnoise.sourceforge.net/docs/classnoise_1_1model_1_1Sphere.html
 - https://libnoise.sourceforge.net/tutorials/tutorial8.html
 
-A preview-only tectonic macro height is derived from:
+The tectonic macro height is derived from:
 
 - crust affinity -> broad buoyancy from deep oceanic crust to elevated continental crust;
 - convergent boundary response -> positive uplift, stronger on continental crust;
 - divergent response -> oceanic ridge uplift or continental rift subsidence;
 - transform/shear motion -> no direct vertical term in this slice.
 
-The macro response still uses a 12-degree boundary belt, but pair participation is no longer a boolean score gate. Every pair receives a compact smooth competition weight based on how closely both plates approach local ownership; the weight reaches zero with zero slope before the pair is skipped. True neighboring pairs therefore retain support near their shared boundary, while bisectors of non-neighbor pairs are suppressed when a third plate dominates. This removes the previous discontinuous active-pair contour and its polygon/ghost relief artifacts without changing the nearest-boundary forcing diagnostic. The resulting `macro_elevation_m` is diagnostic only: it does **not** modify `geography.elevation_m`, `TerrainGenerator`, or the local terrain mesh yet.
+The macro response still uses a 12-degree boundary belt, but pair participation is no longer a boolean score gate. Every pair receives a compact smooth competition weight based on how closely both plates approach local ownership; the weight reaches zero with zero slope before the pair is skipped. True neighboring pairs therefore retain support near their shared boundary, while bisectors of non-neighbor pairs are suppressed when a third plate dominates. This removes the previous discontinuous active-pair contour and its polygon/ghost relief artifacts without changing the nearest-boundary forcing diagnostic. The resulting `macro_elevation_m` is now the authoritative low-frequency basis consumed by `TerrainGenerator`; the `Macro relief` map layer continues to show that raw basis without meso/local terrain detail.
 
-The global map samples the tectonic model through the Godot adapter and exposes five presentation-only layers: `Elevation`, `Plates`, `Tectonic forcing`, `Crust`, and `Macro relief`. Plate colors, crust colors, forcing colors, and macro preview coloring live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
+The global map exposes five inspection layers: authoritative `Elevation`, plus `Plates`, `Tectonic forcing`, `Crust`, and raw `Macro relief`. The latter four remain debug presentations; plate colors, crust colors, forcing colors, and macro coloring live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
 
 - https://docs.godotengine.org/en/4.7/classes/class_button.html
 - https://docs.godotengine.org/en/4.7/classes/class_packedint32array.html
@@ -140,7 +145,7 @@ A spatial bake is intentionally deferred. Plate ownership, crust affinity, and t
 
 ## Known boundaries
 
-- Terrain elevation is still procedural and is not yet driven by the tectonic model.
+- Terrain elevation now uses tectonic macro relief as its authoritative broad basis, but it has no erosion, sediment transport, or drainage shaping yet.
 - "Ocean" currently means generated ocean floor/land mask. No water surface exists in this slice.
 - There is no distant terrain LOD or planetary horizon in the local walker; the global map is a separate 2D inspection tool.
 - Terrain is currently immutable except through changing the world seed/source implementation.

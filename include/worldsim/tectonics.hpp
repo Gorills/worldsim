@@ -26,18 +26,20 @@ struct TectonicSample {
     // one plate may contain both oceanic and continental crust.
     double continental_affinity{};
 
-    // Positive normalized diagnostic fields used only for the macro-relief preview.
+    // Positive normalized tectonic response fields. They remain available for
+    // diagnostics; uplift also modulates bounded orogenic terrain detail.
     double uplift_forcing{};
     double divergence_forcing{};
 
-    // Preview height derived from crust buoyancy and tectonic boundary response.
-    // It is not yet authoritative geography.elevation_m.
+    // Broad height derived from crust buoyancy and tectonic boundary response.
+    // TerrainGenerator uses this as the authoritative low-frequency elevation base.
     double macro_elevation_m{};
 };
 
 // Deterministic, query-only spherical plate/crust model. Plate ownership is a
-// spherical Voronoi partition; crust affinity is a separate smooth spherical
-// field, and neither currently modifies authoritative terrain elevation.
+// spherical Voronoi partition and crust affinity is a separate smooth spherical
+// field. TerrainGenerator consumes the continuous macro response as its broad
+// authoritative elevation basis; no persistent tectonic bake is introduced.
 class TectonicModel {
 public:
     static constexpr std::uint32_t kPlateCount=16;

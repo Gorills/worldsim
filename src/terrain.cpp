@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 
 namespace worldsim {
 namespace {
@@ -18,32 +17,6 @@ double smoothstep(double a, double b, double x) {
 
 double quintic(double t) {
     return t*t*t*(t*(t*6.0-15.0)+10.0);
-}
-
-const Vec3d& continent_center() {
-    static const Vec3d value=[] {
-        const double cos_lat=std::cos(kCenterLatitudeRad);
-        return Vec3d{
-            cos_lat*std::cos(kCenterLongitudeRad),
-            cos_lat*std::sin(kCenterLongitudeRad),
-            std::sin(kCenterLatitudeRad)
-        };
-    }();
-    return value;
-}
-
-const Vec3d& continent_east() {
-    static const Vec3d value{
-        -std::sin(kCenterLongitudeRad),
-        std::cos(kCenterLongitudeRad),
-        0.0
-    };
-    return value;
-}
-
-const Vec3d& continent_north() {
-    static const Vec3d value=normalized(cross(continent_center(),continent_east()));
-    return value;
 }
 
 double lattice3(std::uint64_t seed,
@@ -95,10 +68,10 @@ double value_noise3(std::uint64_t seed,
 }
 
 double fbm_unit(std::uint64_t seed,
-                 std::uint64_t stream,
-                 Vec3d p,
-                 double scale_m,
-                 int octaves) {
+                std::uint64_t stream,
+                Vec3d p,
+                double scale_m,
+                int octaves) {
     double amplitude=1.0;
     double frequency=kEarthRadiusM/scale_m;
     double total=0.0;
@@ -117,27 +90,6 @@ double fbm_unit(std::uint64_t seed,
         frequency*=2.0;
     }
     return total/normalization;
-}
-
-// Smooth anisotropic cap on the sphere. Near the continent center the tangent
-// terms reproduce the nominal east/north semi-axes. The normal/back term keeps
-// the shape closed and continuous on the far side of the planet, including the
-// antipode where azimuthal map coordinates are singular.
-double continent_sdf(std::uint64_t seed, Vec3d p) {
-    const Vec3d center=continent_center();
-    const Vec3d east=continent_east();
-    const Vec3d north=continent_north();
-
-    const double east_scaled=dot(p,east)*kEarthRadiusM/TerrainGenerator::kContinentSemiMajorM;
-    const double north_scaled=dot(p,north)*kEarthRadiusM/TerrainGenerator::kContinentSemiMinorM;
-    const double back=1.0-std::clamp(dot(p,center),-1.0,1.0);
-    const double radial=std::sqrt(
-        east_scaled*east_scaled+
-        north_scaled*north_scaled+
-        back*back
-    );
-    const double coast_noise=0.10*fbm_unit(seed,100,p,1'600'000.0,4);
-    return 1.0-radial+coast_noise;
 }
 
 } // namespace
@@ -214,30 +166,32 @@ TerrainSample TerrainGenerator::sample_projected(double east_m, double north_m) 
 
 TerrainSample TerrainGenerator::sample_direction(Vec3d direction) const {
     const Vec3d p=normalized(direction);
-    const double sdf=continent_sdf(seed_,p);
-    const double land_fraction=smoothstep(-0.025,0.025,sdf);
-    double elevation=0.0;
+    const TectonicSample tectonic=tectonics_.sample_direction(p);
 
-    if (sdf>=0.0) {
-        const double interior=std::clamp(sdf,0.0,1.0);
-        const double rolling=220.0*fbm_unit(seed_,200,p,180'000.0,5);
-        const double local_detail=18.0*fbm_unit(seed_,600,p,900.0,4);
-        const double ridge_source=fbm_unit(seed_,300,p,520'000.0,5);
-        const double ridge=std::clamp((1.0-std::abs(ridge_source)-0.35)/0.65,0.0,1.0);
-        const double uplift=0.5+0.5*fbm_unit(seed_,400,p,900'000.0,3);
-        const double mountain_zone=smoothstep(0.08,0.72,sdf)*smoothstep(0.0,1.0,uplift);
-        const double mountains=3'800.0*ridge*ridge*ridge*mountain_zone;
-        elevation=120.0+950.0*std::pow(interior,0.75)+rolling+local_detail+mountains;
-    } else {
-        const double deep=smoothstep(0.0,0.8,-sdf);
-        const double ocean_noise=350.0*fbm_unit(seed_,500,p,900'000.0,4);
-        elevation=-180.0-4'700.0*deep+ocean_noise*(0.2+0.8*deep);
-    }
+    // Tectonics owns the broad hypsometry. The remaining procedural terms are
+    // deliberately bounded meso/local relief so they can texture the macro
+    // shape without replacing it with an unrelated continent generator.
+    const double rolling=220.0*fbm_unit(seed_,200,p,180'000.0,5);
+    const double local_detail=18.0*fbm_unit(seed_,600,p,900.0,4);
+    const double ridge_source=fbm_unit(seed_,300,p,520'000.0,5);
+    const double ridge=std::clamp(
+        (1.0-std::abs(ridge_source)-0.35)/0.65,
+        0.0,
+        1.0
+    );
+    const double orogenic_detail=
+        1'000.0*ridge*ridge*ridge*
+        tectonic.uplift_forcing*
+        (0.35+0.65*tectonic.continental_affinity);
 
-    return {
-        std::clamp(elevation,-11'000.0,9'000.0),
-        land_fraction
-    };
+    const double elevation=std::clamp(
+        tectonic.macro_elevation_m+rolling+local_detail+orogenic_detail,
+        -11'000.0,
+        9'000.0
+    );
+    const double land_fraction=smoothstep(-75.0,75.0,elevation);
+
+    return {elevation,land_fraction};
 }
 
 } // namespace worldsim

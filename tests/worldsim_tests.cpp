@@ -180,6 +180,24 @@ void test_determinism_and_snapshot() {
     a->schedule_field_impulse(a->world().tick()+2,future_target,mana,9.0e11);
     a->world().emit({a->world().tick(),"test.pending_event",future_target,77,3.5});
     auto snap=a->save_snapshot();
+
+    // Authoritative world-generation semantics changed with tectonic terrain.
+    // Snapshot v2 may contain pre-tectonic geography under the same field
+    // schema, so it must be rejected instead of silently mixing old geography
+    // with new terrain on the next cover resample.
+    check(snap.size()>11,"snapshot header is unexpectedly short");
+    auto legacy_snapshot=snap;
+    legacy_snapshot[8]=std::byte{2};
+    bool rejected_legacy_snapshot=false;
+    try {
+        auto legacy_target=make_default_simulation(123);
+        legacy_target->load_snapshot(legacy_snapshot);
+    } catch (const std::runtime_error&) {
+        rejected_legacy_snapshot=true;
+    }
+    check(rejected_legacy_snapshot,
+          "pre-tectonic snapshot version was accepted by tectonic terrain build");
+
     const Tick tick=a->world().tick();
     a->step(72);
     a->load_snapshot(snap);
@@ -643,7 +661,73 @@ void test_tectonic_model_multiseed_robustness() {
     }
 }
 
-void test_procedural_terrain_scale_and_determinism() {
+void test_authoritative_terrain_tracks_tectonic_macro_relief() {
+    const TerrainGenerator terrain(42);
+    const TectonicModel tectonics(42);
+
+    constexpr int sample_count=1024;
+    constexpr double golden_angle_rad=2.3999632297286533222;
+    constexpr double sample_phase_rad=0.417;
+
+    double terrain_sum=0.0;
+    double macro_sum=0.0;
+    double terrain_sq_sum=0.0;
+    double macro_sq_sum=0.0;
+    double product_sum=0.0;
+    double residual_abs_sum=0.0;
+    double max_residual=0.0;
+    bool land_classification_consistent=true;
+
+    for (int i=0;i<sample_count;++i) {
+        const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
+            static_cast<double>(sample_count);
+        const double phi=sample_phase_rad+
+            static_cast<double>(i)*golden_angle_rad;
+        const double radial=std::sqrt(std::max(0.0,1.0-z*z));
+        const Vec3d direction{
+            radial*std::cos(phi),
+            z,
+            radial*std::sin(phi)
+        };
+
+        const TerrainSample terrain_sample=terrain.sample_direction(direction);
+        const TectonicSample tectonic_sample=tectonics.sample_direction(direction);
+        const double authoritative=terrain_sample.elevation_m;
+        const double macro=tectonic_sample.macro_elevation_m;
+        const double residual=authoritative-macro;
+
+        terrain_sum+=authoritative;
+        macro_sum+=macro;
+        terrain_sq_sum+=authoritative*authoritative;
+        macro_sq_sum+=macro*macro;
+        product_sum+=authoritative*macro;
+        residual_abs_sum+=std::abs(residual);
+        max_residual=std::max(max_residual,std::abs(residual));
+
+        if (authoritative>200.0)
+            land_classification_consistent&=terrain_sample.land_fraction>0.99;
+        if (authoritative<-200.0)
+            land_classification_consistent&=terrain_sample.land_fraction<0.01;
+    }
+
+    const double n=static_cast<double>(sample_count);
+    const double covariance=product_sum-terrain_sum*macro_sum/n;
+    const double terrain_variance=terrain_sq_sum-terrain_sum*terrain_sum/n;
+    const double macro_variance=macro_sq_sum-macro_sum*macro_sum/n;
+    const double correlation=covariance/std::sqrt(terrain_variance*macro_variance);
+    const double mean_abs_residual=residual_abs_sum/n;
+
+    check(correlation>0.95,
+          "authoritative terrain low-frequency shape is not driven by tectonic macro relief");
+    check(land_classification_consistent,
+          "authoritative terrain land fraction disagrees with final elevation");
+    check(mean_abs_residual>10.0,
+          "authoritative terrain lost meso/local procedural detail");
+    check(max_residual<1'500.0,
+          "procedural terrain detail overwhelms tectonic macro relief");
+}
+
+void test_authoritative_terrain_scale_and_determinism() {
     const TerrainGenerator terrain(42);
     const TerrainSample center=terrain.sample_projected(0.0,0.0);
     const TerrainSample repeat=terrain.sample_projected(0.0,0.0);
@@ -651,19 +735,23 @@ void test_procedural_terrain_scale_and_determinism() {
 
     near(center.elevation_m,repeat.elevation_m,1e-15,"terrain generator is not deterministic");
     near(center.land_fraction,repeat.land_fraction,1e-15,"terrain land mask is not deterministic");
-    check(center.land_fraction>0.95 && center.elevation_m>0.0,"continent center is not land");
-    check(remote_ocean.land_fraction<0.05 && remote_ocean.elevation_m<0.0,"remote terrain is not ocean floor");
+    check(center.land_fraction>0.95 && center.elevation_m>200.0,
+          "seed-42 local walker origin is not stable dry land");
+    check(remote_ocean.land_fraction<0.05 && remote_ocean.elevation_m<-3'000.0,
+          "seed-42 remote terrain is not deep ocean");
 
     CubeSphereTopology topology;
     double land_area_m2=0.0;
+    double total_area_m2=0.0;
     for (CellId cell:uniform_cover(5)) {
         const TerrainSample sample=terrain.sample_direction(topology.center_unit(cell));
-        land_area_m2+=topology.area_m2(cell)*sample.land_fraction;
+        const double area=topology.area_m2(cell);
+        land_area_m2+=area*sample.land_fraction;
+        total_area_m2+=area;
     }
-    constexpr double kMinEurasiaScaleM2=40.0e12;
-    constexpr double kMaxEurasiaScaleM2=70.0e12;
-    check(land_area_m2>=kMinEurasiaScaleM2 && land_area_m2<=kMaxEurasiaScaleM2,
-          "procedural continent is not Eurasia-scale");
+    const double land_fraction=land_area_m2/total_area_m2;
+    check(land_fraction>0.15 && land_fraction<0.40,
+          "authoritative tectonic terrain has degenerate global land coverage");
 }
 
 void test_sphere_native_terrain_continuity() {
@@ -771,7 +859,8 @@ int main() {
         test_ecology_invariants();
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();
-        test_procedural_terrain_scale_and_determinism();
+        test_authoritative_terrain_tracks_tectonic_macro_relief();
+        test_authoritative_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geography_refinement_samples_new_detail();
         test_c_api();
