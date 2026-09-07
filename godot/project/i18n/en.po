@@ -35,3 +35,15 @@ msgstr "Generating seed %d..."
 
 msgid "MAP_STATUS_READY"
 msgstr "seed: %d    map: %d x %d    elevation: %.0f .. %.0f m"
+
+msgid "MAP_LAYER"
+msgstr "Layer"
+
+msgid "MAP_LAYER_ELEVATION"
+msgstr "Elevation"
+
+msgid "MAP_LAYER_PLATES"
+msgstr "Plates"
+
+msgid "MAP_LAYER_FORCING"
+msgstr "Tectonic forcing"
