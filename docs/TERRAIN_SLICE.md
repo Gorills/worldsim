@@ -103,7 +103,7 @@ The kernel now contains a deterministic query-only `TectonicModel` that is indep
 - relative shear along the boundary;
 - a signed boundary forcing that smoothly decays to zero eight degrees away from the boundary.
 
-Positive forcing represents convergence and negative forcing represents divergence. The values are diagnostic kinematics only in this slice: they do **not** modify `geography.elevation_m` or the local terrain mesh yet. This separation is deliberate so plate ownership and boundary motion can be validated before they become an input to macro relief.
+Positive forcing represents convergence and negative forcing represents divergence. Angular speeds, convergence, shear, and forcing are normalized relative values, not calibrated SI velocities or geological rates. The values are diagnostic kinematics only in this slice: they do **not** modify `geography.elevation_m` or the local terrain mesh yet. This separation is deliberate so plate ownership and boundary motion can be validated before they become an input to macro relief.
 
 The global map samples the tectonic model through the Godot adapter and exposes three presentation-only layers: `Elevation`, `Plates`, and `Tectonic forcing`. Plate colors and red/blue forcing colors live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
 
