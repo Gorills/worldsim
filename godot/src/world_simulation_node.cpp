@@ -191,9 +191,11 @@ Dictionary WorldSimulationNode::get_render_packet() const {
         ensure_sim();
         const auto& world=sim_->world();
         const auto& fs=world.stores().get<worldsim::FieldStore>();
-        const auto temp=*sim_->fields().find("climate.surface_temperature_k");
-        const auto veg=*sim_->fields().find("ecology.vegetation_carbon_kg");
-        const auto mana=*sim_->fields().find("magic.mana_j");
+        const auto temp=sim_->fields().find("climate.surface_temperature_k");
+        const auto veg=sim_->fields().find("ecology.vegetation_carbon_kg");
+        const auto mana=sim_->fields().find("magic.mana_j");
+        if (!temp || !veg || !mana)
+            throw std::runtime_error("render packet requires the default simulation field set");
         const auto& cells=fs.dense_cells();
         const int n=static_cast<int>(cells.size());
 
@@ -214,9 +216,9 @@ Dictionary WorldSimulationNode::get_render_packet() const {
             const std::uint64_t raw=c.raw();
             positions.set(i,Vector3(static_cast<float>(p.x),static_cast<float>(p.y),static_cast<float>(p.z)));
             areas.set(i,area);
-            temperatures.set(i,static_cast<float>(fs.get_dense(dense_index,temp)-273.15));
-            vegetation_density.set(i,static_cast<float>(fs.get_dense(dense_index,veg)/area));
-            mana_density.set(i,static_cast<float>(fs.get_dense(dense_index,mana)/area));
+            temperatures.set(i,static_cast<float>(fs.get_dense(dense_index,*temp)-273.15));
+            vegetation_density.set(i,static_cast<float>(fs.get_dense(dense_index,*veg)/area));
+            mana_density.set(i,static_cast<float>(fs.get_dense(dense_index,*mana)/area));
             levels.set(i,static_cast<std::int32_t>(c.level()));
             id_hi.set(i,static_cast<std::int64_t>(raw>>32U));
             id_lo.set(i,static_cast<std::int64_t>(raw&0xffffffffULL));
