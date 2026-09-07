@@ -39,9 +39,12 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 
 `WorldSimulationNode` exposes:
 
-- `initialize(seed)`
+- `initialize(seed)` for the full default simulation
+- `initialize_terrain_world(seed)` for the terrain-only walking slice
 - `step_hours(hours)`
-- `set_focus_direction(direction)` / `clear_focus()`
+- `set_focus_direction(direction)` / `set_focus_projected(east_m, north_m)` / `clear_focus()`
+- `sample_terrain_height(east_m, north_m)`
+- `sample_terrain_patch(center_east_m, center_north_m, spacing_m, resolution)`
 - `get_tick()`
 - `get_render_packet()`
 - `get_field_descriptors()`
@@ -75,13 +78,15 @@ For new domains, use `get_field_descriptors()` and `get_field_values(key)` inste
 
 ## Viewer baseline
 
-The included scene builds one reusable `MultiMesh` of cells and colors it using temperature, vegetation and mana. The mesh/material/MultiMesh resources are created once; refreshes update instance data rather than rebuilding rendering resources. The material explicitly enables `vertex_color_use_as_albedo`; Godot requires that flag for per-instance MultiMesh colors to affect `StandardMaterial3D`.
+The main scene is now a first-person terrain walker backed by the terrain-only simulation factory. It streams regular 256 m terrain chunks around the player, uses `ArrayMesh` for rendering and `HeightMapShape3D` for collision, and bounds foreground work to one missing chunk per rendered frame after the initial player chunk.
 
-The viewer defines InputMap actions for keyboard/gamepad orbit, zoom, reset, pause and simulation speed. Mouse orbit/wheel input is handled through `_unhandled_input()`, leaving GUI controls earlier in the input chain.
+Logical projected world coordinates remain in 64-bit GDScript scalar values while scene nodes are origin-shifted at a 1,024 m threshold. The stock single-precision Godot build therefore does not need to place scene nodes millions of meters from the origin.
+
+The viewer defines InputMap actions for WASD movement and jump. Mouse look is handled through `_unhandled_input()`; Escape releases/captures the mouse.
 
 HUD text is localized through gettext PO catalogs (English and Russian) and styled by a shared `Theme` resource.
 
-The scene is still a visualization host, not production graphics. Terrain meshing/render LOD, atmosphere, oceans, content/entity presentation, spatially chunked render culling, accessibility/remapping UI, and gameplay remain Godot-side work and must not be moved into the kernel.
+The scene is intentionally terrain-only. There is no rendered water, atmosphere, vegetation, fauna, content/entity presentation, or distant terrain render LOD. See `docs/TERRAIN_SLICE.md` for the architecture and scaling decision.
 
 ## CI build strategy
 
