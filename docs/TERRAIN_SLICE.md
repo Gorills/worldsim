@@ -107,7 +107,12 @@ For any unit direction the model selects the two nearest plate seeds, treats the
 
 Positive forcing represents convergence and negative forcing represents divergence. Angular speeds, convergence, shear, and forcing are normalized relative values, not calibrated SI velocities or geological rates.
 
-The same model now also exposes a continuous `continental_affinity` field in `[0,1]`. Five broad crust provinces are anchored near distinct plate seeds, but each province is formed from three overlapping smooth spherical lobes. Those lobes can cross Voronoi boundaries, so one plate may contain both oceanic and continental crust and crust affinity stays continuous when plate ownership changes.
+The same model also exposes a continuous `continental_affinity` field in `[0,1]`. It is now a low-frequency deterministic 3D value-noise FBM evaluated directly at the normalized unit direction and shaped with a smooth threshold. The field is independent of plate ownership, so one plate may contain both oceanic and continental crust; sampling coherent 3D noise on the sphere keeps it continuous across plate boundaries and the longitude seam without encoding continent silhouettes as unions of radial spherical caps.
+
+This follows established sphere-noise practice rather than adding a second flat crust map: libnoise's spherical model samples a 3D noise module on a unit sphere specifically for seamless spherical textures and planetary terrain. WorldSim keeps its own deterministic value-noise implementation and only uses the same sphere-native sampling principle:
+
+- https://libnoise.sourceforge.net/docs/classnoise_1_1model_1_1Sphere.html
+- https://libnoise.sourceforge.net/tutorials/tutorial8.html
 
 A preview-only tectonic macro height is derived from:
 
@@ -116,7 +121,7 @@ A preview-only tectonic macro height is derived from:
 - divergent response -> oceanic ridge uplift or continental rift subsidence;
 - transform/shear motion -> no direct vertical term in this slice.
 
-The macro response blends locally competitive plate pairs over a 12-degree belt rather than using one hard neighbor choice. This is specifically intended to avoid imprinting second/third-neighbor switches and triple-junction bookkeeping as hard relief seams. The resulting `macro_elevation_m` is diagnostic only: it does **not** modify `geography.elevation_m`, `TerrainGenerator`, or the local terrain mesh yet.
+The macro response still uses a 12-degree boundary belt, but pair participation is no longer a boolean score gate. Every pair receives a compact smooth competition weight based on how closely both plates approach local ownership; the weight reaches zero with zero slope before the pair is skipped. True neighboring pairs therefore retain support near their shared boundary, while bisectors of non-neighbor pairs are suppressed when a third plate dominates. This removes the previous discontinuous active-pair contour and its polygon/ghost relief artifacts without changing the nearest-boundary forcing diagnostic. The resulting `macro_elevation_m` is diagnostic only: it does **not** modify `geography.elevation_m`, `TerrainGenerator`, or the local terrain mesh yet.
 
 The global map samples the tectonic model through the Godot adapter and exposes five presentation-only layers: `Elevation`, `Plates`, `Tectonic forcing`, `Crust`, and `Macro relief`. Plate colors, crust colors, forcing colors, and macro preview coloring live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
 

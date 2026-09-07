@@ -41,6 +41,8 @@ struct TectonicSample {
 class TectonicModel {
 public:
     static constexpr std::uint32_t kPlateCount=16;
+    // Legacy source-compatibility value from the first debug preview. The
+    // current crust field no longer uses discrete provinces.
     static constexpr std::uint32_t kCrustProvinceCount=5;
     static constexpr double kBoundaryInfluenceRad=8.0*kPi/180.0;
     static constexpr double kMacroBoundaryInfluenceRad=12.0*kPi/180.0;
@@ -51,19 +53,10 @@ public:
     [[nodiscard]] const std::array<TectonicPlate,kPlateCount>& plates() const { return plates_; }
 
 private:
-    static constexpr std::uint32_t kCrustLobesPerProvince=3;
-    static constexpr std::uint32_t kCrustLobeCount=kCrustProvinceCount*kCrustLobesPerProvince;
-
-    struct CrustLobe {
-        Vec3d center{};
-        double inner_cos{};
-        double outer_cos{};
-    };
-
     [[nodiscard]] double continental_affinity(Vec3d unit_direction) const;
 
+    std::uint64_t seed_{};
     std::array<TectonicPlate,kPlateCount> plates_{};
-    std::array<CrustLobe,kCrustLobeCount> crust_lobes_{};
 };
 
 } // namespace worldsim

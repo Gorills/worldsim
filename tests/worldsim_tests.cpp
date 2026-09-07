@@ -432,6 +432,65 @@ void test_tectonic_model_partition_and_determinism() {
     check(min_macro<-3'000.0 && max_macro>1'000.0,
           "tectonic macro preview does not contain both deep ocean and high relief");
 
+    // Regression for the old hard 0.45 competition gate. This direction lies
+    // on one of its pair-admission contours for seed 42; the old implementation
+    // changed uplift by ~0.64 and macro height by ~1.1 km across this tiny step.
+    const Vec3d gate_point{
+        -0.8915729528965797,
+        0.2272902103838312,
+        0.39171013508326175
+    };
+    const Vec3d gate_tangent{
+        -0.4504176476975162,
+        -0.5350529101595087,
+        -0.7147323456878645
+    };
+    constexpr double gate_epsilon=1.0e-7;
+    const TectonicSample gate_left=a.sample_direction(normalized(
+        gate_point*std::cos(gate_epsilon)+gate_tangent*std::sin(gate_epsilon)
+    ));
+    const TectonicSample gate_right=a.sample_direction(normalized(
+        gate_point*std::cos(gate_epsilon)-gate_tangent*std::sin(gate_epsilon)
+    ));
+    check(std::abs(gate_left.uplift_forcing-gate_right.uplift_forcing)<1.0e-3,
+          "tectonic uplift has a hard pair-competition seam");
+    check(std::abs(gate_left.divergence_forcing-gate_right.divergence_forcing)<1.0e-3,
+          "tectonic divergence has a hard pair-competition seam");
+    check(std::abs(gate_left.macro_elevation_m-gate_right.macro_elevation_m)<5.0,
+          "tectonic macro relief has a hard pair-competition seam");
+
+    // The crust field is intentionally broad-scale, but it must not regress to
+    // the visually obvious union of a handful of radial spherical caps. Count
+    // 0.5-isoline crossings in the same coarse equirectangular grid used by the
+    // Godot smoke path. Seed 42 had 74 crossings with the old three-lobe
+    // provinces; the sphere-native coherent field is deliberately more irregular.
+    constexpr int crust_map_width=64;
+    constexpr int crust_map_height=32;
+    int crust_edge_crossings=0;
+    for (int y=0;y<crust_map_height;++y) {
+        const double v=(static_cast<double>(y)+0.5)/static_cast<double>(crust_map_height);
+        const double latitude=(0.5-v)*kPi;
+        const double sin_lat=std::sin(latitude);
+        const double cos_lat=std::cos(latitude);
+        for (int x=0;x<crust_map_width;++x) {
+            const auto sample_at=[&](int sample_x) {
+                const double u=(static_cast<double>(sample_x)+0.5)/
+                    static_cast<double>(crust_map_width);
+                const double longitude=(2.0*u-1.0)*kPi;
+                return a.sample_direction({
+                    cos_lat*std::cos(longitude),
+                    cos_lat*std::sin(longitude),
+                    sin_lat
+                }).continental_affinity;
+            };
+            const bool current=sample_at(x)>=0.5;
+            const bool next=sample_at((x+1)%crust_map_width)>=0.5;
+            if (current!=next) ++crust_edge_crossings;
+        }
+    }
+    check(crust_edge_crossings>=100,
+          "continental affinity regressed to overly simple spherical lobes");
+
     // Crust affinity must stay continuous when plate ownership changes. Project
     // one resolved near-boundary sample onto its exact owner/neighbor bisector,
     // then sample a tiny angular step on both sides.

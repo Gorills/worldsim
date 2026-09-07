@@ -3,16 +3,98 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
+#include <cstdint>
 
 namespace worldsim {
 namespace {
 
 constexpr double kGoldenAngleRad=2.3999632297286533222;
+constexpr double kMacroCompetitionScoreGap=0.10;
 
 double smoothstep01(double x) {
     const double t=std::clamp(x,0.0,1.0);
     return t*t*(3.0-2.0*t);
+}
+
+double smoothstep(double a, double b, double x) {
+    return smoothstep01((x-a)/(b-a));
+}
+
+double quintic(double t) {
+    return t*t*t*(t*(t*6.0-15.0)+10.0);
+}
+
+double lattice3(std::uint64_t seed,
+                std::uint64_t stream,
+                std::int64_t x,
+                std::int64_t y,
+                std::int64_t z) {
+    const auto ux=static_cast<std::uint64_t>(x);
+    const auto uy=static_cast<std::uint64_t>(y);
+    const auto uz=static_cast<std::uint64_t>(z);
+    const std::uint64_t h=mix64(
+        seed ^
+        mix64(stream) ^
+        mix64(ux) ^
+        mix64(uy*0xd6e8feb86659fd93ULL) ^
+        mix64(uz*0xa5a3564e27f8862bULL)
+    );
+    return static_cast<double>(h>>11U)*(2.0/9007199254740992.0)-1.0;
+}
+
+double value_noise3(std::uint64_t seed,
+                    std::uint64_t stream,
+                    double x,
+                    double y,
+                    double z) {
+    const auto x0=static_cast<std::int64_t>(std::floor(x));
+    const auto y0=static_cast<std::int64_t>(std::floor(y));
+    const auto z0=static_cast<std::int64_t>(std::floor(z));
+    const double sx=quintic(x-static_cast<double>(x0));
+    const double sy=quintic(y-static_cast<double>(y0));
+    const double sz=quintic(z-static_cast<double>(z0));
+
+    const double c000=lattice3(seed,stream,x0,y0,z0);
+    const double c100=lattice3(seed,stream,x0+1,y0,z0);
+    const double c010=lattice3(seed,stream,x0,y0+1,z0);
+    const double c110=lattice3(seed,stream,x0+1,y0+1,z0);
+    const double c001=lattice3(seed,stream,x0,y0,z0+1);
+    const double c101=lattice3(seed,stream,x0+1,y0,z0+1);
+    const double c011=lattice3(seed,stream,x0,y0+1,z0+1);
+    const double c111=lattice3(seed,stream,x0+1,y0+1,z0+1);
+
+    const double x00=c000+(c100-c000)*sx;
+    const double x10=c010+(c110-c010)*sx;
+    const double x01=c001+(c101-c001)*sx;
+    const double x11=c011+(c111-c011)*sx;
+    const double y0v=x00+(x10-x00)*sy;
+    const double y1v=x01+(x11-x01)*sy;
+    return y0v+(y1v-y0v)*sz;
+}
+
+double crust_fbm(std::uint64_t seed, Vec3d p) {
+    constexpr int kOctaves=3;
+    constexpr double kBaseFrequency=1.35;
+    constexpr double kPersistence=0.5;
+    const std::uint64_t stream=fnv1a64("tectonics.crust.field");
+
+    double amplitude=1.0;
+    double frequency=kBaseFrequency;
+    double total=0.0;
+    double normalization=0.0;
+    for (int octave=0;octave<kOctaves;++octave) {
+        total+=amplitude*value_noise3(
+            seed,
+            stream+static_cast<std::uint64_t>(octave)*17ULL,
+            p.x*frequency,
+            p.y*frequency,
+            p.z*frequency
+        );
+        normalization+=amplitude;
+        amplitude*=kPersistence;
+        frequency*=2.0;
+    }
+    return total/normalization;
 }
 
 Vec3d seeded_unit_vector(std::uint64_t seed, std::uint64_t stream, std::uint64_t object) {
@@ -76,7 +158,7 @@ BoundaryMetrics boundary_metrics(Vec3d p,
 
 } // namespace
 
-TectonicModel::TectonicModel(std::uint64_t seed) {
+TectonicModel::TectonicModel(std::uint64_t seed): seed_(seed) {
     const double phase=2.0*kPi*deterministic_unit(
         seed,
         fnv1a64("tectonics.layout.phase"),
@@ -121,77 +203,14 @@ TectonicModel::TectonicModel(std::uint64_t seed) {
             rotation_axis*speed
         };
     }
-
-    // Five broad continental provinces are anchored near distinct plate seeds,
-    // but each province is a union of overlapping smooth spherical lobes. The
-    // lobes may cross Voronoi boundaries, so continental crust cannot collapse
-    // back into a per-plate boolean.
-    const std::uint32_t anchor_offset=static_cast<std::uint32_t>(
-        deterministic_unit(seed,fnv1a64("tectonics.crust.anchor"),0,0)*
-        static_cast<double>(kPlateCount)
-    );
-    std::uint32_t lobe_index=0;
-    for (std::uint32_t province=0;province<kCrustProvinceCount;++province) {
-        const std::uint32_t plate_id=(anchor_offset+province*3U)%kPlateCount;
-        const Vec3d base=plates_[plate_id].seed_direction;
-        const Vec3d primary_tangent=seeded_tangent(
-            seed,
-            fnv1a64("tectonics.crust.primary.offset"),
-            province,
-            base
-        );
-        const double primary_angle=(
-            deterministic_unit(seed,fnv1a64("tectonics.crust.primary.angle"),0,province)-0.5
-        )*0.28;
-        const Vec3d primary=normalized(
-            base*std::cos(primary_angle)+primary_tangent*std::sin(primary_angle)
-        );
-
-        for (std::uint32_t local=0;local<kCrustLobesPerProvince;++local) {
-            Vec3d center=primary;
-            if (local>0) {
-                const Vec3d tangent=seeded_tangent(
-                    seed,
-                    fnv1a64("tectonics.crust.lobe.offset")+static_cast<std::uint64_t>(local)*17ULL,
-                    province,
-                    primary
-                );
-                const double offset_angle=0.13+0.18*deterministic_unit(
-                    seed,
-                    fnv1a64("tectonics.crust.lobe.angle")+static_cast<std::uint64_t>(local)*19ULL,
-                    0,
-                    province
-                );
-                center=normalized(
-                    primary*std::cos(offset_angle)+tangent*std::sin(offset_angle)
-                );
-            }
-
-            const double radius=0.30+0.16*deterministic_unit(
-                seed,
-                fnv1a64("tectonics.crust.lobe.radius")+static_cast<std::uint64_t>(local)*23ULL,
-                0,
-                province
-            );
-            constexpr double edge_width=0.07;
-            crust_lobes_[lobe_index++]={
-                center,
-                std::cos(radius-edge_width),
-                std::cos(radius+edge_width)
-            };
-        }
-    }
 }
 
 double TectonicModel::continental_affinity(Vec3d unit_direction) const {
-    double oceanic_remainder=1.0;
-    for (const CrustLobe& lobe:crust_lobes_) {
-        const double denominator=lobe.inner_cos-lobe.outer_cos;
-        const double raw=(dot(unit_direction,lobe.center)-lobe.outer_cos)/denominator;
-        const double affinity=smoothstep01(raw);
-        oceanic_remainder*=1.0-affinity;
-    }
-    return std::clamp(1.0-oceanic_remainder,0.0,1.0);
+    // Evaluate low-frequency 3D FBM directly on the unit sphere. This keeps the
+    // field continuous and seam-free without encoding continent silhouettes as
+    // unions of radial spherical caps.
+    const double field=crust_fbm(seed_,unit_direction);
+    return smoothstep(0.03,0.27,field);
 }
 
 TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
@@ -231,20 +250,24 @@ TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
         1.0-smoothstep01(nearest_boundary.distance_rad/kBoundaryInfluenceRad);
     const double boundary_forcing=nearest_boundary.convergence*boundary_influence;
 
-    // Macro response blends all locally competitive plate pairs. Pair metrics
-    // are order-invariant, and the score gate is wider than the 12-degree
-    // influence belt for ordinary neighboring plates. This avoids imprinting
-    // owner/second/third-neighbor switches as hard relief seams.
-    constexpr double kMacroCompetitionScoreGap=0.45;
+    // Weight each pair by how close both of its plates are to local ownership.
+    // The compact smoothstep reaches zero with zero slope, so skipping a zero-
+    // weight pair is only a performance shortcut, not a hard selection seam.
+    // Non-neighbor pair bisectors are suppressed once another plate dominates.
     double uplift_sum=0.0;
     double divergence_sum=0.0;
     for (std::uint32_t a=0;a<kPlateCount;++a) {
-        if (plate_scores[a]<owner_score-kMacroCompetitionScoreGap) continue;
         for (std::uint32_t b=a+1;b<kPlateCount;++b) {
-            if (plate_scores[b]<owner_score-kMacroCompetitionScoreGap) continue;
+            const double pair_score=std::min(plate_scores[a],plate_scores[b]);
+            const double competition_gap=std::max(0.0,owner_score-pair_score);
+            const double competition_weight=
+                1.0-smoothstep01(competition_gap/kMacroCompetitionScoreGap);
+            if (competition_weight<=0.0) continue;
+
             const BoundaryMetrics metrics=boundary_metrics(p,plates_[a],plates_[b]);
-            const double influence=
+            const double boundary_weight=
                 1.0-smoothstep01(metrics.distance_rad/kMacroBoundaryInfluenceRad);
+            const double influence=competition_weight*boundary_weight;
             uplift_sum+=std::max(metrics.convergence,0.0)*influence;
             divergence_sum+=std::max(-metrics.convergence,0.0)*influence;
         }
