@@ -47,3 +47,9 @@ msgstr "Plates"
 
 msgid "MAP_LAYER_FORCING"
 msgstr "Tectonic forcing"
+
+msgid "MAP_LAYER_CRUST"
+msgstr "Crust"
+
+msgid "MAP_LAYER_MACRO_RELIEF"
+msgstr "Macro relief"
