@@ -1,4 +1,4 @@
-253d6b1255afde3429a4bfa8199fccb5e62daab4c6689e030ae2deab4bdadd2e  ./.github/workflows/ci.yml
+63e5b1ff194821ecad38a207d52edc94443b81ce42bb840ed6e117f3206b2ce2  ./.github/workflows/ci.yml
 fc70ea0d48882cb8649d6eb7cd5e214e9b87eb17e13f36303e0bb55c1330df3a  ./.gitignore
 e35b59998c53d8ed7f166a93c66141aa2ed2712ea3484729824f42cad9bb8afd  ./AGENTS.md
 b4106def5a089ec546db4fec1aa6c7bfa1a431ebe364eb292a2be2ffd3c8c642  ./apps/worldsim_cli.cpp
