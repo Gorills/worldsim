@@ -99,8 +99,12 @@ func _generate_map(seed: int) -> void:
     if !sim.get_last_error().is_empty():
         _show_error(sim.get_last_error())
         return
-    if !tectonics.has("plate_id") or !tectonics.has("forcing") or \
-            !tectonics.has("crust_affinity") or !tectonics.has("macro_elevation_m"):
+    if (
+        !tectonics.has("plate_id") or
+        !tectonics.has("forcing") or
+        !tectonics.has("crust_affinity") or
+        !tectonics.has("macro_elevation_m")
+    ):
         _show_error("tectonic debug layers are missing")
         return
 
@@ -108,10 +112,12 @@ func _generate_map(seed: int) -> void:
     var forcing: PackedFloat32Array = tectonics["forcing"]
     var crust_affinity: PackedFloat32Array = tectonics["crust_affinity"]
     var macro_elevation: PackedFloat32Array = tectonics["macro_elevation_m"]
-    if plate_ids.size() != MAP_WIDTH * MAP_HEIGHT or \
-            forcing.size() != MAP_WIDTH * MAP_HEIGHT or \
-            crust_affinity.size() != MAP_WIDTH * MAP_HEIGHT or \
-            macro_elevation.size() != MAP_WIDTH * MAP_HEIGHT:
+    if (
+        plate_ids.size() != MAP_WIDTH * MAP_HEIGHT or
+        forcing.size() != MAP_WIDTH * MAP_HEIGHT or
+        crust_affinity.size() != MAP_WIDTH * MAP_HEIGHT or
+        macro_elevation.size() != MAP_WIDTH * MAP_HEIGHT
+    ):
         _show_error("tectonic debug layer size mismatch")
         return
 
