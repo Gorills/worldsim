@@ -116,7 +116,8 @@ Dictionary WorldSimulationNode::get_render_packet() const {
         const auto temp=*sim_->fields().find("climate.surface_temperature_k");
         const auto veg=*sim_->fields().find("ecology.vegetation_carbon_kg");
         const auto mana=*sim_->fields().find("magic.mana_j");
-        const int n=static_cast<int>(world.active_cells().size());
+        const auto& cells=fs.dense_cells();
+        const int n=static_cast<int>(cells.size());
 
         PackedVector3Array positions; positions.resize(n);
         PackedFloat64Array areas; areas.resize(n);
@@ -127,20 +128,20 @@ Dictionary WorldSimulationNode::get_render_packet() const {
         PackedInt64Array id_hi; id_hi.resize(n);
         PackedInt64Array id_lo; id_lo.resize(n);
 
-        int i=0;
-        for (worldsim::CellId c:world.active_cells()) {
+        for (int i=0;i<n;++i) {
+            const auto dense_index=static_cast<std::size_t>(i);
+            const worldsim::CellId c=cells[dense_index];
             const auto p=world.topology().center_unit(c);
             const double area=world.topology().area_m2(c);
             const std::uint64_t raw=c.raw();
             positions.set(i,Vector3(static_cast<float>(p.x),static_cast<float>(p.y),static_cast<float>(p.z)));
             areas.set(i,area);
-            temperatures.set(i,static_cast<float>(fs.get(c,temp)-273.15));
-            vegetation_density.set(i,static_cast<float>(fs.get(c,veg)/area));
-            mana_density.set(i,static_cast<float>(fs.get(c,mana)/area));
+            temperatures.set(i,static_cast<float>(fs.get_dense(dense_index,temp)-273.15));
+            vegetation_density.set(i,static_cast<float>(fs.get_dense(dense_index,veg)/area));
+            mana_density.set(i,static_cast<float>(fs.get_dense(dense_index,mana)/area));
             levels.set(i,static_cast<std::int32_t>(c.level()));
             id_hi.set(i,static_cast<std::int64_t>(raw>>32U));
             id_lo.set(i,static_cast<std::int64_t>(raw&0xffffffffULL));
-            ++i;
         }
 
         Dictionary out;
@@ -189,9 +190,10 @@ PackedFloat64Array WorldSimulationNode::get_field_values(const String& field_key
         if (!field) throw std::invalid_argument("unknown field key: "+key);
         const auto& world=sim_->world();
         const auto& fs=world.stores().get<worldsim::FieldStore>();
-        out.resize(static_cast<int>(world.active_cells().size()));
-        int i=0;
-        for (worldsim::CellId c:world.active_cells()) out.set(i++,fs.get(c,*field));
+        const auto& cells=fs.dense_cells();
+        out.resize(static_cast<int>(cells.size()));
+        for (std::size_t i=0;i<cells.size();++i)
+            out.set(static_cast<int>(i),fs.get_dense(i,*field));
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in get_field_values"); }

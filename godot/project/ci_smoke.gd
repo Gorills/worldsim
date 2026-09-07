@@ -26,6 +26,17 @@ func _initialize() -> void:
         quit(4)
         return
 
+    var temperatures := sim.get_field_values("climate.surface_temperature_k")
+    if temperatures.size() != packet["positions"].size():
+        push_error("WorldSim generic field values are not aligned with render packet")
+        quit(5)
+        return
+    var packet_temperatures: PackedFloat32Array = packet["temperature_c"]
+    if absf(float(temperatures[0]) - 273.15 - float(packet_temperatures[0])) > 0.001:
+        push_error("WorldSim render packet and generic field order diverged")
+        quit(6)
+        return
+
     print("WORLDSIM_GODOT_SMOKE_OK tick=%d cells=%d fields=%d" % [
         sim.get_tick(), packet["positions"].size(), descriptors.size()
     ])

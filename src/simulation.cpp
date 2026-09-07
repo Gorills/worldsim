@@ -142,13 +142,13 @@ void Simulation::process_commands() {
     commands_.erase(commands_.begin(),commands_.begin()+static_cast<std::ptrdiff_t>(consumed));
 }
 
-std::uint8_t Simulation::target_level(Vec3d cell_center) const {
+std::uint8_t Simulation::target_level(Vec3d cell_center, double boundary_margin_deg) const {
     if (!focus_) return config_.base_level;
     const double angle=std::acos(std::clamp(dot(normalized(*focus_),normalized(cell_center)),-1.0,1.0));
     const double deg=angle*180.0/kPi;
-    if (deg<12.0) return config_.max_level;
-    if (deg<28.0 && config_.max_level>config_.base_level) return static_cast<std::uint8_t>(config_.max_level-1U);
-    if (deg<55.0 && config_.max_level>config_.base_level+1U) return static_cast<std::uint8_t>(config_.max_level-2U);
+    if (deg<12.0+boundary_margin_deg) return config_.max_level;
+    if (deg<28.0+boundary_margin_deg && config_.max_level>config_.base_level) return static_cast<std::uint8_t>(config_.max_level-1U);
+    if (deg<55.0+boundary_margin_deg && config_.max_level>config_.base_level+1U) return static_cast<std::uint8_t>(config_.max_level-2U);
     return config_.base_level;
 }
 
@@ -166,7 +166,7 @@ void Simulation::update_lod() {
         changed=false;
         std::vector<CellId> refine_list;
         for (CellId c:world_->active_cells())
-            if (c.level()<target_level(world_->topology().center_unit(c))) refine_list.push_back(c);
+            if (c.level()<target_level(world_->topology().center_unit(c),0.0)) refine_list.push_back(c);
         if (!refine_list.empty()) {
             for (CellId c:refine_list) if (world_->active_cells().contains(c) && c.level()<config_.max_level) world_->refine(c);
             changed=true;
@@ -181,7 +181,11 @@ void Simulation::update_lod() {
             bool all_want_parent_or_coarser=true;
             for (CellId child:children) {
                 if (!world_->active_cells().contains(child)) { all_active=false; break; }
-                if (target_level(world_->topology().center_unit(child))>p.level()) {
+                // Refinement enters at the nominal boundary; coarsening leaves only after
+                // moving four degrees beyond it. Authoritative state transitions are much
+                // more expensive than render LOD changes, so this hysteresis prevents
+                // camera/focus jitter from repeatedly splitting and merging state stores.
+                if (target_level(world_->topology().center_unit(child),4.0)>p.level()) {
                     all_want_parent_or_coarser=false;
                     break;
                 }

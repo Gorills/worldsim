@@ -59,3 +59,18 @@ Actually verified there:
 - repeat GDExtension build used `sccache` with 71/71 cache hits (100%).
 
 The standalone headless editor `--import` pass is deliberately best-effort. `godot-cpp` upstream CI documents the same editor-import abort behavior and ignores that process result before running its actual tests. WorldSim therefore uses the runtime `ci_smoke.gd` execution as the mandatory integration gate rather than treating editor-import teardown as a product failure.
+
+## Architecture/Godot audit validation — 2026-09-07
+
+Pull-request CI run `34125144404` on audit commit
+`cf207e63226a7ed5100b77d5021b63b33609b33a` completed successfully on Ubuntu 22.04.
+
+Actually verified in that run:
+
+- Core/GCC CMake configure, build, and CTest completed successfully, including the new simulation-LOD hysteresis regression.
+- The Godot 4.7 GDExtension configured and linked successfully against the pinned API/dependency setup.
+- Godot reported `4.7.2.stable.official.ed1daf0bf`.
+- `ci_smoke.gd` advanced the simulation to tick 24, returned 1536 active cells and 13 fields, and verified dense generic-field/render-packet alignment.
+- The actual `res://main.tscn` then launched headlessly with `--language ru` and exited successfully after two iterations, exercising the viewer GDScript, project input map, Theme resource, and registered gettext resources at runtime.
+
+The standalone editor `--import` process still aborts during teardown in this environment and remains intentionally best-effort, as documented above; the mandatory runtime smoke and actual scene launch both pass.
