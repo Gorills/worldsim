@@ -10,6 +10,7 @@ namespace worldsim {
 struct TectonicPlate {
     std::uint32_t id{};
     Vec3d seed_direction{};
+    // Relative normalized rotation vector for boundary classification; not SI angular velocity.
     Vec3d angular_velocity{};
     bool continental{};
 };
