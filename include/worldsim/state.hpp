@@ -173,6 +173,7 @@ public:
     [[nodiscard]] const CubeSphereTopology& topology() const { return topology_; }
     [[nodiscard]] CubeSphereTopology& topology() { return topology_; }
     [[nodiscard]] const std::set<CellId>& active_cells() const { return active_cells_; }
+    [[nodiscard]] std::uint64_t cover_revision() const { return cover_revision_; }
     [[nodiscard]] StateStoreRegistry& stores() { return stores_; }
     [[nodiscard]] const StateStoreRegistry& stores() const { return stores_; }
     void initialize_cover(std::uint8_t level);
@@ -187,6 +188,7 @@ private:
     Tick tick_{};
     CubeSphereTopology topology_;
     std::set<CellId> active_cells_;
+    std::uint64_t cover_revision_{};
     StateStoreRegistry stores_;
     std::vector<SimulationEvent> events_;
 };
