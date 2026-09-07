@@ -93,9 +93,32 @@ make map
 
 The map deliberately exposes terrain-source defects rather than hiding them. The first global-map pass revealed a radial discontinuity at the antipode of the local azimuthal walking projection. The terrain source is now sphere-native, so that projection is used only to map local walker coordinates to a unit direction and cannot introduce a global terrain singularity. The map remains the visual regression tool for later tectonics and erosion work.
 
+## Tectonic debug model
+
+The kernel now contains a deterministic query-only `TectonicModel` that is independent from `TerrainGenerator`. It partitions the unit sphere into 16 seeded spherical Voronoi plates. A plate stores a seed direction, a continental/oceanic crust flag, and an angular-velocity vector. For any unit direction the model selects the two nearest plate seeds, treats their spherical bisector as the local plate boundary, and derives:
+
+- owning and neighboring plate ids;
+- angular distance to that boundary;
+- relative convergence/divergence across the boundary;
+- relative shear along the boundary;
+- a signed boundary forcing that smoothly decays to zero eight degrees away from the boundary.
+
+Positive forcing represents convergence and negative forcing represents divergence. Angular speeds, convergence, shear, and forcing are normalized relative values, not calibrated SI velocities or geological rates. The values are diagnostic kinematics only in this slice: they do **not** modify `geography.elevation_m` or the local terrain mesh yet. This separation is deliberate so plate ownership and boundary motion can be validated before they become an input to macro relief.
+
+The global map samples the tectonic model through the Godot adapter and exposes three presentation-only layers: `Elevation`, `Plates`, and `Tectonic forcing`. Plate colors and red/blue forcing colors live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
+
+- https://docs.godotengine.org/en/4.7/classes/class_button.html
+- https://docs.godotengine.org/en/4.7/classes/class_packedint32array.html
+
+The architectural comparison remains Demiurge's explicit separation between tectonic query state, tectonic debug visualization, and later terrain/erosion consumers. WorldSim uses a much smaller analytical model here rather than copying its baked implementation:
+
+- https://github.com/owenyuwono/demiurge
+
+A spatial bake is intentionally deferred. Ownership and boundary kinematics are cheap point queries; erosion and drainage will require neighborhood-dependent iterative state and are the first stage that justifies a persistent cube-sphere bake/cache lifecycle.
+
 ## Known boundaries
 
-- The procedural function is visual/gameplay terrain, not a geological or tectonic simulation.
+- Terrain elevation is still procedural and is not yet driven by the tectonic model.
 - "Ocean" currently means generated ocean floor/land mask. No water surface exists in this slice.
 - There is no distant terrain LOD or planetary horizon in the local walker; the global map is a separate 2D inspection tool.
 - Terrain is currently immutable except through changing the world seed/source implementation.

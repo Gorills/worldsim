@@ -22,7 +22,7 @@ msgid "HUD_CONTROLS"
 msgstr "WASD: движение    Мышь: обзор    Пробел: прыжок    Esc: освободить/захватить мышь"
 
 msgid "MAP_TITLE"
-msgstr "Глобальная карта высот"
+msgstr "Глобальная карта мира"
 
 msgid "MAP_SEED"
 msgstr "Сид"
@@ -35,3 +35,15 @@ msgstr "Генерация мира с сидом %d..."
 
 msgid "MAP_STATUS_READY"
 msgstr "сид: %d    карта: %d x %d    высота: %.0f .. %.0f м"
+
+msgid "MAP_LAYER"
+msgstr "Слой"
+
+msgid "MAP_LAYER_ELEVATION"
+msgstr "Высота"
+
+msgid "MAP_LAYER_PLATES"
+msgstr "Плиты"
+
+msgid "MAP_LAYER_FORCING"
+msgstr "Тектоническое воздействие"

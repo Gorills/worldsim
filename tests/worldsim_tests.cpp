@@ -2,6 +2,7 @@
 #include "worldsim/modules.hpp"
 #include "worldsim/simulation.hpp"
 #include "worldsim/terrain.hpp"
+#include "worldsim/tectonics.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -299,6 +300,82 @@ void test_c_api() {
     ws_destroy(h);
 }
 
+void test_tectonic_model_partition_and_determinism() {
+    const TectonicModel a(42);
+    const TectonicModel b(42);
+    const TectonicModel other_seed(43);
+
+    std::size_t continental_count=0;
+    for (std::uint32_t i=0;i<TectonicModel::kPlateCount;++i) {
+        const auto& plate=a.plates()[i];
+        const auto at_seed=a.sample_direction(plate.seed_direction);
+        check(at_seed.plate_id==i,"plate seed is not owned by its plate");
+        continental_count+=plate.continental ? 1U : 0U;
+    }
+    check(continental_count>0 && continental_count<TectonicModel::kPlateCount,
+          "tectonic seed did not produce both continental and oceanic crust");
+
+    CubeSphereTopology topology;
+    bool differs_across_seed=false;
+    bool observed_positive_forcing=false;
+    bool observed_negative_forcing=false;
+    double nearest_boundary=kPi;
+
+    for (CellId cell:uniform_cover(5)) {
+        const Vec3d p=topology.center_unit(cell);
+        const TectonicSample sample=a.sample_direction(p);
+        const TectonicSample repeat=b.sample_direction(p);
+        const TectonicSample changed=other_seed.sample_direction(p);
+
+        check(sample.plate_id<TectonicModel::kPlateCount,"tectonic plate id out of range");
+        check(sample.neighbor_plate_id<TectonicModel::kPlateCount,
+              "tectonic neighbor plate id out of range");
+        check(sample.neighbor_plate_id!=sample.plate_id,
+              "tectonic nearest boundary references the owning plate");
+        check(std::isfinite(sample.boundary_distance_rad) &&
+              sample.boundary_distance_rad>=0.0 &&
+              sample.boundary_distance_rad<=0.5*kPi,
+              "invalid tectonic boundary distance");
+        check(std::isfinite(sample.convergence) &&
+              sample.convergence>=-1.0 && sample.convergence<=1.0,
+              "invalid tectonic convergence");
+        check(std::isfinite(sample.shear) &&
+              sample.shear>=-1.0 && sample.shear<=1.0,
+              "invalid tectonic shear");
+        check(std::isfinite(sample.boundary_forcing) &&
+              sample.boundary_forcing>=-1.0 && sample.boundary_forcing<=1.0,
+              "invalid tectonic boundary forcing");
+        check(std::abs(sample.boundary_forcing)<=std::abs(sample.convergence)+1.0e-15,
+              "tectonic forcing exceeds raw convergence");
+        if (std::abs(sample.boundary_forcing)>1.0e-12)
+            check(sample.boundary_forcing*sample.convergence>0.0,
+                  "tectonic forcing changed convergence sign");
+
+        check(sample.plate_id==repeat.plate_id &&
+              sample.neighbor_plate_id==repeat.neighbor_plate_id,
+              "tectonic ownership is not deterministic");
+        near(sample.boundary_distance_rad,repeat.boundary_distance_rad,1e-15,
+             "tectonic boundary distance is not deterministic");
+        near(sample.convergence,repeat.convergence,1e-15,
+             "tectonic convergence is not deterministic");
+        near(sample.shear,repeat.shear,1e-15,
+             "tectonic shear is not deterministic");
+        near(sample.boundary_forcing,repeat.boundary_forcing,1e-15,
+             "tectonic forcing is not deterministic");
+
+        nearest_boundary=std::min(nearest_boundary,sample.boundary_distance_rad);
+        observed_positive_forcing|=sample.boundary_forcing>1.0e-4;
+        observed_negative_forcing|=sample.boundary_forcing<-1.0e-4;
+        differs_across_seed|=sample.plate_id!=changed.plate_id ||
+            std::abs(sample.boundary_forcing-changed.boundary_forcing)>1.0e-6;
+    }
+
+    check(nearest_boundary<0.02,"tectonic cover test did not resolve any plate boundary");
+    check(observed_positive_forcing,"tectonic model produced no convergent forcing");
+    check(observed_negative_forcing,"tectonic model produced no divergent forcing");
+    check(differs_across_seed,"tectonic model does not vary with world seed");
+}
+
 void test_procedural_terrain_scale_and_determinism() {
     const TerrainGenerator terrain(42);
     const TerrainSample center=terrain.sample_projected(0.0,0.0);
@@ -425,6 +502,7 @@ int main() {
         test_command_routing_across_lod();
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
+        test_tectonic_model_partition_and_determinism();
         test_procedural_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geography_refinement_samples_new_detail();

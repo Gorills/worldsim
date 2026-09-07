@@ -1,5 +1,6 @@
 #include "world_simulation_node.hpp"
 #include "worldsim/terrain.hpp"
+#include "worldsim/tectonics.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
@@ -45,6 +46,8 @@ void WorldSimulationNode::_bind_methods() {
                          &WorldSimulationNode::sample_terrain_patch);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_equirectangular","width","height"),
                          &WorldSimulationNode::sample_terrain_equirectangular);
+    ClassDB::bind_method(godot::D_METHOD("sample_tectonics_equirectangular","width","height"),
+                         &WorldSimulationNode::sample_tectonics_equirectangular);
     ClassDB::bind_method(godot::D_METHOD("get_render_packet"),&WorldSimulationNode::get_render_packet);
     ClassDB::bind_method(godot::D_METHOD("get_field_descriptors"),&WorldSimulationNode::get_field_descriptors);
     ClassDB::bind_method(godot::D_METHOD("get_field_values","field_key"),&WorldSimulationNode::get_field_values);
@@ -224,6 +227,52 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_equirectangular(std::int6
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in sample_terrain_equirectangular"); }
     return out;
+}
+
+Dictionary WorldSimulationNode::sample_tectonics_equirectangular(std::int64_t width,
+                                                                  std::int64_t height) const {
+    try {
+        ensure_sim();
+        constexpr std::int64_t max_samples=2'097'152;
+        if (width<2 || height<2 || width>max_samples/height)
+            throw std::invalid_argument("global tectonic map must be at least 2x2 and contain at most 2097152 samples");
+
+        const int w=static_cast<int>(width);
+        const int h=static_cast<int>(height);
+        PackedInt32Array plate_ids;
+        PackedFloat32Array forcing;
+        plate_ids.resize(w*h);
+        forcing.resize(w*h);
+        const worldsim::TectonicModel tectonics(sim_->world().seed());
+
+        for (int y=0;y<h;++y) {
+            const double v=(static_cast<double>(y)+0.5)/static_cast<double>(h);
+            const double latitude=(0.5-v)*worldsim::kPi;
+            const double sin_lat=std::sin(latitude);
+            const double cos_lat=std::cos(latitude);
+            for (int x=0;x<w;++x) {
+                const double u=(static_cast<double>(x)+0.5)/static_cast<double>(w);
+                const double longitude=(2.0*u-1.0)*worldsim::kPi;
+                const worldsim::Vec3d direction{
+                    cos_lat*std::cos(longitude),
+                    cos_lat*std::sin(longitude),
+                    sin_lat
+                };
+                const worldsim::TectonicSample sample=tectonics.sample_direction(direction);
+                const int index=y*w+x;
+                plate_ids.set(index,static_cast<std::int32_t>(sample.plate_id));
+                forcing.set(index,static_cast<float>(sample.boundary_forcing));
+            }
+        }
+
+        Dictionary out;
+        out["plate_count"]=static_cast<std::int64_t>(worldsim::TectonicModel::kPlateCount);
+        out["plate_id"]=plate_ids;
+        out["forcing"]=forcing;
+        last_error_.clear();
+        return out;
+    } catch (const std::exception& e) { report_error(e.what()); return {}; }
+    catch (...) { report_error("unknown C++ exception in sample_tectonics_equirectangular"); return {}; }
 }
 
 Dictionary WorldSimulationNode::get_render_packet() const {

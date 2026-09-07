@@ -83,11 +83,44 @@ func _initialize() -> void:
         quit(14)
         return
 
+    var tectonics: Dictionary = sim.sample_tectonics_equirectangular(64, 32)
+    if tectonics.is_empty() or !tectonics.has("plate_id") or !tectonics.has("forcing"):
+        push_error("Global tectonic debug map is missing")
+        quit(15)
+        return
+    if int(tectonics.get("plate_count", 0)) != 16:
+        push_error("Unexpected tectonic plate count: %d" % int(tectonics.get("plate_count", 0)))
+        quit(16)
+        return
+    var plate_ids: PackedInt32Array = tectonics["plate_id"]
+    var forcing: PackedFloat32Array = tectonics["forcing"]
+    if plate_ids.size() != 64 * 32 or forcing.size() != 64 * 32:
+        push_error("Global tectonic debug layer size mismatch")
+        quit(17)
+        return
+    var seen_plates := {}
+    var has_convergence := false
+    var has_divergence := false
+    for i in range(plate_ids.size()):
+        var plate_id := int(plate_ids[i])
+        var force := float(forcing[i])
+        if plate_id < 0 or plate_id >= 16 or force != force or absf(force) > 1.0:
+            push_error("Invalid tectonic debug sample")
+            quit(18)
+            return
+        seen_plates[plate_id] = true
+        has_convergence = has_convergence or force > 0.0001
+        has_divergence = has_divergence or force < -0.0001
+    if seen_plates.size() < 8 or !has_convergence or !has_divergence:
+        push_error("Tectonic debug map lacks expected partition/forcing variation")
+        quit(19)
+        return
+
     sim.set_focus_projected(0.0, 0.0)
     sim.step_hours(1)
     if not sim.get_last_error().is_empty():
         push_error("Terrain simulation step failed: %s" % sim.get_last_error())
-        quit(15)
+        quit(20)
         return
 
     print("WORLDSIM_GODOT_SMOKE_OK tick=%d cells=%d fields=%d" % [
