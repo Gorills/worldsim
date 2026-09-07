@@ -37,6 +37,33 @@ func _initialize() -> void:
         quit(6)
         return
 
+    sim.initialize_terrain_world(42)
+    if not sim.get_last_error().is_empty():
+        push_error("Terrain world init failed: %s" % sim.get_last_error())
+        quit(7)
+        return
+
+    var patch := sim.sample_terrain_patch(0.0, 0.0, 8.0, 17)
+    if patch.size() != 17 * 17:
+        push_error("Terrain patch size mismatch: %d" % patch.size())
+        quit(8)
+        return
+    if sim.sample_terrain_height(0.0, 0.0) <= 0.0:
+        push_error("Terrain continent center is not above sea level")
+        quit(9)
+        return
+    if sim.sample_terrain_height(8000000.0, 4000000.0) >= 0.0:
+        push_error("Remote terrain sample is not ocean floor")
+        quit(10)
+        return
+
+    sim.set_focus_projected(0.0, 0.0)
+    sim.step_hours(1)
+    if not sim.get_last_error().is_empty():
+        push_error("Terrain simulation step failed: %s" % sim.get_last_error())
+        quit(11)
+        return
+
     print("WORLDSIM_GODOT_SMOKE_OK tick=%d cells=%d fields=%d" % [
         sim.get_tick(), packet["positions"].size(), descriptors.size()
     ])
