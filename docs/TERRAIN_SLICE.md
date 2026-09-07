@@ -109,6 +109,10 @@ Positive forcing represents convergence and negative forcing represents divergen
 
 The same model also exposes a continuous `continental_affinity` field in `[0,1]`. It is now a low-frequency deterministic 3D value-noise FBM evaluated directly at the normalized unit direction and shaped with a smooth threshold. The field is independent of plate ownership, so one plate may contain both oceanic and continental crust; sampling coherent 3D noise on the sphere keeps it continuous across plate boundaries and the longitude seam without encoding continent silhouettes as unions of radial spherical caps.
 
+Because the lowest-frequency octave spans only a few lattice cells over the whole sphere, its raw spherical mean can drift noticeably between seeds. The model therefore estimates that seed-wide DC component once in the constructor from 128 deterministic equal-area Fibonacci-sphere directions and subtracts it before the affinity threshold. This is a constant bias per world seed: it does not alter local continuity or feature geometry, but prevents otherwise valid seeds from collapsing toward almost entirely oceanic or continental crust.
+
+A core regression samples seeds 0 through 63 on a separate 512-point equal-area sphere. Each seed must retain non-degenerate continental affinity, a transitional crust belt, both uplift and divergence coverage, positive macro terrain plus deep ocean, and plate-boundary continuity. These are broad distribution invariants rather than golden maps.
+
 This follows established sphere-noise practice rather than adding a second flat crust map: libnoise's spherical model samples a 3D noise module on a unit sphere specifically for seamless spherical textures and planetary terrain. WorldSim keeps its own deterministic value-noise implementation and only uses the same sphere-native sampling principle:
 
 - https://libnoise.sourceforge.net/docs/classnoise_1_1model_1_1Sphere.html
