@@ -709,7 +709,7 @@ void test_authoritative_terrain_tracks_tectonic_macro_relief() {
           "procedural terrain detail overwhelms tectonic macro relief");
 }
 
-void test_procedural_terrain_scale_and_determinism() {
+void test_authoritative_terrain_scale_and_determinism() {
     const TerrainGenerator terrain(42);
     const TerrainSample center=terrain.sample_projected(0.0,0.0);
     const TerrainSample repeat=terrain.sample_projected(0.0,0.0);
@@ -717,19 +717,23 @@ void test_procedural_terrain_scale_and_determinism() {
 
     near(center.elevation_m,repeat.elevation_m,1e-15,"terrain generator is not deterministic");
     near(center.land_fraction,repeat.land_fraction,1e-15,"terrain land mask is not deterministic");
-    check(center.land_fraction>0.95 && center.elevation_m>0.0,"continent center is not land");
-    check(remote_ocean.land_fraction<0.05 && remote_ocean.elevation_m<0.0,"remote terrain is not ocean floor");
+    check(center.land_fraction>0.95 && center.elevation_m>200.0,
+          "seed-42 local walker origin is not stable dry land");
+    check(remote_ocean.land_fraction<0.05 && remote_ocean.elevation_m<-3'000.0,
+          "seed-42 remote terrain is not deep ocean");
 
     CubeSphereTopology topology;
     double land_area_m2=0.0;
+    double total_area_m2=0.0;
     for (CellId cell:uniform_cover(5)) {
         const TerrainSample sample=terrain.sample_direction(topology.center_unit(cell));
-        land_area_m2+=topology.area_m2(cell)*sample.land_fraction;
+        const double area=topology.area_m2(cell);
+        land_area_m2+=area*sample.land_fraction;
+        total_area_m2+=area;
     }
-    constexpr double kMinEurasiaScaleM2=40.0e12;
-    constexpr double kMaxEurasiaScaleM2=70.0e12;
-    check(land_area_m2>=kMinEurasiaScaleM2 && land_area_m2<=kMaxEurasiaScaleM2,
-          "procedural continent is not Eurasia-scale");
+    const double land_fraction=land_area_m2/total_area_m2;
+    check(land_fraction>0.15 && land_fraction<0.40,
+          "authoritative tectonic terrain has degenerate global land coverage");
 }
 
 void test_sphere_native_terrain_continuity() {
@@ -838,7 +842,7 @@ int main() {
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();
         test_authoritative_terrain_tracks_tectonic_macro_relief();
-        test_procedural_terrain_scale_and_determinism();
+        test_authoritative_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geography_refinement_samples_new_detail();
         test_c_api();
