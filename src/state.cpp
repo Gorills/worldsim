@@ -190,7 +190,6 @@ void WorldState::initialize_cover(std::uint8_t level) {
     if (!active_cells_.empty()) throw std::runtime_error("world cover already initialized");
     active_cells_=uniform_cover(level);
     for (CellId c: active_cells_) stores_.add_cell(c);
-    ++cover_revision_;
 }
 
 void WorldState::refine(CellId cell) {
@@ -199,7 +198,6 @@ void WorldState::refine(CellId cell) {
     stores_.refine(cell,children,topology_);
     active_cells_.erase(cell);
     active_cells_.insert(children.begin(),children.end());
-    ++cover_revision_;
 }
 
 bool WorldState::coarsen(CellId parent) {
@@ -208,7 +206,6 @@ bool WorldState::coarsen(CellId parent) {
     stores_.coarsen(children,parent,topology_);
     for (CellId c: children) active_cells_.erase(c);
     active_cells_.insert(parent);
-    ++cover_revision_;
     return true;
 }
 
