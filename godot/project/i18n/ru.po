@@ -47,3 +47,9 @@ msgstr "Плиты"
 
 msgid "MAP_LAYER_FORCING"
 msgstr "Тектоническое воздействие"
+
+msgid "MAP_LAYER_CRUST"
+msgstr "Кора"
+
+msgid "MAP_LAYER_MACRO_RELIEF"
+msgstr "Макрорельеф"
