@@ -20,25 +20,30 @@ double quintic(double t) {
     return t*t*t*(t*(t*6.0-15.0)+10.0);
 }
 
-Vec3d continent_center() {
-    const double cos_lat=std::cos(kCenterLatitudeRad);
-    return {
-        cos_lat*std::cos(kCenterLongitudeRad),
-        cos_lat*std::sin(kCenterLongitudeRad),
-        std::sin(kCenterLatitudeRad)
-    };
+const Vec3d& continent_center() {
+    static const Vec3d value=[] {
+        const double cos_lat=std::cos(kCenterLatitudeRad);
+        return Vec3d{
+            cos_lat*std::cos(kCenterLongitudeRad),
+            cos_lat*std::sin(kCenterLongitudeRad),
+            std::sin(kCenterLatitudeRad)
+        };
+    }();
+    return value;
 }
 
-Vec3d continent_east() {
-    return {
+const Vec3d& continent_east() {
+    static const Vec3d value{
         -std::sin(kCenterLongitudeRad),
         std::cos(kCenterLongitudeRad),
         0.0
     };
+    return value;
 }
 
-Vec3d continent_north() {
-    return normalized(cross(continent_center(),continent_east()));
+const Vec3d& continent_north() {
+    static const Vec3d value=normalized(cross(continent_center(),continent_east()));
+    return value;
 }
 
 double lattice3(std::uint64_t seed,
@@ -89,12 +94,11 @@ double value_noise3(std::uint64_t seed,
     return y0v+(y1v-y0v)*sz;
 }
 
-double fbm_direction(std::uint64_t seed,
-                     std::uint64_t stream,
-                     Vec3d direction,
-                     double scale_m,
-                     int octaves) {
-    const Vec3d p=normalized(direction);
+double fbm_unit(std::uint64_t seed,
+                 std::uint64_t stream,
+                 Vec3d p,
+                 double scale_m,
+                 int octaves) {
     double amplitude=1.0;
     double frequency=kEarthRadiusM/scale_m;
     double total=0.0;
@@ -119,8 +123,7 @@ double fbm_direction(std::uint64_t seed,
 // terms reproduce the nominal east/north semi-axes. The normal/back term keeps
 // the shape closed and continuous on the far side of the planet, including the
 // antipode where azimuthal map coordinates are singular.
-double continent_sdf(std::uint64_t seed, Vec3d direction) {
-    const Vec3d p=normalized(direction);
+double continent_sdf(std::uint64_t seed, Vec3d p) {
     const Vec3d center=continent_center();
     const Vec3d east=continent_east();
     const Vec3d north=continent_north();
@@ -133,7 +136,7 @@ double continent_sdf(std::uint64_t seed, Vec3d direction) {
         north_scaled*north_scaled+
         back*back
     );
-    const double coast_noise=0.10*fbm_direction(seed,100,p,1'600'000.0,4);
+    const double coast_noise=0.10*fbm_unit(seed,100,p,1'600'000.0,4);
     return 1.0-radial+coast_noise;
 }
 
@@ -217,17 +220,17 @@ TerrainSample TerrainGenerator::sample_direction(Vec3d direction) const {
 
     if (sdf>=0.0) {
         const double interior=std::clamp(sdf,0.0,1.0);
-        const double rolling=220.0*fbm_direction(seed_,200,p,180'000.0,5);
-        const double local_detail=18.0*fbm_direction(seed_,600,p,900.0,4);
-        const double ridge_source=fbm_direction(seed_,300,p,520'000.0,5);
+        const double rolling=220.0*fbm_unit(seed_,200,p,180'000.0,5);
+        const double local_detail=18.0*fbm_unit(seed_,600,p,900.0,4);
+        const double ridge_source=fbm_unit(seed_,300,p,520'000.0,5);
         const double ridge=std::clamp((1.0-std::abs(ridge_source)-0.35)/0.65,0.0,1.0);
-        const double uplift=0.5+0.5*fbm_direction(seed_,400,p,900'000.0,3);
+        const double uplift=0.5+0.5*fbm_unit(seed_,400,p,900'000.0,3);
         const double mountain_zone=smoothstep(0.08,0.72,sdf)*smoothstep(0.0,1.0,uplift);
         const double mountains=3'800.0*ridge*ridge*ridge*mountain_zone;
         elevation=120.0+950.0*std::pow(interior,0.75)+rolling+local_detail+mountains;
     } else {
         const double deep=smoothstep(0.0,0.8,-sdf);
-        const double ocean_noise=350.0*fbm_direction(seed_,500,p,900'000.0,4);
+        const double ocean_noise=350.0*fbm_unit(seed_,500,p,900'000.0,4);
         elevation=-180.0-4'700.0*deep+ocean_noise*(0.2+0.8*deep);
     }
 
