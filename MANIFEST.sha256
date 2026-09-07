@@ -14,7 +14,7 @@ f88e40f79c48f9cac85f9c09947c107d49c46b75262cee1af52a3cae066649a6  ./docs/VALIDAT
 ae27a386bf33e571a9c7184212ad6cc837478b71d296db396acbc5240e6d85e1  ./godot/build_profile.json
 c458d61a5d223b6296968397df11912b939e26fbe284c8ed7d7abaf94ce9a619  ./godot/CMakeLists.txt
 ff2eb6fcaae1c102afedaa51ddb42c8132b21ada8c9e7271936f37f0555700b1  ./godot/project/bin/worldsim.gdextension
-cffd3907359503e1427e4c22ebf1f690dcf099668a670b669e6b35c045538125  ./godot/project/ci_smoke.gd
+de523e970bf6a3021135c97f5735eb15480622efc5ee5c136b6cb1f2599d18be  ./godot/project/ci_smoke.gd
 d234fce9fb7c0eb45ad0c7bf0a2346c9574ef705bdddeb705029b666f531ad61  ./godot/project/i18n/en.po
 3c79cf897b00e0510f19140dcadfff037ac87569b5aa63dd2cb1a9da29d80bbd  ./godot/project/i18n/ru.po
 4639270f1e58f1a17e82cb6ff78ce56258109b41372e704efaa3e2472f38005d  ./godot/project/main.tscn
@@ -22,7 +22,7 @@ fb663f34cecddf2e7648a6ddff3379d384ef35b34802c5162a3f01a9c1be000d  ./godot/projec
 7eafbd709e3f4b6e1479285975b4bb7b2680d08417effa1d42135e5fa1fb4f56  ./godot/project/scripts/world_viewer.gd
 f938cafa7025ccce57bab9ef30fae997536f2beed3ec78519630a3864c7dacbb  ./godot/project/ui/worldsim_theme.tres
 34a92d205d001117b3475bd91ec205cb53b63391cbf4558ba0afce85a697e991  ./godot/src/register_types.cpp
-2e92c0331624c4d73882f406930a6caf6e7803f4dcf4ecf7a51ad684e37f0951  ./godot/src/world_simulation_node.cpp
+56bc6e052b40a485441bdddd94874a8c5c792c82054e90199470faee9a25eece  ./godot/src/world_simulation_node.cpp
 97c4ee908453e5b096f4e9193bae26681bc6380027104b3bf9eef98c0e3d4208  ./godot/src/world_simulation_node.hpp
 d8b5dda9a2bbd7d02990bead68a0397bdad3b70f07cd4a1d3c463256ad616275  ./include/worldsim/c_api.h
 e370a757df3c72f9a459a01c260f677ea2c56184a709abe49eca4bae0e0b63a6  ./include/worldsim/fields.hpp
@@ -40,11 +40,11 @@ e4177de43a7bc5de7adff4eaae549cc01ff8579e87ddda3423b1d81912f1e7e7  ./scripts/buil
 67cacf982cf38c1574769be4e10011c4c2f7a37a64f573cfdb79aa413a43d194  ./src/c_api.cpp
 d5e60cf13545e2c74627d158c116184be4e46e81df636f973507a8388460c020  ./src/fields.cpp
 dc21e47d5df17ab1b7b9ae4d8e22d2ebf2dd2bf2bd13b6b1f59cd441d87261c4  ./src/modules.cpp
-85e5e481348fd1b69f79dea20287c62c20117af85a5265e15b4b8522959cd790  ./src/simulation.cpp
+b082414ff42ad841c8851880dd198b0992a7abc64b6459745166ba23de7991c2  ./src/simulation.cpp
 b6f619be4bb5624d73b1215b3e4b956e1a8a6d1acdb18e070bb1dd7e54fd24ad  ./src/spatial.cpp
 69e94e53d282a0f1f1ac42d1ade43ef8dec729e5968dddccdf62e471fcc68bcb  ./src/state.cpp
 25fdf8b0a0cb4e748b28a38517551dc74152d8c6b8ece485c8c47fbb4d3fd341  ./src/terrain.cpp
 5d3a5fcbc6f36c42cf61efffd1dc25c40bd38c8f653fa031d6fd5966ac608fb7  ./tests/sanitizer_smoke.cpp
-6d0e37485d41f29692da9b4fa9648635384f9b96715c98f21d77be192fb9565c  ./tests/worldsim_tests.cpp
+518fa3a3cf482697e52c9fff9558ef212297cc35b476b690cafb64650c9847c3  ./tests/worldsim_tests.cpp
 14cea906b991717fb38e14b05d00e2e50c41be8c51cc261381f7d78b9397c414  ./THIRD_PARTY.md
 e9dd8507f4bf0c6f42458e41aea833ad0bd3f6127272335eee9bf4d58541ed67  ./VERSION
