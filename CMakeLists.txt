@@ -12,6 +12,7 @@ option(WORLDSIM_FETCH_GODOT_CPP "Fetch godot-cpp when building Godot adapter" ON
 
 add_library(worldsim
     src/spatial.cpp
+    src/terrain.cpp
     src/fields.cpp
     src/state.cpp
     src/simulation.cpp
