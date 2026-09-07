@@ -14,6 +14,7 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
+- rejection of pre-tectonic snapshot version 2 after the authoritative terrain epoch change;
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
