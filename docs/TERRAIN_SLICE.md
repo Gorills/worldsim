@@ -31,6 +31,8 @@ This follows the same relevant large-planet practice as Demiurge: terrain is a d
 
 Static geography is re-sampled after actual simulation-cover refinement/coarsening through the module lifecycle. This is required because generic intensive-field refinement copies parent values and therefore cannot create higher-frequency terrain detail by itself.
 
+Because this change replaces the authoritative geography function rather than only a debug view, snapshot compatibility advances to version 3. Version-2 snapshots are rejected: they can contain old fixed-continent geography with the same field schema, which would otherwise be mixed with tectonic terrain when a later LOD cover change triggers geography resampling.
+
 ## Godot large-world strategy
 
 The stock Godot project remains a normal single-precision build. Logical projected coordinates are kept as GDScript scalar values while scene-tree coordinates are periodically shifted back near the origin. Terrain chunk transforms are rebuilt relative to that logical origin.
