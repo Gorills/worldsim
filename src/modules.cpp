@@ -1,4 +1,5 @@
 #include "worldsim/modules.hpp"
+#include "worldsim/terrain.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,18 @@ FieldId require_field(const FieldRegistry& r, std::string_view key) {
     const auto id=r.find(key);
     if (!id) throw std::runtime_error("required field missing: "+std::string(key));
     return *id;
+}
+
+void populate_geography(WorldState& world, const FieldRegistry& r) {
+    auto& fs=world.stores().get<FieldStore>();
+    const auto elev=require_field(r,"geography.elevation_m");
+    const auto land=require_field(r,"geography.land_fraction");
+    const TerrainGenerator terrain(world.seed());
+    for (CellId cell:world.active_cells()) {
+        const TerrainSample sample=terrain.sample_direction(world.topology().center_unit(cell));
+        fs.set(cell,elev,sample.elevation_m);
+        fs.set(cell,land,sample.land_fraction);
+    }
 }
 
 class MagicSystem final : public ISimSystem {
@@ -227,19 +240,11 @@ void GeographyModule::register_fields(FieldRegistry& r) {
 }
 
 void GeographyModule::initialize(WorldState& world, const FieldRegistry& r) {
-    auto& fs=world.stores().get<FieldStore>();
-    const auto elev=require_field(r,"geography.elevation_m"), land=require_field(r,"geography.land_fraction");
-    const double p0=deterministic_unit(world.seed(),fnv1a64("geo.phase0"),0,0)*2.0*kPi;
-    const double p1=deterministic_unit(world.seed(),fnv1a64("geo.phase1"),0,0)*2.0*kPi;
-    const double p2=deterministic_unit(world.seed(),fnv1a64("geo.phase2"),0,0)*2.0*kPi;
-    for (CellId c:world.active_cells()) {
-        const Vec3d p=world.topology().center_unit(c);
-        const double continental=0.75*std::sin(2.4*p.x+1.7*p.y+p0)+0.55*std::sin(3.3*p.y-2.1*p.z+p1)+0.35*std::cos(5.2*p.z+1.3*p.x+p2);
-        const double mountain=std::pow(std::max(0.0,std::sin(7.0*p.x-5.0*p.y+2.0*p.z+p1)),3.0);
-        const double e=1900.0*(continental-0.18)+2400.0*mountain;
-        const double lf=std::clamp(0.5+e/900.0,0.0,1.0);
-        fs.set(c,elev,e); fs.set(c,land,lf);
-    }
+    populate_geography(world,r);
+}
+
+void GeographyModule::on_spatial_cover_changed(WorldState& world, const FieldRegistry& r) {
+    populate_geography(world,r);
 }
 
 void MagicModule::register_fields(FieldRegistry& r) {

@@ -152,26 +152,31 @@ std::uint8_t Simulation::target_level(Vec3d cell_center, double boundary_margin_
     return config_.base_level;
 }
 
-void Simulation::update_lod() {
+bool Simulation::update_lod() {
+    bool cover_changed=false;
     if (!focus_) {
         for (int level=config_.max_level; level>config_.base_level; --level) {
             std::set<CellId> parents;
             for (CellId c:world_->active_cells()) if (c.level()==level) parents.insert(c.parent());
-            for (CellId p:parents) world_->coarsen(p);
+            for (CellId p:parents) cover_changed=world_->coarsen(p) || cover_changed;
         }
-        return;
+        return cover_changed;
     }
-    bool changed=true;
-    while (changed) {
-        changed=false;
+
+    bool refined=true;
+    while (refined) {
+        refined=false;
         std::vector<CellId> refine_list;
         for (CellId c:world_->active_cells())
             if (c.level()<target_level(world_->topology().center_unit(c),0.0)) refine_list.push_back(c);
-        if (!refine_list.empty()) {
-            for (CellId c:refine_list) if (world_->active_cells().contains(c) && c.level()<config_.max_level) world_->refine(c);
-            changed=true;
+        for (CellId c:refine_list) {
+            if (!world_->active_cells().contains(c) || c.level()>=config_.max_level) continue;
+            world_->refine(c);
+            refined=true;
+            cover_changed=true;
         }
     }
+
     for (int level=config_.max_level;level>config_.base_level;--level) {
         std::set<CellId> parents;
         for (CellId c:world_->active_cells()) if (c.level()==level) parents.insert(c.parent());
@@ -190,15 +195,18 @@ void Simulation::update_lod() {
                     break;
                 }
             }
-            if (all_active && all_want_parent_or_coarser) world_->coarsen(p);
+            if (all_active && all_want_parent_or_coarser)
+                cover_changed=world_->coarsen(p) || cover_changed;
         }
     }
+    return cover_changed;
 }
 
 void Simulation::step(Tick ticks) {
     if (!built_) throw std::runtime_error("simulation not built");
     for (Tick i=0;i<ticks;++i) {
-        update_lod();
+        if (update_lod())
+            for (auto& module:modules_) module->on_spatial_cover_changed(*world_,fields_);
         process_commands();
         SystemContext ctx{*world_,fields_,config_.tick_seconds/86400.0};
         scheduler_.run(world_->tick(),ctx);
@@ -398,6 +406,13 @@ std::unique_ptr<Simulation> make_default_simulation(std::uint64_t seed, Simulati
     sim->add_module(std::make_unique<ClimateModule>());
     sim->add_module(std::make_unique<MagicModule>());
     sim->add_module(std::make_unique<EcologyModule>());
+    sim->build();
+    return sim;
+}
+
+std::unique_ptr<Simulation> make_terrain_simulation(std::uint64_t seed, SimulationConfig config) {
+    auto sim=std::make_unique<Simulation>(seed,config);
+    sim->add_module(std::make_unique<GeographyModule>());
     sim->build();
     return sim;
 }

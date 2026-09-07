@@ -9,6 +9,7 @@ public:
     [[nodiscard]] std::string_view id() const override { return "geography"; }
     void register_fields(FieldRegistry&) override;
     void initialize(WorldState&, const FieldRegistry&) override;
+    void on_spatial_cover_changed(WorldState&, const FieldRegistry&) override;
 };
 
 class ClimateModule final : public ISimModule {

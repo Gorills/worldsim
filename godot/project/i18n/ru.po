@@ -13,10 +13,10 @@ msgid "HUD_STATUS_ERROR"
 msgstr "Ошибка WorldSim: %s"
 
 msgid "HUD_STATUS_RUNNING"
-msgstr "тик: %d    активных ячеек: %d    полей: %d    шаг: %d ч"
+msgstr "восток: %.1f км    север: %.1f км    чанков: %d    FPS: %d    тик: %d"
 
 msgid "HUD_STATUS_PAUSED"
 msgstr "ПАУЗА    тик: %d    активных ячеек: %d    полей: %d"
 
 msgid "HUD_CONTROLS"
-msgstr "ПКМ / WASD / правый стик: вращение    Колесо / Q,E / бамперы: масштаб    Пробел/Start: пауза    Z,X: скорость    R: сброс камеры"
+msgstr "WASD: движение    Мышь: обзор    Пробел: прыжок    Esc: освободить/захватить мышь"

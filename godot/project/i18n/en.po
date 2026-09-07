@@ -13,10 +13,10 @@ msgid "HUD_STATUS_ERROR"
 msgstr "WorldSim error: %s"
 
 msgid "HUD_STATUS_RUNNING"
-msgstr "tick: %d    active cells: %d    fields: %d    step: %d h"
+msgstr "east: %.1f km    north: %.1f km    chunks: %d    FPS: %d    tick: %d"
 
 msgid "HUD_STATUS_PAUSED"
 msgstr "PAUSED    tick: %d    active cells: %d    fields: %d"
 
 msgid "HUD_CONTROLS"
-msgstr "RMB drag / WASD / right stick: orbit    Wheel / Q,E / shoulders: zoom    Space/Start: pause    Z,X: speed    R: reset camera"
+msgstr "WASD: move    Mouse: look    Space: jump    Esc: release/capture mouse"

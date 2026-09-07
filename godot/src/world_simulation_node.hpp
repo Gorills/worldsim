@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_float64_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
@@ -22,10 +23,17 @@ public:
     ~WorldSimulationNode() override=default;
 
     void initialize(std::int64_t seed);
+    void initialize_terrain_world(std::int64_t seed);
     void step_hours(std::int64_t hours);
     void set_focus_direction(const godot::Vector3& direction);
     void clear_focus();
+    void set_focus_projected(double east_m, double north_m);
     [[nodiscard]] std::int64_t get_tick() const;
+    [[nodiscard]] double sample_terrain_height(double east_m, double north_m) const;
+    [[nodiscard]] godot::PackedFloat32Array sample_terrain_patch(double center_east_m,
+                                                                  double center_north_m,
+                                                                  double spacing_m,
+                                                                  std::int64_t resolution) const;
 
     // Active-cell arrays in every packet are aligned by index. Cell IDs are split into
     // unsigned 32-bit halves because GDScript integers are signed 64-bit values.

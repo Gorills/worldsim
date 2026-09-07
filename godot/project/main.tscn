@@ -1,28 +1,55 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource path="res://scripts/world_viewer.gd" type="Script" id="1"]
 [ext_resource path="res://ui/worldsim_theme.tres" type="Theme" id="2"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
+radius = 0.35
+height = 1.8
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_player"]
+radius = 0.35
+height = 1.8
+radial_segments = 12
+rings = 4
 
 [node name="WorldViewer" type="Node3D"]
 script = ExtResource("1")
 
 [node name="Simulation" type="WorldSimulationNode" parent="."]
 
-[node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 4.2)
+[node name="Terrain" type="Node3D" parent="."]
+
+[node name="Player" type="CharacterBody3D" parent="."]
+floor_snap_length = 0.4
+safe_margin = 0.02
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
+shape = SubResource("CapsuleShape3D_player")
+
+[node name="Body" type="MeshInstance3D" parent="Player"]
+mesh = SubResource("CapsuleMesh_player")
+visible = false
+
+[node name="Head" type="Node3D" parent="Player"]
+position = Vector3(0, 0.62, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Player/Head"]
 current = true
+near = 0.05
+far = 1800.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-35, -30, 0)
-light_energy = 1.25
-shadow_enabled = true
+rotation_degrees = Vector3(-48, -28, 0)
+light_energy = 1.35
+shadow_enabled = false
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
 [node name="StatusPanel" type="PanelContainer" parent="HUD"]
 offset_left = 16.0
 offset_top = 16.0
-offset_right = 620.0
+offset_right = 720.0
 offset_bottom = 112.0
 theme = ExtResource("2")
 
