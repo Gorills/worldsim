@@ -83,7 +83,7 @@ func _physics_process(delta: float) -> void:
     right.y = 0.0
     forward = forward.normalized()
     right = right.normalized()
-    var motion := (right * input_2d.x + forward * input_2d.y)
+    var motion := (right * input_2d.x - forward * input_2d.y)
     if motion.length_squared() > 1.0:
         motion = motion.normalized()
 
