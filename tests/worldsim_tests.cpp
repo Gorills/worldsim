@@ -113,6 +113,37 @@ void test_lod_conservation() {
     near(cs.total_count(),777.0,1e-12,"cohort count not conserved on coarsen");
 }
 
+void test_lod_hysteresis() {
+    SimulationConfig cfg;
+    cfg.base_level=4;
+    cfg.max_level=5;
+    cfg.tick_seconds=3600.0;
+    Simulation sim(11,cfg);
+    sim.build();
+
+    const CellId parent=CellId::make(0,4,8,8);
+    const Vec3d center=sim.world().topology().center_unit(parent);
+    Vec3d tangent=cross(center,Vec3d{0.0,0.0,1.0});
+    if (norm(tangent)<1e-9) tangent=cross(center,Vec3d{0.0,1.0,0.0});
+    tangent=normalized(tangent);
+    auto focus_at=[&](double degrees) {
+        const double radians=degrees*kPi/180.0;
+        return normalized(center*std::cos(radians)+tangent*std::sin(radians));
+    };
+
+    sim.set_focus(focus_at(8.0));
+    sim.step(1);
+    check(!sim.world().active_cells().contains(parent),"LOD hysteresis test did not refine target parent");
+
+    sim.set_focus(focus_at(13.0));
+    sim.step(1);
+    check(!sim.world().active_cells().contains(parent),"LOD coarsened inside hysteresis band");
+
+    sim.set_focus(focus_at(22.0));
+    sim.step(1);
+    check(sim.world().active_cells().contains(parent),"LOD did not coarsen after leaving hysteresis band");
+}
+
 void test_determinism_and_snapshot() {
     auto a=make_default_simulation(123);
     auto b=make_default_simulation(123);
@@ -276,6 +307,7 @@ int main() {
         test_scheduler_cadence_alignment();
         test_cube_sphere();
         test_lod_conservation();
+        test_lod_hysteresis();
         test_determinism_and_snapshot();
         test_lod_stability_and_snapshot_across_cover_change();
         test_command_routing_across_lod();
