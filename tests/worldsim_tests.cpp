@@ -5,6 +5,7 @@
 #include "worldsim/tectonics.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -305,21 +306,27 @@ void test_tectonic_model_partition_and_determinism() {
     const TectonicModel b(42);
     const TectonicModel other_seed(43);
 
-    std::size_t continental_count=0;
     for (std::uint32_t i=0;i<TectonicModel::kPlateCount;++i) {
         const auto& plate=a.plates()[i];
         const auto at_seed=a.sample_direction(plate.seed_direction);
         check(at_seed.plate_id==i,"plate seed is not owned by its plate");
-        continental_count+=plate.continental ? 1U : 0U;
     }
-    check(continental_count>0 && continental_count<TectonicModel::kPlateCount,
-          "tectonic seed did not produce both continental and oceanic crust");
 
     CubeSphereTopology topology;
     bool differs_across_seed=false;
     bool observed_positive_forcing=false;
     bool observed_negative_forcing=false;
+    bool observed_uplift=false;
+    bool observed_divergence=false;
     double nearest_boundary=kPi;
+    double min_macro=std::numeric_limits<double>::infinity();
+    double max_macro=-std::numeric_limits<double>::infinity();
+    double crust_area_m2=0.0;
+    double total_area_m2=0.0;
+    std::array<double,TectonicModel::kPlateCount> min_affinity{};
+    std::array<double,TectonicModel::kPlateCount> max_affinity{};
+    min_affinity.fill(1.0);
+    max_affinity.fill(0.0);
 
     for (CellId cell:uniform_cover(5)) {
         const Vec3d p=topology.center_unit(cell);
@@ -351,6 +358,19 @@ void test_tectonic_model_partition_and_determinism() {
             check(sample.boundary_forcing*sample.convergence>0.0,
                   "tectonic forcing changed convergence sign");
 
+        check(std::isfinite(sample.continental_affinity) &&
+              sample.continental_affinity>=0.0 && sample.continental_affinity<=1.0,
+              "invalid continental affinity");
+        check(std::isfinite(sample.uplift_forcing) &&
+              sample.uplift_forcing>=0.0 && sample.uplift_forcing<=1.0,
+              "invalid uplift forcing");
+        check(std::isfinite(sample.divergence_forcing) &&
+              sample.divergence_forcing>=0.0 && sample.divergence_forcing<=1.0,
+              "invalid divergence forcing");
+        check(std::isfinite(sample.macro_elevation_m) &&
+              sample.macro_elevation_m>=-6'000.0 && sample.macro_elevation_m<=6'500.0,
+              "invalid tectonic macro elevation");
+
         check(sample.plate_id==repeat.plate_id &&
               sample.neighbor_plate_id==repeat.neighbor_plate_id,
               "tectonic ownership is not deterministic");
@@ -362,18 +382,88 @@ void test_tectonic_model_partition_and_determinism() {
              "tectonic shear is not deterministic");
         near(sample.boundary_forcing,repeat.boundary_forcing,1e-15,
              "tectonic forcing is not deterministic");
+        near(sample.continental_affinity,repeat.continental_affinity,1e-15,
+             "continental affinity is not deterministic");
+        near(sample.uplift_forcing,repeat.uplift_forcing,1e-15,
+             "tectonic uplift is not deterministic");
+        near(sample.divergence_forcing,repeat.divergence_forcing,1e-15,
+             "tectonic divergence is not deterministic");
+        near(sample.macro_elevation_m,repeat.macro_elevation_m,1e-12,
+             "tectonic macro elevation is not deterministic");
 
+        const double area=topology.area_m2(cell);
+        crust_area_m2+=area*sample.continental_affinity;
+        total_area_m2+=area;
+        min_affinity[sample.plate_id]=std::min(
+            min_affinity[sample.plate_id],
+            sample.continental_affinity
+        );
+        max_affinity[sample.plate_id]=std::max(
+            max_affinity[sample.plate_id],
+            sample.continental_affinity
+        );
+        min_macro=std::min(min_macro,sample.macro_elevation_m);
+        max_macro=std::max(max_macro,sample.macro_elevation_m);
         nearest_boundary=std::min(nearest_boundary,sample.boundary_distance_rad);
         observed_positive_forcing|=sample.boundary_forcing>1.0e-4;
         observed_negative_forcing|=sample.boundary_forcing<-1.0e-4;
+        observed_uplift|=sample.uplift_forcing>0.05;
+        observed_divergence|=sample.divergence_forcing>0.05;
         differs_across_seed|=sample.plate_id!=changed.plate_id ||
-            std::abs(sample.boundary_forcing-changed.boundary_forcing)>1.0e-6;
+            std::abs(sample.boundary_forcing-changed.boundary_forcing)>1.0e-6 ||
+            std::abs(sample.continental_affinity-changed.continental_affinity)>1.0e-6;
     }
 
     check(nearest_boundary<0.02,"tectonic cover test did not resolve any plate boundary");
     check(observed_positive_forcing,"tectonic model produced no convergent forcing");
     check(observed_negative_forcing,"tectonic model produced no divergent forcing");
+    check(observed_uplift,"tectonic macro model produced no uplift zones");
+    check(observed_divergence,"tectonic macro model produced no divergence zones");
     check(differs_across_seed,"tectonic model does not vary with world seed");
+
+    const double crust_fraction=crust_area_m2/total_area_m2;
+    check(crust_fraction>0.15 && crust_fraction<0.50,
+          "continuous continental crust fraction is outside the intended broad range");
+    bool plate_contains_mixed_crust=false;
+    for (std::uint32_t i=0;i<TectonicModel::kPlateCount;++i)
+        plate_contains_mixed_crust|=max_affinity[i]-min_affinity[i]>0.75;
+    check(plate_contains_mixed_crust,
+          "continental affinity collapsed back into a per-plate crust type");
+    check(min_macro<-3'000.0 && max_macro>1'000.0,
+          "tectonic macro preview does not contain both deep ocean and high relief");
+
+    // Crust affinity must stay continuous when plate ownership changes. Project
+    // one resolved near-boundary sample onto its exact owner/neighbor bisector,
+    // then sample a tiny angular step on both sides.
+    bool continuity_checked=false;
+    for (CellId cell:uniform_cover(5)) {
+        const Vec3d p=topology.center_unit(cell);
+        const TectonicSample sample=a.sample_direction(p);
+        if (sample.boundary_distance_rad>0.01) continue;
+
+        const Vec3d plane_normal=normalized(
+            a.plates()[sample.plate_id].seed_direction-
+            a.plates()[sample.neighbor_plate_id].seed_direction
+        );
+        const Vec3d boundary_point=normalized(p-plane_normal*dot(p,plane_normal));
+        Vec3d tangent=plane_normal-boundary_point*dot(boundary_point,plane_normal);
+        tangent=normalized(tangent);
+        constexpr double epsilon=1.0e-6;
+        const TectonicSample left=a.sample_direction(normalized(
+            boundary_point*std::cos(epsilon)+tangent*std::sin(epsilon)
+        ));
+        const TectonicSample right=a.sample_direction(normalized(
+            boundary_point*std::cos(epsilon)-tangent*std::sin(epsilon)
+        ));
+        if (left.plate_id==right.plate_id) continue;
+        check(std::abs(left.continental_affinity-right.continental_affinity)<1.0e-3,
+              "continental affinity is discontinuous at a plate boundary");
+        check(std::abs(left.macro_elevation_m-right.macro_elevation_m)<5.0,
+              "tectonic macro relief is discontinuous at a plate boundary");
+        continuity_checked=true;
+        break;
+    }
+    check(continuity_checked,"tectonic crust continuity test found no resolved boundary");
 }
 
 void test_procedural_terrain_scale_and_determinism() {

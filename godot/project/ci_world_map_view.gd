@@ -33,7 +33,14 @@ func _process(_delta: float) -> bool:
 
     var plates_button := root.get_node_or_null("WorldMapViewer/Margin/VBox/LayerBar/Plates") as Button
     var forcing_button := root.get_node_or_null("WorldMapViewer/Margin/VBox/LayerBar/Forcing") as Button
-    if plates_button == null or forcing_button == null:
+    var crust_button := root.get_node_or_null("WorldMapViewer/Margin/VBox/LayerBar/Crust") as Button
+    var macro_button := root.get_node_or_null("WorldMapViewer/Margin/VBox/LayerBar/MacroRelief") as Button
+    if (
+        plates_button == null or
+        forcing_button == null or
+        crust_button == null or
+        macro_button == null
+    ):
         push_error("Global map tectonic layer controls are missing")
         quit(5)
         return true
@@ -54,8 +61,28 @@ func _process(_delta: float) -> bool:
         quit(7)
         return true
 
-    print("WORLDSIM_GLOBAL_MAP_VIEW_OK size=%dx%d layers=elevation,plates,forcing" % [
-        forcing_image.get_width(), forcing_image.get_height()
+    var forcing_data := forcing_image.get_data()
+    crust_button.emit_signal("pressed")
+    var crust_image := map_view.texture.get_image()
+    if crust_image.get_data() == forcing_data or !_has_variation(crust_image):
+        push_error("Crust affinity layer did not render a distinct field")
+        quit(8)
+        return true
+
+    var crust_data := crust_image.get_data()
+    macro_button.emit_signal("pressed")
+    var macro_image := map_view.texture.get_image()
+    if (
+        macro_image.get_data() == crust_data or
+        macro_image.get_data() == elevation_data or
+        !_has_variation(macro_image)
+    ):
+        push_error("Macro relief layer did not render a distinct field")
+        quit(9)
+        return true
+
+    print("WORLDSIM_GLOBAL_MAP_VIEW_OK size=%dx%d layers=elevation,plates,forcing,crust,macro" % [
+        macro_image.get_width(), macro_image.get_height()
     ])
     quit(0)
     return true
