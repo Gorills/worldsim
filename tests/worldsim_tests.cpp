@@ -305,10 +305,15 @@ void test_tectonic_model_partition_and_determinism() {
     const TectonicModel b(42);
     const TectonicModel other_seed(43);
 
+    std::size_t continental_count=0;
     for (std::uint32_t i=0;i<TectonicModel::kPlateCount;++i) {
-        const auto at_seed=a.sample_direction(a.plates()[i].seed_direction);
+        const auto& plate=a.plates()[i];
+        const auto at_seed=a.sample_direction(plate.seed_direction);
         check(at_seed.plate_id==i,"plate seed is not owned by its plate");
+        continental_count+=plate.continental ? 1U : 0U;
     }
+    check(continental_count>0 && continental_count<TectonicModel::kPlateCount,
+          "tectonic seed did not produce both continental and oceanic crust");
 
     CubeSphereTopology topology;
     bool differs_across_seed=false;
