@@ -658,6 +658,7 @@ void test_authoritative_terrain_tracks_tectonic_macro_relief() {
     double product_sum=0.0;
     double residual_abs_sum=0.0;
     double max_residual=0.0;
+    bool land_classification_consistent=true;
 
     for (int i=0;i<sample_count;++i) {
         const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
@@ -686,11 +687,9 @@ void test_authoritative_terrain_tracks_tectonic_macro_relief() {
         max_residual=std::max(max_residual,std::abs(residual));
 
         if (authoritative>200.0)
-            check(terrain_sample.land_fraction>0.99,
-                  "positive authoritative terrain is not classified as land");
+            land_classification_consistent&=terrain_sample.land_fraction>0.99;
         if (authoritative<-200.0)
-            check(terrain_sample.land_fraction<0.01,
-                  "negative authoritative terrain is not classified as ocean");
+            land_classification_consistent&=terrain_sample.land_fraction<0.01;
     }
 
     const double n=static_cast<double>(sample_count);
@@ -702,6 +701,8 @@ void test_authoritative_terrain_tracks_tectonic_macro_relief() {
 
     check(correlation>0.95,
           "authoritative terrain low-frequency shape is not driven by tectonic macro relief");
+    check(land_classification_consistent,
+          "authoritative terrain land fraction disagrees with final elevation");
     check(mean_abs_residual>10.0,
           "authoritative terrain lost meso/local procedural detail");
     check(max_residual<1'500.0,
