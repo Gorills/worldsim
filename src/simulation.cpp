@@ -402,4 +402,11 @@ std::unique_ptr<Simulation> make_default_simulation(std::uint64_t seed, Simulati
     return sim;
 }
 
+std::unique_ptr<Simulation> make_terrain_simulation(std::uint64_t seed, SimulationConfig config) {
+    auto sim=std::make_unique<Simulation>(seed,config);
+    sim->add_module(std::make_unique<GeographyModule>());
+    sim->build();
+    return sim;
+}
+
 } // namespace worldsim
