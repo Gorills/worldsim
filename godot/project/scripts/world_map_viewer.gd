@@ -155,7 +155,7 @@ func _render_current_layer() -> void:
     map_view.texture = ImageTexture.create_from_image(image)
 
 func _plate_color(plate_id: int) -> Color:
-    return PLATE_COLORS[posmod(plate_id, PLATE_COLORS.size())]
+    return PLATE_COLORS[plate_id % PLATE_COLORS.size()]
 
 func _forcing_color(value: float) -> Color:
     var neutral := Color(0.11, 0.12, 0.14)
