@@ -85,4 +85,4 @@ The native adapter only derives from `godot::Node`; Godot rendering classes are 
 
 For repeat builds, GitHub Actions uses `mozilla-actions/sccache-action@v0.0.11` with `SCCACHE_GHA_ENABLED=true` and `CMAKE_CXX_COMPILER_LAUNCHER=sccache`, matching the mechanism used by the upstream `godot-cpp` 10.0.0-rc2 CMake CI. The workflow builds only the `worldsim_godot` target rather than rebuilding tests and CLI in the Godot job.
 
-The integration job then downloads/caches the exact Godot 4.7.2 Linux editor, verifies its SHA-256, imports the project headlessly, and runs `res://ci_smoke.gd`. This catches GDExtension registration/loader failures that a pure link check cannot detect.
+The integration job then downloads/caches the exact Godot 4.7.2 Linux editor and verifies its SHA-256. A standalone headless editor `--import` pass is best-effort because `godot-cpp` upstream CI documents that this editor-import process can abort after generating `.godot`. The mandatory gate is `res://ci_smoke.gd`, which loads the extension at runtime, creates `WorldSimulationNode`, advances the simulation, and checks returned data.

@@ -1,6 +1,6 @@
 # Validation record
 
-This file is updated by the final packaging pass. It distinguishes what was actually executed from architectural intent.
+This file distinguishes what was actually executed from architectural intent.
 
 ## Core test coverage
 
@@ -44,4 +44,18 @@ Actually executed in the packaging environment:
 - headless CLI: 720 one-hour ticks completed;
 - final ZIP is re-extracted into a clean directory and rebuilt/tested before delivery.
 
-Godot 4.7 GDExtension source/CMake contracts were checked against Godot 4.7 documentation and `godot-cpp` 10.0.0-rc2 (release commit `5ed72a0dc2517a8082598a950895c6b24e8aa282`). The packaging environment has neither a Godot 4.7 editor/runtime nor a locally available `godot-cpp` tree, and outbound dependency fetching is unavailable there. Therefore actual GDExtension compilation/editor launch is **not verified** by this record.
+## Godot 4.7 integration validation
+
+GitHub Actions run `34122677420` on commit `4f00d53a31fd8488062130b9db7098e28c5d5db2` completed successfully on Ubuntu 22.04.
+
+Actually verified there:
+
+- `godot-cpp` 10.0.0-rc2 configured for Godot API 4.7;
+- the `worldsim_godot` GDExtension compiled and linked as `libworldsim_godot.so`;
+- the pinned official Godot 4.7.2 Linux editor archive passed SHA-256 verification;
+- Godot reported `4.7.2.stable.official.ed1daf0bf`;
+- `ci_smoke.gd` loaded the GDExtension, instantiated `WorldSimulationNode`, advanced 24 simulation ticks, and validated a non-empty render packet and field descriptors;
+- smoke marker: `WORLDSIM_GODOT_SMOKE_OK tick=24 cells=1536 fields=13`;
+- repeat GDExtension build used `sccache` with 71/71 cache hits (100%).
+
+The standalone headless editor `--import` pass is deliberately best-effort. `godot-cpp` upstream CI documents the same editor-import abort behavior and ignores that process result before running its actual tests. WorldSim therefore uses the runtime `ci_smoke.gd` execution as the mandatory integration gate rather than treating editor-import teardown as a product failure.
