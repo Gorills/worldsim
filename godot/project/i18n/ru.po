@@ -35,3 +35,15 @@ msgstr "Генерация мира с сидом %d..."
 
 msgid "MAP_STATUS_READY"
 msgstr "сид: %d    карта: %d x %d    высота: %.0f .. %.0f м"
+
+msgid "MAP_LAYER"
+msgstr "Слой"
+
+msgid "MAP_LAYER_ELEVATION"
+msgstr "Высота"
+
+msgid "MAP_LAYER_PLATES"
+msgstr "Плиты"
+
+msgid "MAP_LAYER_FORCING"
+msgstr "Тектоническое воздействие"
