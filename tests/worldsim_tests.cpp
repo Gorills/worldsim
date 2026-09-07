@@ -1,6 +1,7 @@
 #include "worldsim/c_api.h"
 #include "worldsim/modules.hpp"
 #include "worldsim/simulation.hpp"
+#include "worldsim/terrain.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -276,6 +277,57 @@ void test_c_api() {
     ws_destroy(h);
 }
 
+void test_procedural_terrain_scale_and_determinism() {
+    const TerrainGenerator terrain(42);
+    const TerrainSample center=terrain.sample_projected(0.0,0.0);
+    const TerrainSample repeat=terrain.sample_projected(0.0,0.0);
+    const TerrainSample remote_ocean=terrain.sample_projected(8'000'000.0,4'000'000.0);
+
+    near(center.elevation_m,repeat.elevation_m,1e-15,"terrain generator is not deterministic");
+    near(center.land_fraction,repeat.land_fraction,1e-15,"terrain land mask is not deterministic");
+    check(center.land_fraction>0.95 && center.elevation_m>0.0,"continent center is not land");
+    check(remote_ocean.land_fraction<0.05 && remote_ocean.elevation_m<0.0,"remote terrain is not ocean floor");
+
+    CubeSphereTopology topology;
+    double land_area_m2=0.0;
+    for (CellId cell:uniform_cover(5)) {
+        const TerrainSample sample=terrain.sample_direction(topology.center_unit(cell));
+        land_area_m2+=topology.area_m2(cell)*sample.land_fraction;
+    }
+    constexpr double kMinEurasiaScaleM2=40.0e12;
+    constexpr double kMaxEurasiaScaleM2=70.0e12;
+    check(land_area_m2>=kMinEurasiaScaleM2 && land_area_m2<=kMaxEurasiaScaleM2,
+          "procedural continent is not Eurasia-scale");
+}
+
+void test_geography_refinement_samples_new_detail() {
+    SimulationConfig cfg;
+    cfg.base_level=4;
+    cfg.max_level=5;
+    cfg.tick_seconds=3600.0;
+    auto sim=make_terrain_simulation(42,cfg);
+    const TerrainGenerator terrain(42);
+    const Vec3d focus=TerrainGenerator::projected_to_direction(0.0,0.0);
+    const CellId parent=sim->world().topology().from_direction(focus,cfg.base_level);
+    const auto children=parent.children();
+    const auto elevation=*sim->fields().find("geography.elevation_m");
+
+    sim->set_focus(focus);
+    sim->step(1);
+
+    const auto& fields=sim->world().stores().get<FieldStore>();
+    bool differs_from_parent_copy=false;
+    const double old_parent_value=terrain.sample_direction(sim->world().topology().center_unit(parent)).elevation_m;
+    for (CellId child:children) {
+        check(sim->world().active_cells().contains(child),"focused geography parent was not refined");
+        const double expected=terrain.sample_direction(sim->world().topology().center_unit(child)).elevation_m;
+        near(fields.get(child,elevation),expected,1e-14,
+             "refined geography did not resample authoritative terrain");
+        if (std::abs(expected-old_parent_value)>1e-6) differs_from_parent_copy=true;
+    }
+    check(differs_from_parent_copy,"terrain regression test did not observe subcell detail");
+}
+
 void test_module_extension_contract() {
     SimulationConfig cfg;
     cfg.base_level=0;
@@ -313,6 +365,8 @@ int main() {
         test_command_routing_across_lod();
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
+        test_procedural_terrain_scale_and_determinism();
+        test_geography_refinement_samples_new_detail();
         test_c_api();
         test_module_extension_contract();
         std::cout << "worldsim_tests: OK\n";
