@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
-#include <limits>
 
 namespace worldsim {
 namespace {
@@ -26,31 +25,6 @@ void populate_geography(WorldState& world, const FieldRegistry& r) {
         fs.set(cell,land,sample.land_fraction);
     }
 }
-
-class GeographySystem final : public ISimSystem {
-public:
-    explicit GeographySystem(const FieldRegistry& r)
-        : elev_(require_field(r,"geography.elevation_m")),
-          land_(require_field(r,"geography.land_fraction")) {}
-
-    std::string_view id() const override { return "geography.terrain"; }
-    SystemAccess access() const override {
-        return {{},{"field:geography.elevation_m","field:geography.land_fraction"}};
-    }
-
-    void step(SystemContext& ctx) override {
-        if (ctx.world.cover_revision()==last_cover_revision_) return;
-        (void)elev_;
-        (void)land_;
-        populate_geography(ctx.world,ctx.fields);
-        last_cover_revision_=ctx.world.cover_revision();
-    }
-
-private:
-    FieldId elev_{};
-    FieldId land_{};
-    std::uint64_t last_cover_revision_{std::numeric_limits<std::uint64_t>::max()};
-};
 
 class MagicSystem final : public ISimSystem {
 public:
@@ -91,7 +65,7 @@ public:
           precip_(require_field(r,"climate.precipitation_mm_day")), solar_(require_field(r,"climate.solar_flux_w_m2")),
           anomaly_(require_field(r,"climate.weather_anomaly_k")) {}
     std::string_view id() const override { return "climate.surface"; }
-    std::vector<std::string> after() const override { return {"geography.terrain","magic.flux"}; }
+    std::vector<std::string> after() const override { return {"magic.flux"}; }
     SystemAccess access() const override {
         return {{"field:geography.elevation_m","field:geography.land_fraction","field:magic.temperature_anomaly_k","field:climate.weather_anomaly_k"},
                 {"field:climate.surface_temperature_k","field:climate.precipitation_mm_day","field:climate.solar_flux_w_m2","field:climate.weather_anomaly_k"}};
@@ -265,11 +239,11 @@ void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geography.land_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
 }
 
-void GeographyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
-    s.add(std::make_unique<GeographySystem>(r));
+void GeographyModule::initialize(WorldState& world, const FieldRegistry& r) {
+    populate_geography(world,r);
 }
 
-void GeographyModule::initialize(WorldState& world, const FieldRegistry& r) {
+void GeographyModule::on_spatial_cover_changed(WorldState& world, const FieldRegistry& r) {
     populate_geography(world,r);
 }
 
