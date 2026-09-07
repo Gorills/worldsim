@@ -25,6 +25,14 @@ cmake --build --preset godot-dev
 ctest --preset godot-dev
 ```
 
+To launch the viewer scene locally:
+
+```bash
+make run
+```
+
+`make run` builds the `worldsim_godot` target, then runs `scripts/run_godot.sh`, which starts Godot 4.7.x with `godot/project/main.tscn`. Set `GODOT` if the editor is not on `PATH`.
+
 CMake writes the extension library directly into `godot/project/bin/`. The `.gdextension` resource points at that directory.
 
 If network fetches are forbidden in your build environment, place the exact godot-cpp source tree at:
@@ -78,7 +86,7 @@ For new domains, use `get_field_descriptors()` and `get_field_values(key)` inste
 
 ## Viewer baseline
 
-The main scene is now a first-person terrain walker backed by the terrain-only simulation factory. It streams regular 256 m terrain chunks around the player, uses `ArrayMesh` for rendering and `HeightMapShape3D` for collision, and bounds foreground work to one missing chunk per rendered frame after the initial player chunk.
+The main scene is now a first-person terrain walker backed by the terrain-only simulation factory. It streams regular 256 m terrain chunks around the player, uses `ArrayMesh` for rendering and `HeightMapShape3D` for collision, and bounds foreground work to one missing chunk per rendered frame after the initial player chunk. Chunk triangles use Godot 4.7 clockwise winding so the ground faces +Y; the editor preview environment is not used at runtime, so the scene includes a `WorldEnvironment` with `ProceduralSkyMaterial`.
 
 Logical projected world coordinates remain in 64-bit GDScript scalar values while scene nodes are origin-shifted at a 1,024 m threshold. The stock single-precision Godot build therefore does not need to place scene nodes millions of meters from the origin.
 

@@ -55,13 +55,13 @@ cmake --build --preset godot-dev
 ctest --preset godot-dev
 ```
 
-Then open:
+Launch the viewer scene with Godot 4.7.x on `PATH` (override with `GODOT=/path/to/godot`):
 
-```text
-godot/project/project.godot
+```bash
+make run
 ```
 
-with Godot 4.7.x. The current stable maintenance release at project finalization is Godot 4.7.2.
+That builds `libworldsim_godot.so` if needed and starts `godot/project/main.tscn`. You can also open `godot/project/project.godot` in the editor. The current stable maintenance release at project finalization is Godot 4.7.2.
 
 ## C++ extension model
 

@@ -7,3 +7,4 @@
 /godot/project/bin/*.dylib
 /godot/project/bin/*.framework/
 *.wsnap
+.vscode/

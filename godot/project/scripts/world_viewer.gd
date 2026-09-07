@@ -48,6 +48,8 @@ func _ready() -> void:
     origin_height_m = sim.sample_terrain_height(0.0, 0.0)
     _create_chunk(Vector2i.ZERO)
     player.position = Vector3(0.0, 1.25, 0.0)
+    pitch = -0.22
+    head.rotation.x = pitch
     _queue_visible_chunks(Vector2i.ZERO)
     help.text = tr("HUD_CONTROLS")
     _update_status()
@@ -235,6 +237,10 @@ func _build_chunk_mesh(heights: PackedFloat32Array) -> ArrayMesh:
                 var elevation_t := clampf(height / 4500.0, 0.0, 1.0)
                 colors[i] = Color(0.34, 0.31, 0.27).lerp(Color(0.62, 0.60, 0.56), elevation_t)
 
+    # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is
+    # (x, z) -> (x+1, z) -> (x, z+1), matching the official ArrayMesh example.
+    # https://docs.godotengine.org/en/4.7/classes/class_arraymesh.html
+    # https://docs.godotengine.org/en/4.7/tutorials/3d/procedural_geometry/arraymesh.html
     var indices := PackedInt32Array()
     indices.resize((CHUNK_RESOLUTION - 1) * (CHUNK_RESOLUTION - 1) * 6)
     var index_cursor := 0
@@ -245,11 +251,11 @@ func _build_chunk_mesh(heights: PackedFloat32Array) -> ArrayMesh:
             var i2 := i0 + CHUNK_RESOLUTION
             var i3 := i2 + 1
             indices[index_cursor] = i0
-            indices[index_cursor + 1] = i2
-            indices[index_cursor + 2] = i1
+            indices[index_cursor + 1] = i1
+            indices[index_cursor + 2] = i2
             indices[index_cursor + 3] = i1
-            indices[index_cursor + 4] = i2
-            indices[index_cursor + 5] = i3
+            indices[index_cursor + 4] = i3
+            indices[index_cursor + 5] = i2
             index_cursor += 6
 
     var arrays := []

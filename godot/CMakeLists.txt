@@ -34,6 +34,20 @@ else()
   message(FATAL_ERROR "godot-cpp not found in third_party/godot-cpp and fetching is disabled")
 endif()
 
+# godot-cpp templates are not warning-clean under -Wconversion/-Wunused-parameter.
+# Keep those flags on WorldSim adapter sources; treat godot-cpp as a system dependency.
+# https://cmake.org/cmake/help/latest/prop_tgt/SYSTEM.html
+# https://cmake.org/cmake/help/v3.24/prop_tgt/INTERFACE_SYSTEM_INCLUDE_DIRECTORIES.html
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.25)
+  set_property(TARGET godot-cpp PROPERTY SYSTEM TRUE)
+else()
+  get_target_property(_worldsim_godot_cpp_inc godot-cpp INTERFACE_INCLUDE_DIRECTORIES)
+  if(_worldsim_godot_cpp_inc)
+    set_property(TARGET godot-cpp APPEND PROPERTY
+      INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_worldsim_godot_cpp_inc}")
+  endif()
+endif()
+
 add_library(worldsim_godot SHARED
   src/register_types.cpp
   src/world_simulation_node.cpp
