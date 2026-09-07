@@ -22,7 +22,7 @@ msgid "HUD_CONTROLS"
 msgstr "WASD: движение    Мышь: обзор    Пробел: прыжок    Esc: освободить/захватить мышь"
 
 msgid "MAP_TITLE"
-msgstr "Глобальная карта высот"
+msgstr "Глобальная карта мира"
 
 msgid "MAP_SEED"
 msgstr "Сид"
