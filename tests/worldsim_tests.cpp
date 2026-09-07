@@ -322,6 +322,43 @@ void test_procedural_terrain_scale_and_determinism() {
           "procedural continent is not Eurasia-scale");
 }
 
+void test_sphere_native_terrain_continuity() {
+    const TerrainGenerator terrain(42);
+    const Vec3d center=TerrainGenerator::projected_to_direction(0.0,0.0);
+    const Vec3d antipode=center*(-1.0);
+    Vec3d tangent_a=cross(antipode,Vec3d{0.0,0.0,1.0});
+    if (norm(tangent_a)<1.0e-9) tangent_a=cross(antipode,Vec3d{0.0,1.0,0.0});
+    tangent_a=normalized(tangent_a);
+    const Vec3d tangent_b=normalized(cross(antipode,tangent_a));
+    constexpr double epsilon_rad=1.0e-7;
+
+    const TerrainSample at_antipode=terrain.sample_direction(antipode);
+    double min_elevation=at_antipode.elevation_m;
+    double max_elevation=at_antipode.elevation_m;
+    for (Vec3d tangent:{tangent_a,tangent_a*(-1.0),tangent_b,tangent_b*(-1.0)}) {
+        const Vec3d direction=normalized(
+            antipode*std::cos(epsilon_rad)+tangent*std::sin(epsilon_rad)
+        );
+        const TerrainSample sample=terrain.sample_direction(direction);
+        check(sample.land_fraction<0.01,"terrain antipode unexpectedly became land");
+        min_elevation=std::min(min_elevation,sample.elevation_m);
+        max_elevation=std::max(max_elevation,sample.elevation_m);
+    }
+    check(max_elevation-min_elevation<1.0,
+          "terrain is discontinuous around the local-projection antipode");
+
+    constexpr double east_m=12'345.0;
+    constexpr double north_m=-6'789.0;
+    const TerrainSample projected=terrain.sample_projected(east_m,north_m);
+    const TerrainSample directional=terrain.sample_direction(
+        TerrainGenerator::projected_to_direction(east_m,north_m)
+    );
+    near(projected.elevation_m,directional.elevation_m,1e-15,
+         "projected terrain sampling diverged from authoritative sphere sampling");
+    near(projected.land_fraction,directional.land_fraction,1e-15,
+         "projected terrain land mask diverged from authoritative sphere sampling");
+}
+
 void test_geography_refinement_samples_new_detail() {
     SimulationConfig cfg;
     cfg.base_level=4;
@@ -389,6 +426,7 @@ int main() {
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
         test_procedural_terrain_scale_and_determinism();
+        test_sphere_native_terrain_continuity();
         test_geography_refinement_samples_new_detail();
         test_c_api();
         test_module_extension_contract();
