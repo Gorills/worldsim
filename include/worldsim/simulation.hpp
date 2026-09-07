@@ -110,5 +110,6 @@ private:
 };
 
 std::unique_ptr<Simulation> make_default_simulation(std::uint64_t seed, SimulationConfig config={});
+std::unique_ptr<Simulation> make_terrain_simulation(std::uint64_t seed, SimulationConfig config={});
 
 } // namespace worldsim
