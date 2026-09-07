@@ -1,0 +1,9 @@
+/build/
+/build-*/
+/out/
+/godot/project/.godot/
+/godot/project/bin/*.so
+/godot/project/bin/*.dll
+/godot/project/bin/*.dylib
+/godot/project/bin/*.framework/
+*.wsnap
