@@ -67,10 +67,32 @@ Geometry clipmaps are a strong fit for very large view distances, flight, and a 
 
 That solves a different immediate problem than this slice. At walking speed, fixed local chunks make collision, origin shifting, correctness, and simulation/geography agreement testable with substantially less machinery. A clipmap or another terrain render-LOD scheme should be introduced when distant-horizon requirements or profiling make the trade-off concrete.
 
+## Global map inspection
+
+The Godot host also provides `world_map.tscn`, a separate macro-scale inspection scene. It does not own or regenerate geography. The scene requests an equirectangular elevation array from `WorldSimulationNode`; the adapter samples the same core `TerrainGenerator::sample_direction()` used by simulation geography and converts only latitude/longitude pixel centers into unit directions.
+
+The first viewer uses a fixed 1024 x 512 sampling grid and builds an RGB `Image` / `ImageTexture` at runtime. Elevation-to-color mapping stays in GDScript because it is presentation state, while all terrain heights remain authoritative C++ values. Godot 4.7 documents `Image.create_from_data()`, `ImageTexture.create_from_image()`, and `TextureRect` for this runtime texture path:
+
+- https://docs.godotengine.org/en/4.7/classes/class_image.html
+- https://docs.godotengine.org/en/4.7/classes/class_imagetexture.html
+- https://docs.godotengine.org/en/4.7/classes/class_texturerect.html
+
+A separate map artifact is also established world-generation practice: WorldEngine keeps generated world data independent from the elevation, precipitation, temperature, biome, and ocean images it emits for inspection. The WorldSim viewer follows that separation without importing WorldEngine's rectangular world model:
+
+- https://github.com/Mindwerks/worldengine
+
+Launch the macro viewer with:
+
+```bash
+make map
+```
+
+The map deliberately exposes defects in the current terrain source rather than hiding them. In particular, the current terrain generator is still based on an azimuthal-equidistant projected procedural continent, so its global `sample_direction()` mapping has the projection's antipodal degeneracy. Replacing that macro terrain source with sphere-native simulation is a later terrain-generation task.
+
 ## Known boundaries
 
 - The procedural function is visual/gameplay terrain, not a geological or tectonic simulation.
 - "Ocean" currently means generated ocean floor/land mask. No water surface exists in this slice.
-- There is no distant terrain LOD or planetary horizon yet.
+- There is no distant terrain LOD or planetary horizon in the local walker; the global map is a separate 2D inspection tool.
 - Terrain is currently immutable except through changing the world seed/source implementation.
 - Frame-time and GPU performance on target player hardware are NOT VERIFIED by CI; CI can verify build, parsing, headless runtime, terrain API, collision scene resources, and core invariants only.
