@@ -20,3 +20,18 @@ msgstr "PAUSED    tick: %d    active cells: %d    fields: %d"
 
 msgid "HUD_CONTROLS"
 msgstr "WASD: move    Mouse: look    Space: jump    Esc: release/capture mouse"
+
+msgid "MAP_TITLE"
+msgstr "Global elevation map"
+
+msgid "MAP_SEED"
+msgstr "Seed"
+
+msgid "MAP_GENERATE"
+msgstr "Generate"
+
+msgid "MAP_STATUS_GENERATING"
+msgstr "Generating seed %d..."
+
+msgid "MAP_STATUS_READY"
+msgstr "seed: %d    map: %d x %d    elevation: %.0f .. %.0f m"

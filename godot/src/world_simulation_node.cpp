@@ -43,6 +43,8 @@ void WorldSimulationNode::_bind_methods() {
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_height","east_m","north_m"),&WorldSimulationNode::sample_terrain_height);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_patch","center_east_m","center_north_m","spacing_m","resolution"),
                          &WorldSimulationNode::sample_terrain_patch);
+    ClassDB::bind_method(godot::D_METHOD("sample_terrain_equirectangular","width","height"),
+                         &WorldSimulationNode::sample_terrain_equirectangular);
     ClassDB::bind_method(godot::D_METHOD("get_render_packet"),&WorldSimulationNode::get_render_packet);
     ClassDB::bind_method(godot::D_METHOD("get_field_descriptors"),&WorldSimulationNode::get_field_descriptors);
     ClassDB::bind_method(godot::D_METHOD("get_field_values","field_key"),&WorldSimulationNode::get_field_values);
@@ -183,6 +185,44 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_patch(double center_east_
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in sample_terrain_patch"); }
+    return out;
+}
+
+PackedFloat32Array WorldSimulationNode::sample_terrain_equirectangular(std::int64_t width,
+                                                                             std::int64_t height) const {
+    PackedFloat32Array out;
+    try {
+        ensure_sim();
+        constexpr std::int64_t max_samples=2'097'152;
+        if (width<2 || height<2 || width>max_samples/height)
+            throw std::invalid_argument("global terrain map must be at least 2x2 and contain at most 2097152 samples");
+
+        const int w=static_cast<int>(width);
+        const int h=static_cast<int>(height);
+        out.resize(w*h);
+        const worldsim::TerrainGenerator terrain(sim_->world().seed());
+
+        // Sample pixel centers so the equirectangular texture contains neither a
+        // duplicated +/-180 degree column nor exact pole singularities.
+        for (int y=0;y<h;++y) {
+            const double v=(static_cast<double>(y)+0.5)/static_cast<double>(h);
+            const double latitude=(0.5-v)*worldsim::kPi;
+            const double sin_lat=std::sin(latitude);
+            const double cos_lat=std::cos(latitude);
+            for (int x=0;x<w;++x) {
+                const double u=(static_cast<double>(x)+0.5)/static_cast<double>(w);
+                const double longitude=(2.0*u-1.0)*worldsim::kPi;
+                const worldsim::Vec3d direction{
+                    cos_lat*std::cos(longitude),
+                    cos_lat*std::sin(longitude),
+                    sin_lat
+                };
+                out.set(y*w+x,static_cast<float>(terrain.sample_direction(direction).elevation_m));
+            }
+        }
+        last_error_.clear();
+    } catch (const std::exception& e) { report_error(e.what()); }
+    catch (...) { report_error("unknown C++ exception in sample_terrain_equirectangular"); }
     return out;
 }
 
