@@ -266,6 +266,7 @@ Dictionary WorldSimulationNode::sample_tectonics_equirectangular(std::int64_t wi
         }
 
         Dictionary out;
+        out["plate_count"]=static_cast<std::int64_t>(worldsim::TectonicModel::kPlateCount);
         out["plate_id"]=plate_ids;
         out["forcing"]=forcing;
         last_error_.clear();
