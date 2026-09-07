@@ -43,25 +43,31 @@ func _initialize() -> void:
         quit(7)
         return
 
+    var terrain_packet := sim.get_render_packet()
+    if not terrain_packet.is_empty() or sim.get_last_error().is_empty():
+        push_error("Terrain-only render packet did not fail safely")
+        quit(8)
+        return
+
     var patch := sim.sample_terrain_patch(0.0, 0.0, 8.0, 17)
     if patch.size() != 17 * 17:
         push_error("Terrain patch size mismatch: %d" % patch.size())
-        quit(8)
+        quit(9)
         return
     if sim.sample_terrain_height(0.0, 0.0) <= 0.0:
         push_error("Terrain continent center is not above sea level")
-        quit(9)
+        quit(10)
         return
     if sim.sample_terrain_height(8000000.0, 4000000.0) >= 0.0:
         push_error("Remote terrain sample is not ocean floor")
-        quit(10)
+        quit(11)
         return
 
     sim.set_focus_projected(0.0, 0.0)
     sim.step_hours(1)
     if not sim.get_last_error().is_empty():
         push_error("Terrain simulation step failed: %s" % sim.get_last_error())
-        quit(11)
+        quit(12)
         return
 
     print("WORLDSIM_GODOT_SMOKE_OK tick=%d cells=%d fields=%d" % [

@@ -16,7 +16,6 @@ concurrency:
 env:
   GODOT_VERSION: 4.7.2-stable
   GODOT_LINUX_SHA256: cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4
-  SCCACHE_GHA_ENABLED: "true"
 
 jobs:
   core:
@@ -44,17 +43,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # This is the same compiler-cache mechanism used by godot-cpp's own CMake CI.
-      # The build profile below also keeps cold builds small by generating wrappers
-      # only for Godot classes that the native adapter actually uses.
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.11
+      # Keep correctness validation independent of optional compiler-cache services.
+      # The build profile already limits generated godot-cpp wrappers to classes
+      # used by this adapter.
 
       - name: Configure GDExtension
         run: >-
           cmake -S . -B out/godot-ci -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
           -DWORLDSIM_BUILD_TESTS=OFF
           -DWORLDSIM_BUILD_CLI=OFF
           -DWORLDSIM_BUILD_GODOT=ON
@@ -65,10 +61,6 @@ jobs:
 
       - name: Build GDExtension only
         run: cmake --build out/godot-ci --target worldsim_godot --parallel
-
-      - name: Show compiler-cache stats
-        if: always()
-        run: sccache --show-stats || true
 
       - name: Cache Godot editor
         id: godot-cache

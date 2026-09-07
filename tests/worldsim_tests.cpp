@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 using namespace worldsim;
@@ -77,6 +78,27 @@ void test_scheduler_cadence_alignment() {
     check(raw->runs==1,"cadence-24 system ran early in second window");
     scheduler.run(47,ctx);
     check(raw->runs==2,"cadence-24 system did not run at end of second window");
+}
+
+void test_focus_validation() {
+    Simulation sim(5);
+    sim.build();
+
+    bool rejected_nan=false;
+    try {
+        sim.set_focus({std::numeric_limits<double>::quiet_NaN(),0.0,0.0});
+    } catch (const std::invalid_argument&) {
+        rejected_nan=true;
+    }
+    check(rejected_nan,"non-finite focus vector was accepted");
+
+    bool rejected_infinity=false;
+    try {
+        sim.set_focus({std::numeric_limits<double>::infinity(),0.0,0.0});
+    } catch (const std::invalid_argument&) {
+        rejected_infinity=true;
+    }
+    check(rejected_infinity,"infinite focus vector was accepted");
 }
 
 void test_cube_sphere() {
@@ -357,6 +379,7 @@ void test_module_extension_contract() {
 int main() {
     try {
         test_scheduler_cadence_alignment();
+        test_focus_validation();
         test_cube_sphere();
         test_lod_conservation();
         test_lod_hysteresis();
