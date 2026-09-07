@@ -6,6 +6,8 @@ const MAP_HEIGHT := 512
 const LAYER_ELEVATION := "elevation"
 const LAYER_PLATES := "plates"
 const LAYER_FORCING := "forcing"
+const LAYER_CRUST := "crust"
+const LAYER_MACRO_RELIEF := "macro_relief"
 
 const PLATE_COLORS := [
     Color(0.84, 0.31, 0.30),
@@ -33,11 +35,15 @@ const PLATE_COLORS := [
 @onready var elevation_button: Button = $Margin/VBox/LayerBar/Elevation
 @onready var plates_button: Button = $Margin/VBox/LayerBar/Plates
 @onready var forcing_button: Button = $Margin/VBox/LayerBar/Forcing
+@onready var crust_button: Button = $Margin/VBox/LayerBar/Crust
+@onready var macro_relief_button: Button = $Margin/VBox/LayerBar/MacroRelief
 @onready var map_view: TextureRect = $Margin/VBox/MapPanel/Map
 
 var _heights := PackedFloat32Array()
 var _plate_ids := PackedInt32Array()
 var _forcing := PackedFloat32Array()
+var _crust_affinity := PackedFloat32Array()
+var _macro_elevation := PackedFloat32Array()
 var _current_layer := LAYER_ELEVATION
 var _min_height := 0.0
 var _max_height := 0.0
@@ -47,6 +53,8 @@ func _ready() -> void:
     elevation_button.pressed.connect(_show_elevation)
     plates_button.pressed.connect(_show_plates)
     forcing_button.pressed.connect(_show_forcing)
+    crust_button.pressed.connect(_show_crust)
+    macro_relief_button.pressed.connect(_show_macro_relief)
     _generate_map(int(seed_input.value))
 
 func _on_generate_pressed() -> void:
@@ -60,6 +68,12 @@ func _show_plates() -> void:
 
 func _show_forcing() -> void:
     _set_layer(LAYER_FORCING)
+
+func _show_crust() -> void:
+    _set_layer(LAYER_CRUST)
+
+func _show_macro_relief() -> void:
+    _set_layer(LAYER_MACRO_RELIEF)
 
 func _set_layer(layer: String) -> void:
     _current_layer = layer
@@ -85,19 +99,27 @@ func _generate_map(seed: int) -> void:
     if !sim.get_last_error().is_empty():
         _show_error(sim.get_last_error())
         return
-    if !tectonics.has("plate_id") or !tectonics.has("forcing"):
+    if !tectonics.has("plate_id") or !tectonics.has("forcing") or \
+            !tectonics.has("crust_affinity") or !tectonics.has("macro_elevation_m"):
         _show_error("tectonic debug layers are missing")
         return
 
     var plate_ids: PackedInt32Array = tectonics["plate_id"]
     var forcing: PackedFloat32Array = tectonics["forcing"]
-    if plate_ids.size() != MAP_WIDTH * MAP_HEIGHT or forcing.size() != MAP_WIDTH * MAP_HEIGHT:
+    var crust_affinity: PackedFloat32Array = tectonics["crust_affinity"]
+    var macro_elevation: PackedFloat32Array = tectonics["macro_elevation_m"]
+    if plate_ids.size() != MAP_WIDTH * MAP_HEIGHT or \
+            forcing.size() != MAP_WIDTH * MAP_HEIGHT or \
+            crust_affinity.size() != MAP_WIDTH * MAP_HEIGHT or \
+            macro_elevation.size() != MAP_WIDTH * MAP_HEIGHT:
         _show_error("tectonic debug layer size mismatch")
         return
 
     _heights = heights
     _plate_ids = plate_ids
     _forcing = forcing
+    _crust_affinity = crust_affinity
+    _macro_elevation = macro_elevation
 
     _min_height = float(_heights[0])
     _max_height = _min_height
@@ -125,6 +147,8 @@ func _set_controls_enabled(enabled: bool) -> void:
     elevation_button.disabled = !enabled or _current_layer == LAYER_ELEVATION
     plates_button.disabled = !enabled or _current_layer == LAYER_PLATES
     forcing_button.disabled = !enabled or _current_layer == LAYER_FORCING
+    crust_button.disabled = !enabled or _current_layer == LAYER_CRUST
+    macro_relief_button.disabled = !enabled or _current_layer == LAYER_MACRO_RELIEF
 
 func _render_current_layer() -> void:
     var pixels := PackedByteArray()
@@ -137,6 +161,10 @@ func _render_current_layer() -> void:
                 color = _plate_color(int(_plate_ids[i]))
             LAYER_FORCING:
                 color = _forcing_color(float(_forcing[i]))
+            LAYER_CRUST:
+                color = _crust_color(float(_crust_affinity[i]))
+            LAYER_MACRO_RELIEF:
+                color = _elevation_color(float(_macro_elevation[i]))
             _:
                 color = _elevation_color(float(_heights[i]))
 
@@ -162,6 +190,15 @@ func _forcing_color(value: float) -> Color:
     if value > 0.0:
         return neutral.lerp(Color(0.92, 0.20, 0.12), clampf(value / 0.65, 0.0, 1.0))
     return neutral.lerp(Color(0.12, 0.34, 0.92), clampf(-value / 0.65, 0.0, 1.0))
+
+func _crust_color(affinity: float) -> Color:
+    var oceanic := Color(0.04, 0.10, 0.18)
+    var transitional := Color(0.36, 0.44, 0.32)
+    var continental := Color(0.82, 0.66, 0.34)
+    var t := clampf(affinity, 0.0, 1.0)
+    if t < 0.5:
+        return oceanic.lerp(transitional, t * 2.0)
+    return transitional.lerp(continental, (t - 0.5) * 2.0)
 
 func _elevation_color(height_m: float) -> Color:
     if height_m < 0.0:
