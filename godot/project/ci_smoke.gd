@@ -84,7 +84,13 @@ func _initialize() -> void:
         return
 
     var tectonics: Dictionary = sim.sample_tectonics_equirectangular(64, 32)
-    if tectonics.is_empty() or !tectonics.has("plate_id") or !tectonics.has("forcing"):
+    if (
+        tectonics.is_empty() or
+        !tectonics.has("plate_id") or
+        !tectonics.has("forcing") or
+        !tectonics.has("crust_affinity") or
+        !tectonics.has("macro_elevation_m")
+    ):
         push_error("Global tectonic debug map is missing")
         quit(15)
         return
@@ -94,25 +100,58 @@ func _initialize() -> void:
         return
     var plate_ids: PackedInt32Array = tectonics["plate_id"]
     var forcing: PackedFloat32Array = tectonics["forcing"]
-    if plate_ids.size() != 64 * 32 or forcing.size() != 64 * 32:
+    var crust_affinity: PackedFloat32Array = tectonics["crust_affinity"]
+    var macro_elevation: PackedFloat32Array = tectonics["macro_elevation_m"]
+    if (
+        plate_ids.size() != 64 * 32 or
+        forcing.size() != 64 * 32 or
+        crust_affinity.size() != 64 * 32 or
+        macro_elevation.size() != 64 * 32
+    ):
         push_error("Global tectonic debug layer size mismatch")
         quit(17)
         return
     var seen_plates := {}
     var has_convergence := false
     var has_divergence := false
+    var has_crust_transition := false
+    var macro_min := float(macro_elevation[0])
+    var macro_max := macro_min
     for i in range(plate_ids.size()):
         var plate_id := int(plate_ids[i])
         var force := float(forcing[i])
-        if plate_id < 0 or plate_id >= 16 or force != force or absf(force) > 1.0:
+        var affinity := float(crust_affinity[i])
+        var macro_m := float(macro_elevation[i])
+        if (
+            plate_id < 0 or
+            plate_id >= 16 or
+            force != force or
+            absf(force) > 1.0 or
+            affinity != affinity or
+            affinity < 0.0 or
+            affinity > 1.0 or
+            macro_m != macro_m or
+            macro_m < -6000.0 or
+            macro_m > 6500.0
+        ):
             push_error("Invalid tectonic debug sample")
             quit(18)
             return
         seen_plates[plate_id] = true
         has_convergence = has_convergence or force > 0.0001
         has_divergence = has_divergence or force < -0.0001
-    if seen_plates.size() < 8 or !has_convergence or !has_divergence:
-        push_error("Tectonic debug map lacks expected partition/forcing variation")
+        has_crust_transition = has_crust_transition or (affinity > 0.05 and affinity < 0.95)
+        macro_min = minf(macro_min, macro_m)
+        macro_max = maxf(macro_max, macro_m)
+    if (
+        seen_plates.size() < 8 or
+        !has_convergence or
+        !has_divergence or
+        !has_crust_transition or
+        macro_min >= -3000.0 or
+        macro_max <= 1000.0
+    ):
+        push_error("Tectonic debug map lacks expected plate/crust/macro variation")
         quit(19)
         return
 
