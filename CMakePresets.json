@@ -1,0 +1,53 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "WorldSim development",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "WORLDSIM_BUILD_TESTS": "ON",
+        "WORLDSIM_BUILD_CLI": "ON",
+        "WORLDSIM_BUILD_GODOT": "OFF"
+      }
+    },
+    {
+      "name": "godot-dev",
+      "displayName": "WorldSim + Godot 4.7 GDExtension",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/out/godot-dev",
+      "cacheVariables": {
+        "WORLDSIM_BUILD_GODOT": "ON",
+        "WORLDSIM_FETCH_GODOT_CPP": "ON",
+        "GODOTCPP_API_VERSION": "4.7",
+        "GODOTCPP_TARGET": "template_debug",
+        "WORLDSIM_GODOT_HOT_RELOAD": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "WorldSim release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "WORLDSIM_BUILD_TESTS": "ON",
+        "WORLDSIM_BUILD_CLI": "ON",
+        "WORLDSIM_BUILD_GODOT": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "godot-dev", "configurePreset": "godot-dev" },
+    { "name": "release", "configurePreset": "release" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "godot-dev", "configurePreset": "godot-dev", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } }
+  ]
+}
