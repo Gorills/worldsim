@@ -36,6 +36,8 @@ public:
                                                                   std::int64_t resolution) const;
     [[nodiscard]] godot::PackedFloat32Array sample_terrain_equirectangular(std::int64_t width,
                                                                             std::int64_t height) const;
+    [[nodiscard]] godot::Dictionary sample_tectonics_equirectangular(std::int64_t width,
+                                                                       std::int64_t height) const;
 
     // Active-cell arrays in every packet are aligned by index. Cell IDs are split into
     // unsigned 32-bit halves because GDScript integers are signed 64-bit values.
