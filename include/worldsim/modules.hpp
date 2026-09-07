@@ -8,6 +8,7 @@ class GeographyModule final : public ISimModule {
 public:
     [[nodiscard]] std::string_view id() const override { return "geography"; }
     void register_fields(FieldRegistry&) override;
+    void register_systems(Scheduler&, const FieldRegistry&) override;
     void initialize(WorldState&, const FieldRegistry&) override;
 };
 
