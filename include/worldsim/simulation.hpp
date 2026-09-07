@@ -55,6 +55,7 @@ public:
     virtual void register_stores(StateStoreRegistry&, const FieldRegistry&) {}
     virtual void register_systems(Scheduler&, const FieldRegistry&) {}
     virtual void initialize(WorldState&, const FieldRegistry&) {}
+    virtual void on_spatial_cover_changed(WorldState&, const FieldRegistry&) {}
 };
 
 struct SimulationConfig {
@@ -93,7 +94,7 @@ public:
     void load_snapshot(std::span<const std::byte> data);
 private:
     void process_commands();
-    void update_lod();
+    bool update_lod();
     std::uint8_t target_level(Vec3d cell_center, double boundary_margin_deg) const;
     void restore_active_cells(std::vector<CellId> cells);
 
