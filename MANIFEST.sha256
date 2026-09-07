@@ -17,7 +17,7 @@ ff2eb6fcaae1c102afedaa51ddb42c8132b21ada8c9e7271936f37f0555700b1  ./godot/projec
 21b2a4b1d14a96220f5f602a55855d5c141821aa7d06d66232327e18892203fe  ./godot/project/ci_smoke.gd
 a78920a1a87af55f0eb5998b310b09011a1abab9424f788609272fcbb3a221e7  ./godot/project/main.tscn
 c3ca1a4be41f7508dcbd4031d286c4d27420873b7649a0f96e44adc3338f38b9  ./godot/project/project.godot
-edeb5612ee85292996727e4cbf59e340282bb653924558bd52d536d4a515f3a4  ./godot/project/scripts/world_viewer.gd
+db85c92b70f991eb527c8417f223c953c5710f834d3c099e3091cf90d42be90c  ./godot/project/scripts/world_viewer.gd
 34a92d205d001117b3475bd91ec205cb53b63391cbf4558ba0afce85a697e991  ./godot/src/register_types.cpp
 8625101c40dbaf8d91669eb5ca1191dfeb5661fcb3af393210a57849f2de1ec5  ./godot/src/world_simulation_node.cpp
 f4f92ac2c7204b9f22a3254bdb8d3d4be745f520e0af9719033120940287af28  ./godot/src/world_simulation_node.hpp

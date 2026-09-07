@@ -55,9 +55,9 @@ func _advance_and_rebuild(hours: int) -> void:
     for i in range(positions.size()):
         var level_scale := 0.7 + 0.08 * float(levels[i])
         mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ONE * level_scale), positions[i] * 2.6))
-        var t := clamp((temps[i] + 25.0) / 60.0, 0.0, 1.0)
-        var v := clamp(vegetation[i] / 5.0, 0.0, 1.0)
-        var m := clamp(mana[i] / 4000000.0, 0.0, 1.0)
+        var t: float = clampf((float(temps[i]) + 25.0) / 60.0, 0.0, 1.0)
+        var v: float = clampf(float(vegetation[i]) / 5.0, 0.0, 1.0)
+        var m: float = clampf(float(mana[i]) / 4000000.0, 0.0, 1.0)
         mm.set_instance_color(i, Color(0.15 + 0.75 * t, 0.12 + 0.78 * v, 0.20 + 0.65 * m, 1.0))
     multimesh_instance.multimesh = mm
 
