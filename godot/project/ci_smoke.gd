@@ -60,14 +60,14 @@ func _initialize() -> void:
         return
     if sim.sample_terrain_height(8000000.0, 4000000.0) >= 0.0:
         push_error("Remote terrain sample is not ocean floor")
-        quit(12)
+        quit(11)
         return
 
     sim.set_focus_projected(0.0, 0.0)
     sim.step_hours(1)
     if not sim.get_last_error().is_empty():
         push_error("Terrain simulation step failed: %s" % sim.get_last_error())
-        quit(11)
+        quit(12)
         return
 
     print("WORLDSIM_GODOT_SMOKE_OK tick=%d cells=%d fields=%d" % [
