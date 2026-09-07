@@ -19,13 +19,18 @@ namespace worldsim {
 
 class BinaryWriter {
 public:
+    // Snapshot primitives are encoded explicitly little-endian; no native struct layouts are serialized.
     template<class T> requires (std::is_integral_v<T> || std::is_floating_point_v<T>)
     void pod(T value) {
         if constexpr (std::is_floating_point_v<T>) {
             static_assert(std::numeric_limits<T>::is_iec559, "WorldSim snapshots require IEEE-754 floating point");
-            if constexpr (sizeof(T)==sizeof(std::uint64_t)) write_unsigned(std::bit_cast<std::uint64_t>(value));
-            else if constexpr (sizeof(T)==sizeof(std::uint32_t)) write_unsigned(std::bit_cast<std::uint32_t>(value));
-            else static_assert(sizeof(T)==4 || sizeof(T)==8, "unsupported floating-point width");
+            if constexpr (sizeof(T)==sizeof(std::uint64_t)) {
+                write_unsigned(std::bit_cast<std::uint64_t>(value));
+            } else if constexpr (sizeof(T)==sizeof(std::uint32_t)) {
+                write_unsigned(std::bit_cast<std::uint32_t>(value));
+            } else {
+                static_assert(sizeof(T)==4 || sizeof(T)==8, "unsupported floating-point width");
+            }
         } else {
             using U=std::make_unsigned_t<T>;
             write_unsigned(static_cast<U>(value));
@@ -38,7 +43,8 @@ public:
 private:
     template<class U> requires std::is_unsigned_v<U>
     void write_unsigned(U value) {
-        for (std::size_t i=0;i<sizeof(U);++i) bytes_.push_back(static_cast<std::byte>((value>>(i*8U)) & static_cast<U>(0xffU)));
+        for (std::size_t i=0;i<sizeof(U);++i)
+            bytes_.push_back(static_cast<std::byte>((value>>(i*8U)) & static_cast<U>(0xffU)));
     }
     std::vector<std::byte> bytes_;
 };
@@ -50,9 +56,13 @@ public:
     T pod() {
         if constexpr (std::is_floating_point_v<T>) {
             static_assert(std::numeric_limits<T>::is_iec559, "WorldSim snapshots require IEEE-754 floating point");
-            if constexpr (sizeof(T)==sizeof(std::uint64_t)) return std::bit_cast<T>(read_unsigned<std::uint64_t>());
-            else if constexpr (sizeof(T)==sizeof(std::uint32_t)) return std::bit_cast<T>(read_unsigned<std::uint32_t>());
-            else static_assert(sizeof(T)==4 || sizeof(T)==8, "unsupported floating-point width");
+            if constexpr (sizeof(T)==sizeof(std::uint64_t)) {
+                return std::bit_cast<T>(read_unsigned<std::uint64_t>());
+            } else if constexpr (sizeof(T)==sizeof(std::uint32_t)) {
+                return std::bit_cast<T>(read_unsigned<std::uint32_t>());
+            } else {
+                static_assert(sizeof(T)==4 || sizeof(T)==8, "unsupported floating-point width");
+            }
         } else {
             using U=std::make_unsigned_t<T>;
             return static_cast<T>(read_unsigned<U>());
@@ -82,7 +92,7 @@ struct Cohort {
     std::uint64_t lineage_id{};
     CellId cell;
     std::uint32_t species_id{};
-    std::uint32_t functional_group{};
+    std::uint32_t functional_group{}; // 1 herbivore, 2 carnivore in demo module
     double count{};
     double body_mass_kg{};
     double reserve_kg{};

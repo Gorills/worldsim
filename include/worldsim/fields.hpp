@@ -54,9 +54,13 @@ public:
     virtual void on_coarsen(std::span<const CellId> children, CellId parent, const CubeSphereTopology& topology)=0;
     virtual void save(BinaryWriter& writer) const=0;
     virtual void load(BinaryReader& reader, std::uint32_t version)=0;
+    // Stores that reference spatial leaves can enforce their own post-load integrity.
+    // The default is intentionally empty for non-spatial/global stores.
     virtual void validate_active_cover(const std::set<CellId>&) const {}
 };
 
+// Dense columnar storage for spatial fields. Cell lookup is O(log N), while systems can
+// iterate contiguous field columns through dense_cells()/column() without per-cell maps.
 class FieldStore final : public IStateStore {
 public:
     explicit FieldStore(const FieldRegistry& registry);

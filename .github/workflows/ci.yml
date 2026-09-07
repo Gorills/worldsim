@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worldsim-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2-stable
+  GODOT_LINUX_SHA256: cadd3204e728a35d3f13adb7fd0d7902636b79f6b95c40c265eb73b6c35329e4
+  SCCACHE_GHA_ENABLED: "true"
+
+jobs:
+  core:
+    name: Core / GCC
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake --preset dev
+
+      - name: Build
+        run: cmake --build --preset dev --parallel
+
+      - name: Test
+        run: ctest --preset dev
+
+  godot-linux:
+    name: Godot 4.7 / Linux integration
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # This is the same compiler-cache mechanism used by godot-cpp's own CMake CI.
+      # The build profile below also keeps cold builds small by generating wrappers
+      # only for Godot classes that the native adapter actually uses.
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Configure GDExtension
+        run: >-
+          cmake -S . -B out/godot-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+          -DWORLDSIM_BUILD_TESTS=OFF
+          -DWORLDSIM_BUILD_CLI=OFF
+          -DWORLDSIM_BUILD_GODOT=ON
+          -DWORLDSIM_FETCH_GODOT_CPP=ON
+          -DGODOTCPP_API_VERSION=4.7
+          -DGODOTCPP_TARGET=template_debug
+          -DWORLDSIM_GODOT_HOT_RELOAD=OFF
+
+      - name: Build GDExtension only
+        run: cmake --build out/godot-ci --target worldsim_godot --parallel
+
+      - name: Show compiler-cache stats
+        if: always()
+        run: sccache --show-stats || true
+
+      - name: Cache Godot editor
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: .ci/godot
+          key: godot-${{ env.GODOT_VERSION }}-linux-x86_64-${{ env.GODOT_LINUX_SHA256 }}
+
+      - name: Download pinned Godot editor
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/godot
+          curl --fail --location --retry 3 --retry-all-errors \
+            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip" \
+            --output .ci/godot/godot.zip
+          echo "${GODOT_LINUX_SHA256}  .ci/godot/godot.zip" | sha256sum --check --strict
+          unzip -q .ci/godot/godot.zip -d .ci/godot
+          rm .ci/godot/godot.zip
+
+      - name: Godot headless smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          GODOT="$(find .ci/godot -maxdepth 1 -type f -name 'Godot_v*_linux.x86_64' -print -quit)"
+          test -n "$GODOT"
+          chmod +x "$GODOT"
+          "$GODOT" --headless --version
+          timeout 60 "$GODOT" --headless --path godot/project --import
+          timeout 60 "$GODOT" --headless --path godot/project --script res://ci_smoke.gd
