@@ -94,7 +94,7 @@ public:
 private:
     void process_commands();
     void update_lod();
-    std::uint8_t target_level(Vec3d cell_center) const;
+    std::uint8_t target_level(Vec3d cell_center, double boundary_margin_deg) const;
     void restore_active_cells(std::vector<CellId> cells);
 
     std::uint64_t seed_{};
