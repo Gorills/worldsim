@@ -5,6 +5,7 @@
 #include "worldsim/tectonics.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -454,8 +455,11 @@ void test_tectonic_model_partition_and_determinism() {
         const TectonicSample right=a.sample_direction(normalized(
             boundary_point*std::cos(epsilon)-tangent*std::sin(epsilon)
         ));
+        if (left.plate_id==right.plate_id) continue;
         check(std::abs(left.continental_affinity-right.continental_affinity)<1.0e-3,
               "continental affinity is discontinuous at a plate boundary");
+        check(std::abs(left.macro_elevation_m-right.macro_elevation_m)<5.0,
+              "tectonic macro relief is discontinuous at a plate boundary");
         continuity_checked=true;
         break;
     }
