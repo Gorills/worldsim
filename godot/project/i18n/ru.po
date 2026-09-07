@@ -1,0 +1,22 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: WorldSim\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "HUD_STATUS_STARTING"
+msgstr "WorldSim запускается..."
+
+msgid "HUD_STATUS_ERROR"
+msgstr "Ошибка WorldSim: %s"
+
+msgid "HUD_STATUS_RUNNING"
+msgstr "тик: %d    активных ячеек: %d    полей: %d    шаг: %d ч"
+
+msgid "HUD_STATUS_PAUSED"
+msgstr "ПАУЗА    тик: %d    активных ячеек: %d    полей: %d"
+
+msgid "HUD_CONTROLS"
+msgstr "ПКМ / WASD / правый стик: вращение    Колесо / Q,E / бамперы: масштаб    Пробел/Start: пауза    Z,X: скорость    R: сброс камеры"
