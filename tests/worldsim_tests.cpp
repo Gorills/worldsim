@@ -529,6 +529,7 @@ void test_tectonic_model_multiseed_robustness() {
     constexpr std::uint64_t seed_count=64;
     constexpr int sample_count=512;
     constexpr double golden_angle_rad=2.3999632297286533222;
+    constexpr double sample_phase_rad=0.731;
 
     for (std::uint64_t seed=0;seed<seed_count;++seed) {
         const TectonicModel tectonics(seed);
@@ -548,12 +549,16 @@ void test_tectonic_model_multiseed_robustness() {
         for (int i=0;i<sample_count;++i) {
             const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
                 static_cast<double>(sample_count);
-            const double phi=static_cast<double>(i)*golden_angle_rad;
+            // Deliberately rotate the validation lattice away from the
+            // constructor's 128-point calibration lattice so the test does not
+            // validate the normalization on its own quadrature orientation.
+            const double phi=sample_phase_rad+
+                static_cast<double>(i)*golden_angle_rad;
             const double radial=std::sqrt(std::max(0.0,1.0-z*z));
             const Vec3d direction{
+                z,
                 radial*std::cos(phi),
-                radial*std::sin(phi),
-                z
+                radial*std::sin(phi)
             };
             const TectonicSample sample=tectonics.sample_direction(direction);
 
