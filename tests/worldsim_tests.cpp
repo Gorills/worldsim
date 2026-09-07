@@ -525,6 +525,119 @@ void test_tectonic_model_partition_and_determinism() {
     check(continuity_checked,"tectonic crust continuity test found no resolved boundary");
 }
 
+void test_tectonic_model_multiseed_robustness() {
+    constexpr std::uint64_t seed_count=64;
+    constexpr int sample_count=512;
+    constexpr double golden_angle_rad=2.3999632297286533222;
+
+    for (std::uint64_t seed=0;seed<seed_count;++seed) {
+        const TectonicModel tectonics(seed);
+
+        double affinity_sum=0.0;
+        int high_affinity_count=0;
+        int transition_count=0;
+        int uplift_count=0;
+        int divergence_count=0;
+        int positive_macro_count=0;
+        int deep_ocean_count=0;
+
+        Vec3d nearest_direction{};
+        TectonicSample nearest_sample{};
+        double nearest_distance=kPi;
+
+        for (int i=0;i<sample_count;++i) {
+            const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
+                static_cast<double>(sample_count);
+            const double phi=static_cast<double>(i)*golden_angle_rad;
+            const double radial=std::sqrt(std::max(0.0,1.0-z*z));
+            const Vec3d direction{
+                radial*std::cos(phi),
+                radial*std::sin(phi),
+                z
+            };
+            const TectonicSample sample=tectonics.sample_direction(direction);
+
+            check(std::isfinite(sample.continental_affinity),
+                  "multi-seed tectonics produced non-finite crust affinity");
+            check(std::isfinite(sample.uplift_forcing) &&
+                  std::isfinite(sample.divergence_forcing),
+                  "multi-seed tectonics produced non-finite boundary response");
+            check(std::isfinite(sample.macro_elevation_m),
+                  "multi-seed tectonics produced non-finite macro elevation");
+
+            affinity_sum+=sample.continental_affinity;
+            high_affinity_count+=sample.continental_affinity>=0.5 ? 1 : 0;
+            transition_count+=(
+                sample.continental_affinity>0.05 &&
+                sample.continental_affinity<0.95
+            ) ? 1 : 0;
+            uplift_count+=sample.uplift_forcing>0.05 ? 1 : 0;
+            divergence_count+=sample.divergence_forcing>0.05 ? 1 : 0;
+            positive_macro_count+=sample.macro_elevation_m>0.0 ? 1 : 0;
+            deep_ocean_count+=sample.macro_elevation_m<-3'000.0 ? 1 : 0;
+
+            if (sample.boundary_distance_rad<nearest_distance) {
+                nearest_distance=sample.boundary_distance_rad;
+                nearest_direction=direction;
+                nearest_sample=sample;
+            }
+        }
+
+        const double inverse_count=1.0/static_cast<double>(sample_count);
+        const double mean_affinity=affinity_sum*inverse_count;
+        const double high_affinity_fraction=
+            static_cast<double>(high_affinity_count)*inverse_count;
+        const double transition_fraction=
+            static_cast<double>(transition_count)*inverse_count;
+        const double uplift_fraction=static_cast<double>(uplift_count)*inverse_count;
+        const double divergence_fraction=
+            static_cast<double>(divergence_count)*inverse_count;
+        const double positive_macro_fraction=
+            static_cast<double>(positive_macro_count)*inverse_count;
+        const double deep_ocean_fraction=
+            static_cast<double>(deep_ocean_count)*inverse_count;
+
+        check(mean_affinity>0.15 && mean_affinity<0.45,
+              "multi-seed crust mean collapsed toward all-ocean or all-continent");
+        check(high_affinity_fraction>0.12 && high_affinity_fraction<0.48,
+              "multi-seed crust high-affinity area is degenerate");
+        check(transition_fraction>0.10,
+              "multi-seed crust lost a meaningful transitional belt");
+        check(uplift_fraction>0.07 && divergence_fraction>0.07,
+              "multi-seed tectonics lost uplift or divergence coverage");
+        check(positive_macro_fraction>0.10,
+              "multi-seed macro relief lost positive terrain");
+        check(deep_ocean_fraction>0.50 && deep_ocean_fraction<0.90,
+              "multi-seed macro relief collapsed toward one elevation regime");
+
+        check(nearest_distance<0.01,
+              "multi-seed continuity probe did not resolve a plate boundary");
+        const Vec3d plane_normal=normalized(
+            tectonics.plates()[nearest_sample.plate_id].seed_direction-
+            tectonics.plates()[nearest_sample.neighbor_plate_id].seed_direction
+        );
+        const Vec3d boundary_point=normalized(
+            nearest_direction-plane_normal*dot(nearest_direction,plane_normal)
+        );
+        Vec3d tangent=plane_normal-boundary_point*dot(boundary_point,plane_normal);
+        tangent=normalized(tangent);
+
+        constexpr double epsilon=1.0e-6;
+        const TectonicSample left=tectonics.sample_direction(normalized(
+            boundary_point*std::cos(epsilon)+tangent*std::sin(epsilon)
+        ));
+        const TectonicSample right=tectonics.sample_direction(normalized(
+            boundary_point*std::cos(epsilon)-tangent*std::sin(epsilon)
+        ));
+        check(left.plate_id!=right.plate_id,
+              "multi-seed continuity probe did not straddle plate ownership");
+        check(std::abs(left.continental_affinity-right.continental_affinity)<1.0e-3,
+              "multi-seed crust affinity is discontinuous at a plate boundary");
+        check(std::abs(left.macro_elevation_m-right.macro_elevation_m)<5.0,
+              "multi-seed macro relief is discontinuous at a plate boundary");
+    }
+}
+
 void test_procedural_terrain_scale_and_determinism() {
     const TerrainGenerator terrain(42);
     const TerrainSample center=terrain.sample_projected(0.0,0.0);
@@ -652,6 +765,7 @@ int main() {
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
         test_tectonic_model_partition_and_determinism();
+        test_tectonic_model_multiseed_robustness();
         test_procedural_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geography_refinement_samples_new_detail();
