@@ -73,11 +73,15 @@ mana_j_m2                demo convenience density
 
 For new domains, use `get_field_descriptors()` and `get_field_values(key)` instead of adding new hard-coded getters.
 
-## MultiMesh demo
+## Viewer baseline
 
-The included scene builds a `MultiMesh` of cells and colors it using temperature, vegetation and mana. The material explicitly enables `vertex_color_use_as_albedo`; Godot requires that flag for per-instance MultiMesh colors to affect `StandardMaterial3D`.
+The included scene builds one reusable `MultiMesh` of cells and colors it using temperature, vegetation and mana. The mesh/material/MultiMesh resources are created once; refreshes update instance data rather than rebuilding rendering resources. The material explicitly enables `vertex_color_use_as_albedo`; Godot requires that flag for per-instance MultiMesh colors to affect `StandardMaterial3D`.
 
-The demo is intentionally a visualization host. Terrain meshing, atmosphere, oceans, entity rendering, camera controls, UI, and gameplay should be written as Godot-side consumers of simulation data rather than moved into the kernel.
+The viewer defines InputMap actions for keyboard/gamepad orbit, zoom, reset, pause and simulation speed. Mouse orbit/wheel input is handled through `_unhandled_input()`, leaving GUI controls earlier in the input chain.
+
+HUD text is localized through gettext PO catalogs (English and Russian) and styled by a shared `Theme` resource.
+
+The scene is still a visualization host, not production graphics. Terrain meshing/render LOD, atmosphere, oceans, content/entity presentation, spatially chunked render culling, accessibility/remapping UI, and gameplay remain Godot-side work and must not be moved into the kernel.
 
 ## CI build strategy
 
