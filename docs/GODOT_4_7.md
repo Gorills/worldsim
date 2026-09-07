@@ -81,7 +81,7 @@ The demo is intentionally a visualization host. Terrain meshing, atmosphere, oce
 
 ## CI build strategy
 
-The native adapter only derives from `godot::Node`; Godot rendering classes are instantiated from GDScript. `godot/build_profile.json` therefore enables only `Node` for generated C++ engine-class wrappers. `godot-cpp` resolves the required base dependencies while avoiding generation/compilation of unrelated engine classes. This materially reduces cold CI cost.
+The native adapter only derives from `godot::Node`; Godot rendering classes are instantiated from GDScript. `godot/build_profile.json` therefore enables `Node` plus `OS`: `OS` is not used by WorldSim directly, but is required by the handwritten `godot-cpp` core source `src/core/print_string.cpp`. The profile still avoids generation/compilation of unrelated engine classes and materially reduces cold CI cost.
 
 For repeat builds, GitHub Actions uses `mozilla-actions/sccache-action@v0.0.11` with `SCCACHE_GHA_ENABLED=true` and `CMAKE_CXX_COMPILER_LAUNCHER=sccache`, matching the mechanism used by the upstream `godot-cpp` 10.0.0-rc2 CMake CI. The workflow builds only the `worldsim_godot` target rather than rebuilding tests and CLI in the Godot job.
 

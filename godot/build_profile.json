@@ -1,7 +1,8 @@
 {
-  "_": "WorldSim C++ only wraps Godot Node. GDScript-side rendering classes do not require godot-cpp wrappers.",
+  "_": "WorldSim wraps Node. OS is also required by godot-cpp's handwritten print_string.cpp core source.",
   "type": "feature_profile",
   "enabled_classes": [
-    "Node"
+    "Node",
+    "OS"
   ]
 }
