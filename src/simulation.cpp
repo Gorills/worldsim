@@ -215,8 +215,10 @@ void Simulation::step(Tick ticks) {
 }
 
 void Simulation::set_focus(Vec3d direction) {
-    if (norm(direction)==0.0) throw std::invalid_argument("zero focus vector");
-    focus_=normalized(direction);
+    const double length=std::hypot(direction.x,direction.y,direction.z);
+    if (!std::isfinite(length) || !(length>0.0))
+        throw std::invalid_argument("focus vector must be finite and non-zero");
+    focus_=direction*(1.0/length);
 }
 void Simulation::clear_focus() { focus_.reset(); }
 
