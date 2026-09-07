@@ -13,8 +13,9 @@ struct TerrainSample {
     double land_fraction{};
 };
 
-// Deterministic, stateless sphere-native geography source shared by simulation state and
-// engine adapters. Projected coordinates are only a local walker coordinate adapter:
+// Deterministic sphere-native geography source shared by simulation state and
+// engine adapters. Tectonics owns the broad elevation basis; procedural noise
+// adds bounded meso/local detail. Projected coordinates are only a local walker adapter:
 // sample_projected() maps them back to a sphere direction and delegates to sample_direction().
 class TerrainGenerator {
 public:
