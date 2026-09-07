@@ -643,6 +643,71 @@ void test_tectonic_model_multiseed_robustness() {
     }
 }
 
+void test_authoritative_terrain_tracks_tectonic_macro_relief() {
+    const TerrainGenerator terrain(42);
+    const TectonicModel tectonics(42);
+
+    constexpr int sample_count=1024;
+    constexpr double golden_angle_rad=2.3999632297286533222;
+    constexpr double sample_phase_rad=0.417;
+
+    double terrain_sum=0.0;
+    double macro_sum=0.0;
+    double terrain_sq_sum=0.0;
+    double macro_sq_sum=0.0;
+    double product_sum=0.0;
+    double residual_abs_sum=0.0;
+    double max_residual=0.0;
+
+    for (int i=0;i<sample_count;++i) {
+        const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
+            static_cast<double>(sample_count);
+        const double phi=sample_phase_rad+
+            static_cast<double>(i)*golden_angle_rad;
+        const double radial=std::sqrt(std::max(0.0,1.0-z*z));
+        const Vec3d direction{
+            radial*std::cos(phi),
+            z,
+            radial*std::sin(phi)
+        };
+
+        const TerrainSample terrain_sample=terrain.sample_direction(direction);
+        const TectonicSample tectonic_sample=tectonics.sample_direction(direction);
+        const double authoritative=terrain_sample.elevation_m;
+        const double macro=tectonic_sample.macro_elevation_m;
+        const double residual=authoritative-macro;
+
+        terrain_sum+=authoritative;
+        macro_sum+=macro;
+        terrain_sq_sum+=authoritative*authoritative;
+        macro_sq_sum+=macro*macro;
+        product_sum+=authoritative*macro;
+        residual_abs_sum+=std::abs(residual);
+        max_residual=std::max(max_residual,std::abs(residual));
+
+        if (authoritative>200.0)
+            check(terrain_sample.land_fraction>0.99,
+                  "positive authoritative terrain is not classified as land");
+        if (authoritative<-200.0)
+            check(terrain_sample.land_fraction<0.01,
+                  "negative authoritative terrain is not classified as ocean");
+    }
+
+    const double n=static_cast<double>(sample_count);
+    const double covariance=product_sum-terrain_sum*macro_sum/n;
+    const double terrain_variance=terrain_sq_sum-terrain_sum*terrain_sum/n;
+    const double macro_variance=macro_sq_sum-macro_sum*macro_sum/n;
+    const double correlation=covariance/std::sqrt(terrain_variance*macro_variance);
+    const double mean_abs_residual=residual_abs_sum/n;
+
+    check(correlation>0.95,
+          "authoritative terrain low-frequency shape is not driven by tectonic macro relief");
+    check(mean_abs_residual>10.0,
+          "authoritative terrain lost meso/local procedural detail");
+    check(max_residual<1'500.0,
+          "procedural terrain detail overwhelms tectonic macro relief");
+}
+
 void test_procedural_terrain_scale_and_determinism() {
     const TerrainGenerator terrain(42);
     const TerrainSample center=terrain.sample_projected(0.0,0.0);
@@ -771,6 +836,7 @@ int main() {
         test_ecology_invariants();
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();
+        test_authoritative_terrain_tracks_tectonic_macro_relief();
         test_procedural_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geography_refinement_samples_new_detail();
