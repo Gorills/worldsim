@@ -34,7 +34,9 @@ This gives:
 - no poles or singular longitude cell at the data-model level;
 - a direct mechanism for simulation LOD.
 
-The current focus policy is intentionally a policy layer inside `Simulation::target_level()`. The hierarchy/state contracts do not depend on the particular angular thresholds. A production project can replace the policy with camera interest, settlement importance, active wars, player subscriptions, server budget, or a combined importance function.
+The current focus policy is intentionally a policy layer inside `Simulation::target_level()`. The hierarchy/state contracts do not depend on the particular angular thresholds. Refinement uses the nominal angular thresholds while coarsening requires a 4-degree exit margin, preventing focus jitter around a boundary from repeatedly transforming authoritative state. A production project can replace the policy with camera interest, settlement importance, active wars, player subscriptions, server budget, or a combined importance function.
+
+`CubeSphereTopology::neighbors4()` is a same-level topological query, not an adaptive active-cover adjacency query. Before adding cross-cell transport/diffusion/advection/pathing on an adaptive cover, introduce an explicit mixed-level neighbor/flux contract and decide whether the cover requires a balance constraint (for example 2:1) or supports arbitrary level differences.
 
 ## 3. State semantics
 
