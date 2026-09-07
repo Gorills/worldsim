@@ -10,6 +10,7 @@ namespace {
 
 constexpr double kGoldenAngleRad=2.3999632297286533222;
 constexpr double kMacroCompetitionScoreGap=0.10;
+constexpr std::uint32_t kCrustCalibrationSamples=128;
 
 double smoothstep01(double x) {
     const double t=std::clamp(x,0.0,1.0);
@@ -97,6 +98,26 @@ double crust_fbm(std::uint64_t seed, Vec3d p) {
     return total/normalization;
 }
 
+double crust_field_bias(std::uint64_t seed) {
+    // The lowest-frequency octave spans only a few lattice cells across the
+    // sphere, so its spherical mean can drift substantially between seeds.
+    // Remove that seed-wide DC component with a small deterministic equal-area
+    // probe; local morphology and continuity are unchanged.
+    double mean=0.0;
+    for (std::uint32_t i=0;i<kCrustCalibrationSamples;++i) {
+        const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
+            static_cast<double>(kCrustCalibrationSamples);
+        const double phi=static_cast<double>(i)*kGoldenAngleRad;
+        const double radial=std::sqrt(std::max(0.0,1.0-z*z));
+        mean+=crust_fbm(seed,{
+            radial*std::cos(phi),
+            radial*std::sin(phi),
+            z
+        });
+    }
+    return -mean/static_cast<double>(kCrustCalibrationSamples);
+}
+
 Vec3d seeded_unit_vector(std::uint64_t seed, std::uint64_t stream, std::uint64_t object) {
     const double z=2.0*deterministic_unit(seed,stream,0,object)-1.0;
     const double phi=2.0*kPi*deterministic_unit(seed,stream+1,0,object);
@@ -158,7 +179,9 @@ BoundaryMetrics boundary_metrics(Vec3d p,
 
 } // namespace
 
-TectonicModel::TectonicModel(std::uint64_t seed): seed_(seed) {
+TectonicModel::TectonicModel(std::uint64_t seed):
+    seed_(seed),
+    crust_bias_(crust_field_bias(seed)) {
     const double phase=2.0*kPi*deterministic_unit(
         seed,
         fnv1a64("tectonics.layout.phase"),
@@ -209,7 +232,7 @@ double TectonicModel::continental_affinity(Vec3d unit_direction) const {
     // Evaluate low-frequency 3D FBM directly on the unit sphere. This keeps the
     // field continuous and seam-free without encoding continent silhouettes as
     // unions of radial spherical caps.
-    const double field=crust_fbm(seed_,unit_direction);
+    const double field=crust_fbm(seed_,unit_direction)+crust_bias_;
     return smoothstep(0.03,0.27,field);
 }
 

@@ -56,6 +56,7 @@ private:
     [[nodiscard]] double continental_affinity(Vec3d unit_direction) const;
 
     std::uint64_t seed_{};
+    double crust_bias_{};
     std::array<TectonicPlate,kPlateCount> plates_{};
 };
 
