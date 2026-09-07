@@ -95,7 +95,9 @@ The map deliberately exposes terrain-source defects rather than hiding them. The
 
 ## Tectonic debug model
 
-The kernel now contains a deterministic query-only `TectonicModel` that is independent from `TerrainGenerator`. It partitions the unit sphere into 16 seeded spherical Voronoi plates. A plate stores a seed direction, a continental/oceanic crust flag, and an angular-velocity vector. For any unit direction the model selects the two nearest plate seeds, treats their spherical bisector as the local plate boundary, and derives:
+The kernel contains a deterministic query-only `TectonicModel` that is independent from `TerrainGenerator`. It partitions the unit sphere into 16 seeded spherical Voronoi plates. A plate stores only a seed direction and a normalized relative angular-velocity vector; continental/oceanic crust is **not** a per-plate boolean.
+
+For any unit direction the model selects the two nearest plate seeds, treats their spherical bisector as the local diagnostic boundary, and derives:
 
 - owning and neighboring plate ids;
 - angular distance to that boundary;
@@ -103,9 +105,20 @@ The kernel now contains a deterministic query-only `TectonicModel` that is indep
 - relative shear along the boundary;
 - a signed boundary forcing that smoothly decays to zero eight degrees away from the boundary.
 
-Positive forcing represents convergence and negative forcing represents divergence. Angular speeds, convergence, shear, and forcing are normalized relative values, not calibrated SI velocities or geological rates. The values are diagnostic kinematics only in this slice: they do **not** modify `geography.elevation_m` or the local terrain mesh yet. This separation is deliberate so plate ownership and boundary motion can be validated before they become an input to macro relief.
+Positive forcing represents convergence and negative forcing represents divergence. Angular speeds, convergence, shear, and forcing are normalized relative values, not calibrated SI velocities or geological rates.
 
-The global map samples the tectonic model through the Godot adapter and exposes three presentation-only layers: `Elevation`, `Plates`, and `Tectonic forcing`. Plate colors and red/blue forcing colors live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
+The same model now also exposes a continuous `continental_affinity` field in `[0,1]`. Five broad crust provinces are anchored near distinct plate seeds, but each province is formed from three overlapping smooth spherical lobes. Those lobes can cross Voronoi boundaries, so one plate may contain both oceanic and continental crust and crust affinity stays continuous when plate ownership changes.
+
+A preview-only tectonic macro height is derived from:
+
+- crust affinity -> broad buoyancy from deep oceanic crust to elevated continental crust;
+- convergent boundary response -> positive uplift, stronger on continental crust;
+- divergent response -> oceanic ridge uplift or continental rift subsidence;
+- transform/shear motion -> no direct vertical term in this slice.
+
+The macro response blends locally competitive plate pairs over a 12-degree belt rather than using one hard neighbor choice. This is specifically intended to avoid imprinting second/third-neighbor switches and triple-junction bookkeeping as hard relief seams. The resulting `macro_elevation_m` is diagnostic only: it does **not** modify `geography.elevation_m`, `TerrainGenerator`, or the local terrain mesh yet.
+
+The global map samples the tectonic model through the Godot adapter and exposes five presentation-only layers: `Elevation`, `Plates`, `Tectonic forcing`, `Crust`, and `Macro relief`. Plate colors, crust colors, forcing colors, and macro preview coloring live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
 
 - https://docs.godotengine.org/en/4.7/classes/class_button.html
 - https://docs.godotengine.org/en/4.7/classes/class_packedint32array.html
@@ -114,7 +127,7 @@ The architectural comparison remains Demiurge's explicit separation between tect
 
 - https://github.com/owenyuwono/demiurge
 
-A spatial bake is intentionally deferred. Ownership and boundary kinematics are cheap point queries; erosion and drainage will require neighborhood-dependent iterative state and are the first stage that justifies a persistent cube-sphere bake/cache lifecycle.
+A spatial bake is intentionally deferred. Plate ownership, crust affinity, and this first macro-relief preview are cheap point queries; erosion and drainage require neighborhood-dependent iterative state and remain the first stage that justifies a persistent cube-sphere bake/cache lifecycle.
 
 ## Known boundaries
 
