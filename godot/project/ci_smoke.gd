@@ -63,11 +63,31 @@ func _initialize() -> void:
         quit(11)
         return
 
+    var global_map := sim.sample_terrain_equirectangular(64, 32)
+    if global_map.size() != 64 * 32:
+        push_error("Global terrain map size mismatch: %d" % global_map.size())
+        quit(12)
+        return
+    var map_min := float(global_map[0])
+    var map_max := map_min
+    for value_variant in global_map:
+        var value := float(value_variant)
+        if value != value or absf(value) > 20000.0:
+            push_error("Global terrain map contains a non-finite or out-of-range elevation")
+            quit(13)
+            return
+        map_min = minf(map_min, value)
+        map_max = maxf(map_max, value)
+    if map_min >= 0.0 or map_max <= 0.0:
+        push_error("Global terrain map does not contain both ocean and land")
+        quit(14)
+        return
+
     sim.set_focus_projected(0.0, 0.0)
     sim.step_hours(1)
     if not sim.get_last_error().is_empty():
         push_error("Terrain simulation step failed: %s" % sim.get_last_error())
-        quit(12)
+        quit(15)
         return
 
     print("WORLDSIM_GODOT_SMOKE_OK tick=%d cells=%d fields=%d" % [
