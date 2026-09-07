@@ -20,7 +20,11 @@ The authoritative spatial model remains the existing cube-sphere hierarchy. No s
 
 `TerrainGenerator` is a stateless deterministic core service keyed by world seed. It can be sampled either from a unit direction on the planet or from local projected meter coordinates. Geography fields are populated from that same generator, so Godot terrain and simulation geography cannot drift because of separate procedural implementations.
 
-The walking projection is azimuthal-equidistant and centered at 45° N, 70° E. The initial continent uses nominal semi-axes of 6,500 km by 2,700 km plus deterministic coastline perturbation. A regression test integrates the level-5 cube-sphere cover and requires generated land area to remain between 40 and 70 million km²; the current seed is approximately Eurasia-scale, not an attempt to reproduce real Eurasian coastlines.
+The walking projection is azimuthal-equidistant and centered at 45° N, 70° E, but it is no longer part of the authoritative terrain-generation path. `sample_projected()` converts local walker meters to a unit direction and delegates to `sample_direction()`. The sphere-native sampler evaluates deterministic 3D value-noise FBM directly from the unit direction and uses a smooth anisotropic spherical cap for the initial continent. This removes the azimuthal antipode singularity from generated geography while preserving one approximately Eurasia-scale landmass with nominal tangent semi-axes of 6,500 km by 2,700 km. A regression test still integrates the level-5 cube-sphere cover and requires generated land area between 40 and 70 million km².
+
+This follows the same relevant large-planet practice as Demiurge: terrain is a deterministic function of seed plus spherical position, and its macro pipeline is angular/normalized rather than derived from a global flat map. WorldSim does not copy Demiurge's implementation or tectonics in this change; it uses the principle only to keep one authoritative sphere-native sampling path:
+
+- https://github.com/owenyuwono/demiurge
 
 Static geography is re-sampled after actual simulation-cover refinement/coarsening through the module lifecycle. This is required because generic intensive-field refinement copies parent values and therefore cannot create higher-frequency terrain detail by itself.
 
@@ -87,7 +91,7 @@ Launch the macro viewer with:
 make map
 ```
 
-The map deliberately exposes defects in the current terrain source rather than hiding them. In particular, the current terrain generator is still based on an azimuthal-equidistant projected procedural continent, so its global `sample_direction()` mapping has the projection's antipodal degeneracy. Replacing that macro terrain source with sphere-native simulation is a later terrain-generation task.
+The map deliberately exposes terrain-source defects rather than hiding them. The first global-map pass revealed a radial discontinuity at the antipode of the local azimuthal walking projection. The terrain source is now sphere-native, so that projection is used only to map local walker coordinates to a unit direction and cannot introduce a global terrain singularity. The map remains the visual regression tool for later tectonics and erosion work.
 
 ## Known boundaries
 

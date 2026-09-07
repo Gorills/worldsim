@@ -12,8 +12,9 @@ struct TerrainSample {
     double land_fraction{};
 };
 
-// Deterministic, stateless geography source shared by simulation state and engine adapters.
-// Projected coordinates use an azimuthal-equidistant map centered on the initial continent.
+// Deterministic, stateless sphere-native geography source shared by simulation state and
+// engine adapters. Projected coordinates are only a local walker coordinate adapter:
+// sample_projected() maps them back to a sphere direction and delegates to sample_direction().
 class TerrainGenerator {
 public:
     explicit TerrainGenerator(std::uint64_t seed): seed_(seed) {}
