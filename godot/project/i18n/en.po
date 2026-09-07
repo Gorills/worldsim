@@ -22,7 +22,7 @@ msgid "HUD_CONTROLS"
 msgstr "WASD: move    Mouse: look    Space: jump    Esc: release/capture mouse"
 
 msgid "MAP_TITLE"
-msgstr "Global elevation map"
+msgstr "Global world map"
 
 msgid "MAP_SEED"
 msgstr "Seed"
