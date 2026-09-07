@@ -1,4 +1,5 @@
 #include "world_simulation_node.hpp"
+#include "worldsim/terrain.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
@@ -8,6 +9,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <stdexcept>
 #include <string>
@@ -32,10 +34,15 @@ WorldSimulationNode::WorldSimulationNode() {
 
 void WorldSimulationNode::_bind_methods() {
     ClassDB::bind_method(godot::D_METHOD("initialize","seed"),&WorldSimulationNode::initialize);
+    ClassDB::bind_method(godot::D_METHOD("initialize_terrain_world","seed"),&WorldSimulationNode::initialize_terrain_world);
     ClassDB::bind_method(godot::D_METHOD("step_hours","hours"),&WorldSimulationNode::step_hours);
     ClassDB::bind_method(godot::D_METHOD("set_focus_direction","direction"),&WorldSimulationNode::set_focus_direction);
     ClassDB::bind_method(godot::D_METHOD("clear_focus"),&WorldSimulationNode::clear_focus);
+    ClassDB::bind_method(godot::D_METHOD("set_focus_projected","east_m","north_m"),&WorldSimulationNode::set_focus_projected);
     ClassDB::bind_method(godot::D_METHOD("get_tick"),&WorldSimulationNode::get_tick);
+    ClassDB::bind_method(godot::D_METHOD("sample_terrain_height","east_m","north_m"),&WorldSimulationNode::sample_terrain_height);
+    ClassDB::bind_method(godot::D_METHOD("sample_terrain_patch","center_east_m","center_north_m","spacing_m","resolution"),
+                         &WorldSimulationNode::sample_terrain_patch);
     ClassDB::bind_method(godot::D_METHOD("get_render_packet"),&WorldSimulationNode::get_render_packet);
     ClassDB::bind_method(godot::D_METHOD("get_field_descriptors"),&WorldSimulationNode::get_field_descriptors);
     ClassDB::bind_method(godot::D_METHOD("get_field_values","field_key"),&WorldSimulationNode::get_field_values);
@@ -71,6 +78,23 @@ void WorldSimulationNode::initialize(std::int64_t seed) {
     }
 }
 
+void WorldSimulationNode::initialize_terrain_world(std::int64_t seed) {
+    try {
+        worldsim::SimulationConfig cfg;
+        cfg.base_level=4;
+        cfg.max_level=7;
+        cfg.tick_seconds=3600.0;
+        sim_=worldsim::make_terrain_simulation(static_cast<std::uint64_t>(seed),cfg);
+        last_error_.clear();
+    } catch (const std::exception& e) {
+        sim_.reset();
+        report_error(e.what());
+    } catch (...) {
+        sim_.reset();
+        report_error("unknown C++ exception during terrain world initialization");
+    }
+}
+
 void WorldSimulationNode::step_hours(std::int64_t hours) {
     try {
         ensure_sim();
@@ -90,6 +114,17 @@ void WorldSimulationNode::set_focus_direction(const Vector3& d) {
     catch (...) { report_error("unknown C++ exception in set_focus_direction"); }
 }
 
+void WorldSimulationNode::set_focus_projected(double east_m, double north_m) {
+    try {
+        ensure_sim();
+        if (!std::isfinite(east_m) || !std::isfinite(north_m))
+            throw std::invalid_argument("projected focus must be finite");
+        sim_->set_focus(worldsim::TerrainGenerator::projected_to_direction(east_m,north_m));
+        last_error_.clear();
+    } catch (const std::exception& e) { report_error(e.what()); }
+    catch (...) { report_error("unknown C++ exception in set_focus_projected"); }
+}
+
 void WorldSimulationNode::clear_focus() {
     try {
         ensure_sim();
@@ -106,6 +141,49 @@ std::int64_t WorldSimulationNode::get_tick() const {
         return static_cast<std::int64_t>(sim_->world().tick());
     } catch (const std::exception& e) { report_error(e.what()); return 0; }
     catch (...) { report_error("unknown C++ exception in get_tick"); return 0; }
+}
+
+double WorldSimulationNode::sample_terrain_height(double east_m, double north_m) const {
+    try {
+        ensure_sim();
+        if (!std::isfinite(east_m) || !std::isfinite(north_m))
+            throw std::invalid_argument("terrain coordinates must be finite");
+        const worldsim::TerrainGenerator terrain(sim_->world().seed());
+        last_error_.clear();
+        return terrain.sample_projected(east_m,north_m).elevation_m;
+    } catch (const std::exception& e) { report_error(e.what()); return 0.0; }
+    catch (...) { report_error("unknown C++ exception in sample_terrain_height"); return 0.0; }
+}
+
+PackedFloat32Array WorldSimulationNode::sample_terrain_patch(double center_east_m,
+                                                             double center_north_m,
+                                                             double spacing_m,
+                                                             std::int64_t resolution) const {
+    PackedFloat32Array out;
+    try {
+        ensure_sim();
+        if (!std::isfinite(center_east_m) || !std::isfinite(center_north_m) ||
+            !std::isfinite(spacing_m) || spacing_m<=0.0)
+            throw std::invalid_argument("invalid terrain patch coordinates or spacing");
+        if (resolution<2 || resolution>129)
+            throw std::invalid_argument("terrain patch resolution must be in [2,129]");
+
+        const auto n=static_cast<int>(resolution);
+        out.resize(n*n);
+        const double half=0.5*static_cast<double>(n-1);
+        const worldsim::TerrainGenerator terrain(sim_->world().seed());
+        for (int z=0;z<n;++z) {
+            for (int x=0;x<n;++x) {
+                const double east=center_east_m+(static_cast<double>(x)-half)*spacing_m;
+                const double north=center_north_m+(static_cast<double>(z)-half)*spacing_m;
+                const double height=terrain.sample_projected(east,north).elevation_m;
+                out.set(z*n+x,static_cast<float>(height));
+            }
+        }
+        last_error_.clear();
+    } catch (const std::exception& e) { report_error(e.what()); }
+    catch (...) { report_error("unknown C++ exception in sample_terrain_patch"); }
+    return out;
 }
 
 Dictionary WorldSimulationNode::get_render_packet() const {
