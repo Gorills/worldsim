@@ -1023,6 +1023,8 @@ void test_geology_model_process_contracts() {
           "continental/oceanic crust thickness contrast collapsed");
     check(continent.crust_density_kg_m3<ocean.crust_density_kg_m3,
           "continental crust is not more buoyant than oceanic crust");
+    check(continent.continental_fraction>ocean.continental_fraction+0.6,
+          "persistent continental fraction lost crust-type contrast");
 
     GeologyState young_ocean=ocean;
     GeologyState old_ocean=ocean;
@@ -1048,9 +1050,22 @@ void test_geology_model_process_contracts() {
 
     GeologyState rift=geology.initial_state(rift_direction,area_m2);
     const double rift_before=rift.crust_thickness_m;
+    const double continental_before=rift.continental_fraction;
     geology.advance_tectonics(rift,rift_direction,5.0e6);
     check(rift.crust_thickness_m<rift_before,
           "continental divergence did not thin crust");
+    check(rift.continental_fraction<continental_before,
+          "continental divergence did not reduce continental fraction");
+
+    GeologyState breakup=geology.initial_state(rift_direction,area_m2);
+    const double breakup_age_before=breakup.lithosphere_age_ma;
+    geology.advance_tectonics(breakup,rift_direction,250.0e6);
+    check(breakup.continental_fraction<0.45,
+          "long-lived rifting did not complete continental breakup");
+    check(breakup.crust_thickness_m<15'000.0,
+          "completed breakup did not transition toward thin oceanic crust");
+    check(breakup.lithosphere_age_ma<breakup_age_before,
+          "post-breakup spreading did not renew young lithosphere");
 
     GeologyState subduction=geology.initial_state(subduction_direction,area_m2);
     const double subduction_before=subduction.crust_thickness_m;
@@ -1114,15 +1129,18 @@ void test_geography_refinement_preserves_geology_state() {
     const auto children=parent.children();
 
     const auto crust=*sim->fields().find("geology.crust_thickness_m");
+    const auto continental=*sim->fields().find("geology.continental_fraction");
     const auto age=*sim->fields().find("geology.lithosphere_age_ma");
     const auto sediment=*sim->fields().find("geology.sediment_mass_kg");
     const auto elevation=*sim->fields().find("geography.elevation_m");
     auto& before_fields=sim->world().stores().get<FieldStore>();
 
     constexpr double sentinel_crust=47'321.0;
+    constexpr double sentinel_continental=0.731;
     constexpr double sentinel_age=987.6;
     constexpr double sentinel_sediment=1.23456789e18;
     before_fields.set(parent,crust,sentinel_crust);
+    before_fields.set(parent,continental,sentinel_continental);
     before_fields.set(parent,age,sentinel_age);
     before_fields.set(parent,sediment,sentinel_sediment);
 
@@ -1138,6 +1156,8 @@ void test_geography_refinement_preserves_geology_state() {
               "focused geography parent was not refined");
         near(fields.get(child,crust),sentinel_crust,1e-14,
              "LOD refinement regenerated persistent crust state");
+        near(fields.get(child,continental),sentinel_continental,1e-14,
+             "LOD refinement regenerated continental fraction");
         near(fields.get(child,age),sentinel_age,1e-14,
              "LOD refinement regenerated lithosphere age");
         sediment_sum+=fields.get(child,sediment);
