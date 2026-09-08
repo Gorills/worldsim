@@ -525,6 +525,86 @@ double GeologyModel::hillslope_transport_rate_m_per_year(
     );
 }
 
+double GeologyModel::marine_sediment_transport_rate_m_per_year(
+    double downhill_slope,
+    double water_depth_m,
+    double sediment_thickness_m
+) const {
+    if (
+        !(downhill_slope>0.0) ||
+        !(water_depth_m>0.0) ||
+        !(sediment_thickness_m>0.0)
+    ) {
+        return 0.0;
+    }
+
+    // Reduced submarine-diffusion analogue. Transport is strongest in shallow
+    // water and weakens exponentially into deep basins, while finite sediment
+    // availability prevents entraining material that is not present. These
+    // scales are deliberately coarse because a WorldSim cell spans far more
+    // area than a resolved shelf/slope sediment-transport grid.
+    constexpr double sediment_availability_depth_m=50.0;
+    constexpr double shallow_water_depth_m=100.0;
+    constexpr double deep_transport_decay_depth_m=1'500.0;
+    constexpr double reference_slope=0.02;
+    constexpr double reference_transport_rate_m_per_year=5.0e-3;
+    constexpr double maximum_transport_rate_m_per_year=1.0e-2;
+
+    const double sediment_factor=
+        -std::expm1(-sediment_thickness_m/sediment_availability_depth_m);
+    const double deep_excess=std::max(
+        0.0,
+        water_depth_m-shallow_water_depth_m
+    );
+    const double depth_factor=std::exp(
+        -deep_excess/deep_transport_decay_depth_m
+    );
+    const double slope_factor=std::clamp(
+        downhill_slope/reference_slope,
+        0.0,
+        5.0
+    );
+
+    return std::clamp(
+        reference_transport_rate_m_per_year*
+        slope_factor*
+        sediment_factor*
+        depth_factor,
+        0.0,
+        maximum_transport_rate_m_per_year
+    );
+}
+
+double GeologyModel::entrain_sediment(
+    GeologyState& state,
+    double cell_area_m2,
+    double transport_depth_m
+) const {
+    if (!(transport_depth_m>0.0) || !(cell_area_m2>0.0))
+        return 0.0;
+
+    const double sediment_depth=sediment_column_thickness_m(
+        state.sediment_mass_kg,
+        cell_area_m2
+    );
+    const double removed_depth=std::min(
+        sediment_depth,
+        transport_depth_m
+    );
+    const double removed_mass=std::min(
+        state.sediment_mass_kg,
+        sediment_mass_for_thickness_kg(
+            removed_depth,
+            cell_area_m2
+        )
+    );
+    state.sediment_mass_kg=std::max(
+        0.0,
+        state.sediment_mass_kg-removed_mass
+    );
+    return removed_mass;
+}
+
 ErosionBudget GeologyModel::erode(
     GeologyState& state,
     double cell_area_m2,
@@ -544,16 +624,10 @@ ErosionBudget GeologyModel::erode(
     // Erosion removes the shallowest part of the equilibrium column. The
     // remainder decompacts automatically when mass is converted back to
     // thickness on the next surface query.
-    budget.sediment_removed_kg=std::min(
-        state.sediment_mass_kg,
-        sediment_mass_for_thickness_kg(
-            sediment_removed_depth,
-            cell_area_m2
-        )
-    );
-    state.sediment_mass_kg=std::max(
-        0.0,
-        state.sediment_mass_kg-budget.sediment_removed_kg
+    budget.sediment_removed_kg=entrain_sediment(
+        state,
+        cell_area_m2,
+        sediment_removed_depth
     );
 
     const double remaining_depth=erosion_depth_m-sediment_removed_depth;
