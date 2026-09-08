@@ -194,9 +194,36 @@ BoundaryFeatureSample GeologyModel::boundary_features(
         0.0,
         1.0
     );
-    const double collision_weight=smoothstep01(
+    const double owner_continental_score=smoothstep01(
         (continental_fraction-0.60)/0.30
     );
+
+    // Classify the convergent segment from crust on both sides of the actual
+    // nearest plate boundary. A local-only rule incorrectly turns a continental
+    // overriding margin into continent-continent collision even when the other
+    // side is oceanic. Probe several degrees into the opposite side so the
+    // continuous crust field is sampled away from the boundary itself.
+    const Vec3d boundary_normal=normalized(
+        tectonics_.plates()[tectonic.plate_id].seed_direction-
+        tectonics_.plates()[tectonic.neighbor_plate_id].seed_direction
+    );
+    const Vec3d boundary_point=normalized(
+        direction-boundary_normal*dot(direction,boundary_normal)
+    );
+    constexpr double crust_probe_offset_rad=4.0*kPi/180.0;
+    const Vec3d neighbor_crust_probe=normalized(
+        boundary_point*std::cos(crust_probe_offset_rad)-
+        boundary_normal*std::sin(crust_probe_offset_rad)
+    );
+    const double neighbor_continental_score=smoothstep01(
+        (
+            tectonics_.sample_direction(neighbor_crust_probe).
+                continental_affinity-
+            0.60
+        )/0.30
+    );
+    const double collision_weight=
+        owner_continental_score*neighbor_continental_score;
     const double subduction_weight=1.0-collision_weight;
     const double convergence=std::max(0.0,tectonic.convergence);
 
@@ -217,9 +244,24 @@ BoundaryFeatureSample GeologyModel::boundary_features(
         0,
         pair_key
     )<0.5;
-    const std::uint32_t subducting_plate=
+    const std::uint32_t fallback_subducting_plate=
         lower_plate_subducts ? lo : hi;
-    const bool owner_subducts=tectonic.plate_id==subducting_plate;
+
+    // At a mixed margin prefer the more oceanic side for subduction. Similar
+    // crust on both sides keeps the deterministic pair-stable fallback.
+    constexpr double polarity_contrast=0.25;
+    bool owner_subducts=tectonic.plate_id==fallback_subducting_plate;
+    if (
+        owner_continental_score+polarity_contrast<
+        neighbor_continental_score
+    ) {
+        owner_subducts=true;
+    } else if (
+        neighbor_continental_score+polarity_contrast<
+        owner_continental_score
+    ) {
+        owner_subducts=false;
+    }
 
     constexpr double trench_width_rad=1.2*kPi/180.0;
     constexpr double arc_offset_rad=3.0*kPi/180.0;

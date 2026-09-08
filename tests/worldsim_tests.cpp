@@ -1169,6 +1169,123 @@ void test_geology_model_process_contracts() {
          "flat terrain erodes under slope-driven erosion law");
 }
 
+void test_geology_mixed_margin_uses_both_crust_sides() {
+    constexpr double area_m2=1.0e10;
+    constexpr int sample_count=2'048;
+    constexpr std::uint64_t seed_count=64;
+    constexpr double golden_angle_rad=2.3999632297286533222;
+    constexpr double crust_probe_offset_rad=4.0*kPi/180.0;
+    constexpr double trench_probe_offset_rad=0.2*kPi/180.0;
+
+    bool found_mixed_margin=false;
+    for (
+        std::uint64_t seed=0;
+        seed<seed_count && !found_mixed_margin;
+        ++seed
+    ) {
+        const GeologyModel geology(seed);
+        const TectonicModel& tectonics=geology.tectonics();
+        for (int i=0;i<sample_count && !found_mixed_margin;++i) {
+            const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
+                static_cast<double>(sample_count);
+            const double phi=0.413+
+                static_cast<double>(i)*golden_angle_rad;
+            const double radial=std::sqrt(std::max(0.0,1.0-z*z));
+            const Vec3d probe{
+                radial*std::cos(phi),
+                radial*std::sin(phi),
+                z
+            };
+            const TectonicSample sample=tectonics.sample_direction(probe);
+            if (sample.convergence<0.15) continue;
+
+            const Vec3d normal=normalized(
+                tectonics.plates()[sample.plate_id].seed_direction-
+                tectonics.plates()[sample.neighbor_plate_id].seed_direction
+            );
+            const Vec3d boundary=normalized(
+                probe-normal*dot(probe,normal)
+            );
+            const Vec3d owner_side=normalized(
+                boundary*std::cos(crust_probe_offset_rad)+
+                normal*std::sin(crust_probe_offset_rad)
+            );
+            const Vec3d neighbor_side=normalized(
+                boundary*std::cos(crust_probe_offset_rad)-
+                normal*std::sin(crust_probe_offset_rad)
+            );
+            const TectonicSample owner_sample=
+                tectonics.sample_direction(owner_side);
+            const TectonicSample neighbor_sample=
+                tectonics.sample_direction(neighbor_side);
+            if (
+                owner_sample.plate_id!=sample.plate_id ||
+                owner_sample.neighbor_plate_id!=sample.neighbor_plate_id ||
+                neighbor_sample.plate_id!=sample.neighbor_plate_id ||
+                neighbor_sample.neighbor_plate_id!=sample.plate_id
+            ) {
+                continue;
+            }
+
+            Vec3d continental_side{};
+            Vec3d oceanic_side{};
+            Vec3d oceanic_normal{};
+            if (
+                owner_sample.continental_affinity>0.75 &&
+                neighbor_sample.continental_affinity<0.45
+            ) {
+                continental_side=owner_side;
+                oceanic_side=neighbor_side;
+                oceanic_normal=normal*(-1.0);
+            } else if (
+                neighbor_sample.continental_affinity>0.75 &&
+                owner_sample.continental_affinity<0.45
+            ) {
+                continental_side=neighbor_side;
+                oceanic_side=owner_side;
+                oceanic_normal=normal;
+            } else {
+                continue;
+            }
+
+            GeologyState continental=
+                geology.initial_state(continental_side,area_m2);
+            continental.continental_fraction=0.95;
+            const BoundaryFeatureSample continental_features=
+                geology.boundary_features(continental,continental_side);
+
+            const Vec3d oceanic_trench=normalized(
+                boundary*std::cos(trench_probe_offset_rad)+
+                oceanic_normal*std::sin(trench_probe_offset_rad)
+            );
+            GeologyState oceanic=
+                geology.initial_state(oceanic_trench,area_m2);
+            oceanic.continental_fraction=0.05;
+            const BoundaryFeatureSample oceanic_features=
+                geology.boundary_features(oceanic,oceanic_trench);
+
+            check(
+                continental_features.volcanic_arc_forcing>0.02,
+                "mixed ocean-continent margin lost overriding volcanic arc"
+            );
+            check(
+                continental_features.collision_forcing<0.02,
+                "mixed ocean-continent margin was misclassified as collision"
+            );
+            check(
+                oceanic_features.trench_forcing>0.02,
+                "mixed ocean-continent margin did not subduct oceanic side"
+            );
+            found_mixed_margin=true;
+        }
+    }
+
+    check(
+        found_mixed_margin,
+        "mixed-margin regression found no resolved ocean-continent convergence"
+    );
+}
+
 void test_geology_drainage_accumulation() {
     SimulationConfig cfg;
     cfg.base_level=2;
@@ -1299,6 +1416,7 @@ int main() {
         test_authoritative_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geology_model_process_contracts();
+        test_geology_mixed_margin_uses_both_crust_sides();
         test_geology_drainage_accumulation();
         test_geography_refinement_preserves_geology_state();
         test_c_api();
