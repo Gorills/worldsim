@@ -4,7 +4,7 @@
 > conservative decomposition pools. Snow-albedo coupling v1 introduced epoch
 > 21 and suppresses fire danger under projected snow cover. Fauna carbon
 > accounting introduced epoch 22; the grazing-timestep correction subsequently
-> raises the current combined-world epoch to 23.
+> raises the current combined-world epoch to 24.
 > The Wildfire-v1 execution record below is retained as historical evidence for
 > epoch 19.
 
