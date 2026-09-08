@@ -29,6 +29,13 @@ This file distinguishes what was actually executed from architectural intent.
 
 `worldsim_sanitizer_smoke` is a bounded scenario intended for ASan/UBSan builds.
 
+## Geology plausibility benchmark
+
+`worldsim_geology_benchmark` is a non-authoritative diagnostic executable that measures the static tectonic/terrain generator across multiple seeds. It records plate-area/spacing diversity, resolved boundary kinematic mix, crust connectivity, hypsometry, and tectonic/topographic coupling using sphere-native sampling.
+
+Reference mismatches are emitted as warnings rather than CTest failures because the current generator has not yet been scientifically calibrated. CI runs the 64-seed baseline and publishes `worldsim-geology-benchmark` for review. Methodology, reference sources, warning semantics, and explicitly unsupported scientific claims are documented in `docs/GEOLOGY_VALIDATION.md`.
+
+
 ## Claims deliberately not made
 
 - scientific calibration of the demo climate/ecology equations;
