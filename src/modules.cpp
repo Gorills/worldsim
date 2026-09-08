@@ -17,6 +17,16 @@ FieldId require_field(const FieldRegistry& r, std::string_view key) {
     return *id;
 }
 
+double soil_water_capacity_depth_m(double regolith_thickness_m) {
+    constexpr double fractured_substrate_storage_m=0.02;
+    constexpr double developed_soil_storage_m=0.28;
+    constexpr double regolith_storage_scale_m=0.75;
+    const double depth=std::max(0.0,regolith_thickness_m);
+    return fractured_substrate_storage_m+
+        developed_soil_storage_m*
+        (-std::expm1(-depth/regolith_storage_scale_m));
+}
+
 struct GeologyFieldIds {
     FieldId elevation{};
     FieldId land_fraction{};
@@ -232,14 +242,13 @@ class GeologySystem final : public ISimSystem {
 public:
     explicit GeologySystem(const FieldRegistry& r):
         ids_(geology_fields(r)),
-        has_climate_(r.find("climate.surface_temperature_k").has_value()),
-        has_ecology_(r.find("ecology.vegetation_carbon_kg").has_value()) {}
+        has_climate_(r.find("climate.surface_temperature_k").has_value()) {}
 
     std::string_view id() const override { return "geology.evolution"; }
     Tick cadence_ticks() const override { return 24; }
 
     std::vector<std::string> after() const override {
-        if (has_ecology_) return {"ecology.vegetation"};
+        if (ids_.runoff) return {"ecology.hydrology"};
         if (has_climate_) return {"climate.surface"};
         return {};
     }
@@ -501,7 +510,6 @@ public:
 private:
     GeologyFieldIds ids_;
     bool has_climate_{};
-    bool has_ecology_{};
 };
 
 class MagicSystem final : public ISimSystem {
@@ -582,15 +590,27 @@ private:
 class HydrologySystem final : public ISimSystem {
 public:
     explicit HydrologySystem(const FieldRegistry& r)
-        : temp_(require_field(r,"climate.surface_temperature_k")), precip_(require_field(r,"climate.precipitation_mm_day")),
-          land_(require_field(r,"geography.land_fraction")), water_(require_field(r,"hydrology.soil_water_m3")),
+        : temp_(require_field(r,"climate.surface_temperature_k")),
+          precip_(require_field(r,"climate.precipitation_mm_day")),
+          land_(require_field(r,"geography.land_fraction")),
+          regolith_(require_field(r,"geology.regolith_thickness_m")),
+          water_(require_field(r,"hydrology.soil_water_m3")),
           runoff_(require_field(r,"hydrology.runoff_m3_day")) {}
     std::string_view id() const override { return "ecology.hydrology"; }
     Tick cadence_ticks() const override { return 6; }
     std::vector<std::string> after() const override { return {"climate.surface"}; }
     SystemAccess access() const override {
-        return {{"field:climate.surface_temperature_k","field:climate.precipitation_mm_day","field:geography.land_fraction","field:hydrology.soil_water_m3"},
-                {"field:hydrology.soil_water_m3","field:hydrology.runoff_m3_day"}};
+        return {{
+                    "field:climate.surface_temperature_k",
+                    "field:climate.precipitation_mm_day",
+                    "field:geography.land_fraction",
+                    "field:geology.regolith_thickness_m",
+                    "field:hydrology.soil_water_m3"
+                },
+                {
+                    "field:hydrology.soil_water_m3",
+                    "field:hydrology.runoff_m3_day"
+                }};
     }
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
@@ -598,38 +618,204 @@ public:
             const double area=ctx.world.topology().area_m2(cell);
             const double land=fs.get(cell,land_);
             const double effective_area=area*land;
-            if (effective_area<=1.0) { fs.set(cell,water_,0.0); fs.set(cell,runoff_,0.0); continue; }
+            if (effective_area<=1.0) {
+                fs.set(cell,water_,0.0);
+                fs.set(cell,runoff_,0.0);
+                continue;
+            }
+
             double water=fs.get(cell,water_);
-            const double rain=fs.get(cell,precip_)*0.001*effective_area*ctx.dt_days;
+            const double rain=
+                fs.get(cell,precip_)*0.001*effective_area*ctx.dt_days;
             const double temp=fs.get(cell,temp_);
-            const double evap_depth=std::max(0.0,temp-258.0)*0.000035*ctx.dt_days;
-            const double evap=std::min(water+rain,evap_depth*effective_area);
+            const double evap_depth=
+                std::max(0.0,temp-258.0)*0.000035*ctx.dt_days;
+            const double evap=std::min(
+                water+rain,
+                evap_depth*effective_area
+            );
             water+=rain-evap;
-            const double capacity=0.35*effective_area;
+
+            const double capacity=
+                soil_water_capacity_depth_m(fs.get(cell,regolith_))*
+                effective_area;
             const double excess=std::max(0.0,water-capacity);
             water-=excess;
             fs.set(cell,water_,water);
-            fs.set(cell,runoff_,excess/std::max(ctx.dt_days,1e-12));
+            fs.set(
+                cell,
+                runoff_,
+                excess/std::max(ctx.dt_days,1e-12)
+            );
         }
     }
 private:
-    FieldId temp_,precip_,land_,water_,runoff_;
+    FieldId temp_,precip_,land_,regolith_,water_,runoff_;
+};
+
+class SoilSystem final : public ISimSystem {
+public:
+    explicit SoilSystem(const FieldRegistry& r)
+        : temp_(require_field(r,"climate.surface_temperature_k")),
+          land_(require_field(r,"geography.land_fraction")),
+          regolith_(require_field(r,"geology.regolith_thickness_m")),
+          water_(require_field(r,"hydrology.soil_water_m3")),
+          runoff_(require_field(r,"hydrology.runoff_m3_day")),
+          fertility_(require_field(r,"ecology.soil_fertility")),
+          litter_(require_field(r,"ecology.litter_carbon_kg")) {}
+
+    std::string_view id() const override { return "ecology.soil"; }
+    Tick cadence_ticks() const override { return 24; }
+    std::vector<std::string> after() const override {
+        return {"geology.evolution"};
+    }
+    SystemAccess access() const override {
+        return {{
+                    "field:climate.surface_temperature_k",
+                    "field:geography.land_fraction",
+                    "field:geology.regolith_thickness_m",
+                    "field:hydrology.soil_water_m3",
+                    "field:hydrology.runoff_m3_day",
+                    "field:ecology.soil_fertility",
+                    "field:ecology.litter_carbon_kg"
+                },
+                {
+                    "field:ecology.soil_fertility",
+                    "field:ecology.litter_carbon_kg"
+                }};
+    }
+
+    void step(SystemContext& ctx) override {
+        auto& fs=ctx.world.stores().get<FieldStore>();
+        for (CellId cell:ctx.world.active_cells()) {
+            const double area=ctx.world.topology().area_m2(cell);
+            const double land=fs.get(cell,land_);
+            const double effective_area=area*land;
+            if (effective_area<=1.0) {
+                fs.set(cell,fertility_,0.0);
+                fs.set(cell,litter_,0.0);
+                continue;
+            }
+
+            const double regolith=std::max(
+                0.0,
+                fs.get(cell,regolith_)
+            );
+            const double capacity=
+                soil_water_capacity_depth_m(regolith)*effective_area;
+            const double moisture=std::clamp(
+                fs.get(cell,water_)/
+                    std::max(1.0,0.65*capacity),
+                0.0,
+                1.0
+            );
+            const double temp=fs.get(cell,temp_);
+            const double temperature_factor=std::clamp(
+                std::pow(2.0,(temp-283.0)/10.0),
+                0.1,
+                4.0
+            );
+
+            double litter=fs.get(cell,litter_);
+            constexpr double base_decomposition_per_day=1.0e-3;
+            const double decomposition_rate=
+                base_decomposition_per_day*
+                temperature_factor*
+                (0.15+0.85*moisture);
+            const double decomposed=litter*(
+                1.0-std::exp(-decomposition_rate*ctx.dt_days)
+            );
+            litter=std::max(0.0,litter-decomposed);
+
+            const double substrate_factor=
+                -std::expm1(-regolith/0.75);
+            const double litter_density=
+                litter/std::max(1.0,effective_area);
+            const double organic_factor=
+                -std::expm1(-litter_density/0.75);
+            const double target_fertility=std::clamp(
+                0.05+
+                0.60*substrate_factor+
+                0.35*organic_factor,
+                0.0,
+                1.0
+            );
+
+            double fertility=std::clamp(
+                fs.get(cell,fertility_),
+                0.0,
+                1.0
+            );
+            const double equilibration=
+                1.0-std::exp(-ctx.dt_days/365.2422);
+            fertility+=
+                (target_fertility-fertility)*equilibration;
+
+            // Decomposition gives a small mineralization pulse to the reduced
+            // fertility state. This is deliberately an index-level feedback,
+            // not an elemental N/P mass balance.
+            fertility+=std::min(
+                0.05,
+                0.10*decomposed/std::max(1.0,effective_area)
+            );
+
+            // Strong drainage slowly leaches the reduced fertility state.
+            const double runoff_depth=
+                fs.get(cell,runoff_)*ctx.dt_days/
+                std::max(1.0,effective_area);
+            fertility*=std::exp(-0.5*std::max(0.0,runoff_depth));
+
+            fs.set(
+                cell,
+                fertility_,
+                std::clamp(fertility,0.0,1.0)
+            );
+            fs.set(cell,litter_,litter);
+        }
+    }
+
+private:
+    FieldId temp_,land_,regolith_,water_,runoff_,fertility_,litter_;
 };
 
 class VegetationSystem final : public ISimSystem {
 public:
     explicit VegetationSystem(const FieldRegistry& r)
-        : temp_(require_field(r,"climate.surface_temperature_k")), solar_(require_field(r,"climate.solar_flux_w_m2")),
-          land_(require_field(r,"geography.land_fraction")), water_(require_field(r,"hydrology.soil_water_m3")),
-          growth_(require_field(r,"magic.growth_factor")), carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+        : temp_(require_field(r,"climate.surface_temperature_k")),
+          solar_(require_field(r,"climate.solar_flux_w_m2")),
+          land_(require_field(r,"geography.land_fraction")),
+          regolith_(require_field(r,"geology.regolith_thickness_m")),
+          water_(require_field(r,"hydrology.soil_water_m3")),
+          growth_(require_field(r,"magic.growth_factor")),
+          fertility_(require_field(r,"ecology.soil_fertility")),
+          litter_(require_field(r,"ecology.litter_carbon_kg")),
+          carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
           npp_(require_field(r,"ecology.npp_kg_day")) {}
+
     std::string_view id() const override { return "ecology.vegetation"; }
     Tick cadence_ticks() const override { return 24; }
-    std::vector<std::string> after() const override { return {"ecology.hydrology","magic.flux"}; }
-    SystemAccess access() const override {
-        return {{"field:climate.surface_temperature_k","field:climate.solar_flux_w_m2","field:geography.land_fraction","field:hydrology.soil_water_m3","field:magic.growth_factor","field:ecology.vegetation_carbon_kg"},
-                {"field:ecology.vegetation_carbon_kg","field:ecology.npp_kg_day"}};
+    std::vector<std::string> after() const override {
+        return {"ecology.soil","magic.flux"};
     }
+    SystemAccess access() const override {
+        return {{
+                    "field:climate.surface_temperature_k",
+                    "field:climate.solar_flux_w_m2",
+                    "field:geography.land_fraction",
+                    "field:geology.regolith_thickness_m",
+                    "field:hydrology.soil_water_m3",
+                    "field:magic.growth_factor",
+                    "field:ecology.soil_fertility",
+                    "field:ecology.litter_carbon_kg",
+                    "field:ecology.vegetation_carbon_kg"
+                },
+                {
+                    "field:ecology.litter_carbon_kg",
+                    "field:ecology.vegetation_carbon_kg",
+                    "field:ecology.npp_kg_day"
+                }};
+    }
+
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
         for (CellId cell:ctx.world.active_cells()) {
@@ -637,34 +823,95 @@ public:
             const double land=fs.get(cell,land_);
             const double effective_area=area*land;
             double carbon=fs.get(cell,carbon_);
-            if (effective_area<=1.0) { fs.set(cell,carbon_,0.0); fs.set(cell,npp_,0.0); continue; }
+            if (effective_area<=1.0) {
+                fs.set(cell,carbon_,0.0);
+                fs.set(cell,npp_,0.0);
+                fs.set(cell,litter_,0.0);
+                continue;
+            }
+
             const double temp=fs.get(cell,temp_);
-            const double tf=std::exp(-std::pow((temp-293.0)/18.0,2.0));
-            const double wf=std::clamp(fs.get(cell,water_)/(0.18*effective_area),0.0,1.0);
-            const double sf=std::clamp(fs.get(cell,solar_)/340.0,0.05,1.2);
-            const double potential=effective_area*0.00075*tf*wf*sf*fs.get(cell,growth_);
-            const double capacity=effective_area*9.0;
-            const double density_factor=std::clamp(1.0-carbon/std::max(1.0,capacity),0.0,1.0);
+            const double tf=std::exp(
+                -std::pow((temp-293.0)/18.0,2.0)
+            );
+            const double capacity=
+                soil_water_capacity_depth_m(
+                    fs.get(cell,regolith_)
+                )*effective_area;
+            const double wf=std::clamp(
+                fs.get(cell,water_)/
+                    std::max(1.0,0.60*capacity),
+                0.0,
+                1.0
+            );
+            const double sf=std::clamp(
+                fs.get(cell,solar_)/340.0,
+                0.05,
+                1.2
+            );
+            const double fertility_factor=
+                0.10+0.90*std::clamp(
+                    fs.get(cell,fertility_),
+                    0.0,
+                    1.0
+                );
+
+            const double potential=
+                effective_area*0.00075*
+                tf*wf*sf*fertility_factor*
+                fs.get(cell,growth_);
+            const double carrying_capacity=effective_area*9.0;
+            const double density_factor=std::clamp(
+                1.0-carbon/std::max(1.0,carrying_capacity),
+                0.0,
+                1.0
+            );
             const double gross=potential*density_factor;
-            const double respiration=carbon*0.00035*std::pow(2.0,(temp-283.0)/10.0);
-            const double net=gross-respiration;
-            carbon=std::clamp(carbon+net*ctx.dt_days,0.0,capacity);
+            const double respiration=
+                carbon*0.00035*
+                std::pow(2.0,(temp-283.0)/10.0);
+            const double npp_rate=gross-respiration;
+
+            constexpr double turnover_per_day=6.0e-4;
+            const double turnover=carbon*(
+                1.0-std::exp(-turnover_per_day*ctx.dt_days)
+            );
+            carbon=std::clamp(
+                carbon+npp_rate*ctx.dt_days-turnover,
+                0.0,
+                carrying_capacity
+            );
+
+            fs.add(cell,litter_,turnover);
             fs.set(cell,carbon_,carbon);
-            fs.set(cell,npp_,net);
+            fs.set(cell,npp_,npp_rate);
         }
     }
+
 private:
-    FieldId temp_,solar_,land_,water_,growth_,carbon_,npp_;
+    FieldId temp_,solar_,land_,regolith_,water_,growth_;
+    FieldId fertility_,litter_,carbon_,npp_;
 };
 
 class FaunaSystem final : public ISimSystem {
 public:
-    explicit FaunaSystem(const FieldRegistry& r): carbon_(require_field(r,"ecology.vegetation_carbon_kg")) {}
+    explicit FaunaSystem(const FieldRegistry& r)
+        : carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+          litter_(require_field(r,"ecology.litter_carbon_kg")) {}
     std::string_view id() const override { return "ecology.fauna"; }
     Tick cadence_ticks() const override { return 24; }
     std::vector<std::string> after() const override { return {"ecology.vegetation"}; }
     SystemAccess access() const override {
-        return {{"field:ecology.vegetation_carbon_kg","store:ecology.cohorts"},{"field:ecology.vegetation_carbon_kg","store:ecology.cohorts"}};
+        return {{
+                    "field:ecology.vegetation_carbon_kg",
+                    "field:ecology.litter_carbon_kg",
+                    "store:ecology.cohorts"
+                },
+                {
+                    "field:ecology.vegetation_carbon_kg",
+                    "field:ecology.litter_carbon_kg",
+                    "store:ecology.cohorts"
+                }};
     }
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
@@ -680,8 +927,15 @@ public:
             double vegetation=fs.get(cell,carbon_);
             double total_demand=0.0;
             for (const Cohort* h:herbivores) total_demand+=h->count*h->body_mass_kg*0.018*ctx.dt_days;
-            const double consumed=std::min(total_demand,vegetation*0.025);
+            const double consumed=std::min(
+                total_demand,
+                vegetation*0.025
+            );
             vegetation-=consumed;
+            // A reduced fraction of grazed plant carbon returns immediately
+            // as fecal/unassimilated detritus instead of disappearing from the
+            // terrestrial organic-matter loop.
+            fs.add(cell,litter_,0.35*consumed);
             const double food_ratio=total_demand>0.0 ? std::clamp(consumed/total_demand,0.0,1.0) : 1.0;
             for (Cohort* h:herbivores) {
                 const double rate=0.0045*food_ratio-0.006*(1.0-food_ratio);
@@ -691,8 +945,15 @@ public:
             for (const Cohort* h:herbivores) prey_biomass+=h->count*h->body_mass_kg;
             double pred_demand=0.0;
             for (const Cohort* c:carnivores) pred_demand+=c->count*c->body_mass_kg*0.025*ctx.dt_days;
-            const double killed=std::min(pred_demand,prey_biomass*0.003);
+            const double killed=std::min(
+                pred_demand,
+                prey_biomass*0.003
+            );
             if (prey_biomass>0.0 && killed>0.0) {
+                // Cohort body mass is wet mass rather than an explicit carbon
+                // pool. Return a conservative-order estimate of carcass carbon
+                // to litter without claiming a closed whole-animal C budget.
+                fs.add(cell,litter_,0.12*killed);
                 const double survival=std::clamp(1.0-killed/prey_biomass,0.0,1.0);
                 for (Cohort* h:herbivores) h->count*=survival;
             }
@@ -707,7 +968,7 @@ public:
         }
     }
 private:
-    FieldId carbon_;
+    FieldId carbon_,litter_;
 };
 
 } // namespace
@@ -783,29 +1044,74 @@ void ClimateModule::initialize(WorldState& world, const FieldRegistry& r) {
 void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"hydrology.soil_water_m3","m3",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"hydrology.runoff_m3_day","m3/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.soil_fertility","1",FieldSemantics::Intensive,0.25,0.0,1.0});
+    r.register_field({"ecology.litter_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.vegetation_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.npp_kg_day","kgC/day",FieldSemantics::Extensive,0.0,-1.0e30,1.0e30});
 }
 void EcologyModule::register_stores(StateStoreRegistry& stores, const FieldRegistry&) { stores.emplace<CohortStore>(); }
 void EcologyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
     s.add(std::make_unique<HydrologySystem>(r));
+    s.add(std::make_unique<SoilSystem>(r));
     s.add(std::make_unique<VegetationSystem>(r));
     s.add(std::make_unique<FaunaSystem>(r));
 }
 void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
     auto& fs=world.stores().get<FieldStore>();
     auto& cs=world.stores().get<CohortStore>();
-    const auto land=require_field(r,"geography.land_fraction"), temp=require_field(r,"climate.surface_temperature_k");
-    const auto water=require_field(r,"hydrology.soil_water_m3"), carbon=require_field(r,"ecology.vegetation_carbon_kg");
+    const auto land=require_field(r,"geography.land_fraction");
+    const auto temp=require_field(r,"climate.surface_temperature_k");
+    const auto regolith=require_field(r,"geology.regolith_thickness_m");
+    const auto water=require_field(r,"hydrology.soil_water_m3");
+    const auto fertility=require_field(r,"ecology.soil_fertility");
+    const auto litter=require_field(r,"ecology.litter_carbon_kg");
+    const auto carbon=require_field(r,"ecology.vegetation_carbon_kg");
+
     for (CellId c:world.active_cells()) {
-        const double area=world.topology().area_m2(c), lf=fs.get(c,land), effective=area*lf;
-        const double suitability=std::exp(-std::pow((fs.get(c,temp)-291.0)/24.0,2.0));
-        fs.set(c,water,effective*0.14);
-        fs.set(c,carbon,effective*4.0*suitability);
-        if (lf>0.2 && suitability>0.12) {
+        const double area=world.topology().area_m2(c);
+        const double lf=fs.get(c,land);
+        const double effective=area*lf;
+        const double regolith_depth=std::max(
+            0.0,
+            fs.get(c,regolith)
+        );
+        const double substrate_factor=
+            -std::expm1(-regolith_depth/0.75);
+        const double soil_fertility=std::clamp(
+            0.05+0.70*substrate_factor,
+            0.0,
+            1.0
+        );
+        const double suitability=std::exp(
+            -std::pow((fs.get(c,temp)-291.0)/24.0,2.0)
+        );
+        const double initial_water=
+            effective*
+            soil_water_capacity_depth_m(regolith_depth)*
+            0.45;
+        const double initial_carbon=
+            effective*4.0*suitability*
+            (0.25+0.75*soil_fertility);
+
+        fs.set(c,water,initial_water);
+        fs.set(c,fertility,soil_fertility);
+        fs.set(c,carbon,initial_carbon);
+        fs.set(c,litter,0.08*initial_carbon);
+
+        if (lf>0.2 && suitability>0.12 && soil_fertility>0.08) {
             const double km2=effective/1.0e6;
-            cs.add({0,0,c,1,1,std::max(10.0,km2*0.7*suitability),35.0,2.0});
-            cs.add({0,0,c,2,2,std::max(2.0,km2*0.015*suitability),70.0,4.0});
+            const double habitat=
+                suitability*(0.30+0.70*soil_fertility);
+            cs.add({
+                0,0,c,1,1,
+                std::max(10.0,km2*0.7*habitat),
+                35.0,2.0
+            });
+            cs.add({
+                0,0,c,2,2,
+                std::max(2.0,km2*0.015*habitat),
+                70.0,4.0
+            });
         }
     }
 }
