@@ -1,3 +1,4 @@
+#include "worldsim/geology.hpp"
 #include "worldsim/spatial.hpp"
 #include "worldsim/tectonics.hpp"
 #include "worldsim/terrain.hpp"
@@ -28,8 +29,8 @@ using worldsim::CellId;
 using worldsim::CubeSphereTopology;
 using worldsim::TectonicModel;
 using worldsim::TectonicSample;
-using worldsim::TerrainGenerator;
-using worldsim::TerrainSample;
+using worldsim::GeologyModel;
+using worldsim::GeologyState;
 using worldsim::Vec3d;
 
 constexpr double kGoldenAngleRad=2.3999632297286533222;
@@ -327,18 +328,28 @@ struct GroupMean {
 }
 
 [[nodiscard]] std::vector<ProbeSample> sample_probes(const TectonicModel& tectonics,
-                                                     const TerrainGenerator& terrain,
+                                                     const GeologyModel& geology,
                                                      int count) {
     std::vector<ProbeSample> out;
     out.reserve(static_cast<std::size_t>(count));
+    const double probe_area_m2=
+        4.0*worldsim::kPi*worldsim::kEarthRadiusM*worldsim::kEarthRadiusM/
+        static_cast<double>(count);
     for (int i=0;i<count;++i) {
         const Vec3d direction=fibonacci_direction(i,count);
         const TectonicSample tectonic=tectonics.sample_direction(direction);
-        const TerrainSample terrain_sample=terrain.sample_direction(direction);
+        const GeologyState state=geology.initial_state(direction,probe_area_m2);
+        const double elevation=geology.surface_elevation_m(
+            state,
+            direction,
+            probe_area_m2
+        );
+        const double land_t=std::clamp((elevation+100.0)/200.0,0.0,1.0);
+        const double land_fraction=land_t*land_t*(3.0-2.0*land_t);
         out.push_back({
-            terrain_sample.elevation_m,
+            elevation,
             tectonic.macro_elevation_m,
-            terrain_sample.land_fraction,
+            land_fraction,
             tectonic.continental_affinity,
             tectonic.uplift_forcing,
             tectonic.divergence_forcing
@@ -647,10 +658,10 @@ struct GroupMean {
 
 [[nodiscard]] SeedMetrics evaluate_seed(std::uint64_t seed, const Options& options) {
     const TectonicModel tectonics(seed);
-    const TerrainGenerator terrain(seed);
+    const GeologyModel geology(seed);
     const CubeSphereTopology topology;
     const std::vector<CoverSample> cover=sample_cover(tectonics,topology,options.cover_level);
-    const std::vector<ProbeSample> probes=sample_probes(tectonics,terrain,options.samples);
+    const std::vector<ProbeSample> probes=sample_probes(tectonics,geology,options.samples);
 
     SeedMetrics result;
     result.seed=seed;
