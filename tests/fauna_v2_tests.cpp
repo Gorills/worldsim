@@ -575,12 +575,12 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{24},
+        snapshot[8]==std::byte{25},
         "unexpected authoritative snapshot epoch"
     );
 
     auto legacy=snapshot;
-    legacy[8]=std::byte{23};
+    legacy[8]=std::byte{24};
     bool rejected=false;
     try {
         auto restored=make_default_simulation(6060);
@@ -590,7 +590,7 @@ void test_snapshot_epoch_current() {
     }
     check(
         rejected,
-        "snapshot v23 was accepted after magic forcing timebase semantics changed"
+        "snapshot v24 was accepted after fire burn-cap timebase semantics changed"
     );
 
     auto restored=make_default_simulation(6060);
