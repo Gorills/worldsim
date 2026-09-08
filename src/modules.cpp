@@ -1018,7 +1018,8 @@ private:
 class FaunaSystem final : public ISimSystem {
 public:
     explicit FaunaSystem(const FieldRegistry& r)
-        : pft_{
+        : land_(require_field(r,"geography.land_fraction")),
+          pft_{
               require_field(r,"ecology.grass_carbon_kg"),
               require_field(r,"ecology.shrub_carbon_kg"),
               require_field(r,"ecology.tree_carbon_kg")
@@ -1033,6 +1034,7 @@ public:
     }
     SystemAccess access() const override {
         return {{
+                    "field:geography.land_fraction",
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
@@ -1057,6 +1059,9 @@ public:
             1.0,0.55,0.12
         };
 
+        // First update local trophic dynamics. Migration is deliberately a
+        // second phase so every movement decision observes the same
+        // post-feeding population snapshot.
         for (CellId cell:ctx.world.active_cells()) {
             auto cohorts=cs.in_cell(cell);
             std::vector<Cohort*> herbivores,carnivores;
@@ -1181,9 +1186,171 @@ public:
             }
             fs.set(cell,carbon_,total_vegetation);
         }
+
+        struct HabitatState {
+            double herbivore{};
+            double carnivore{};
+        };
+        std::map<CellId,HabitatState> habitat;
+        for (CellId cell:ctx.world.active_cells()) {
+            const double effective_area=
+                ctx.world.topology().area_m2(cell)*
+                fs.get(cell,land_);
+            if (!(effective_area>1.0)) {
+                habitat[cell]={0.0,0.0};
+                continue;
+            }
+
+            double forage=0.0;
+            for (std::size_t i=0;i<pft_.size();++i)
+                forage+=
+                    fs.get(cell,pft_[i])*forage_preference[i];
+            const double forage_density=
+                forage/effective_area;
+            const double herbivore_quality=
+                fs.get(cell,land_)*
+                (
+                    1.0-
+                    std::exp(-forage_density/0.50)
+                );
+
+            double prey_biomass=0.0;
+            for (const auto& ref:cs.in_cell(cell)) {
+                const Cohort& cohort=ref.get();
+                if (cohort.functional_group==1)
+                    prey_biomass+=
+                        cohort.count*cohort.body_mass_kg;
+            }
+            const double prey_density=
+                prey_biomass/effective_area;
+            const double carnivore_quality=
+                fs.get(cell,land_)*
+                (
+                    1.0-
+                    std::exp(-prey_density/2.5e-5)
+                );
+            habitat[cell]={
+                std::clamp(herbivore_quality,0.0,1.0),
+                std::clamp(carnivore_quality,0.0,1.0)
+            };
+        }
+
+        struct PlannedMove {
+            std::uint64_t cohort_id{};
+            CellId target;
+            double count{};
+        };
+        std::vector<Cohort> movement_snapshot;
+        movement_snapshot.reserve(cs.all().size());
+        for (const auto& [id,cohort]:cs.all()) {
+            (void)id;
+            if (
+                cohort.count>0.0 &&
+                (
+                    cohort.functional_group==1 ||
+                    cohort.functional_group==2
+                )
+            ) {
+                movement_snapshot.push_back(cohort);
+            }
+        }
+
+        std::vector<PlannedMove> moves;
+        for (const Cohort& cohort:movement_snapshot) {
+            const bool herbivore=cohort.functional_group==1;
+            const auto quality_of=[&](CellId cell) {
+                const HabitatState& h=habitat.at(cell);
+                return herbivore ? h.herbivore : h.carnivore;
+            };
+            const double source_quality=quality_of(cohort.cell);
+
+            const auto sides=ctx.world.active_neighbors4(cohort.cell);
+            const std::vector<ActiveCoverPart>* best_side=nullptr;
+            double best_quality=source_quality;
+            for (const auto& side:sides) {
+                double side_quality=0.0;
+                for (const ActiveCoverPart& part:side)
+                    side_quality+=
+                        quality_of(part.cell)*part.weight;
+                if (side_quality>best_quality) {
+                    best_quality=side_quality;
+                    best_side=&side;
+                }
+            }
+
+            constexpr double minimum_quality_gain=0.05;
+            if (
+                best_side==nullptr ||
+                best_quality-source_quality<minimum_quality_gain
+            ) {
+                continue;
+            }
+
+            const double gradient=std::clamp(
+                (best_quality-source_quality)/
+                    std::max(0.10,best_quality),
+                0.0,
+                1.0
+            );
+            const double maximum_daily_fraction=
+                herbivore ? 0.20 : 0.12;
+            const double moved_fraction=
+                1.0-
+                std::exp(
+                    -maximum_daily_fraction*
+                    gradient*
+                    ctx.dt_days
+                );
+            const double moved_count=
+                cohort.count*
+                std::clamp(moved_fraction,0.0,0.50);
+            if (!(moved_count>0.0)) continue;
+
+            double destination_weight_sum=0.0;
+            for (const ActiveCoverPart& part:*best_side)
+                destination_weight_sum+=
+                    part.weight*
+                    std::max(0.0,quality_of(part.cell));
+            if (!(destination_weight_sum>0.0)) continue;
+
+            double planned_sum=0.0;
+            for (std::size_t i=0;i<best_side->size();++i) {
+                const ActiveCoverPart& part=(*best_side)[i];
+                const double destination_weight=
+                    part.weight*
+                    std::max(0.0,quality_of(part.cell));
+                if (!(destination_weight>0.0)) continue;
+                const double share=
+                    destination_weight/destination_weight_sum;
+                const double transfer=
+                    std::min(
+                        moved_count-planned_sum,
+                        moved_count*share
+                    );
+                if (transfer>0.0) {
+                    moves.push_back({
+                        cohort.id,
+                        part.cell,
+                        transfer
+                    });
+                    planned_sum+=transfer;
+                }
+            }
+        }
+
+        // Applying the already-frozen move plan through CohortStore keeps the
+        // cell index coherent and prevents arrivals from moving again during
+        // this fauna step.
+        for (const PlannedMove& move:moves)
+            cs.transfer_count(
+                move.cohort_id,
+                move.target,
+                move.count
+            );
     }
 
 private:
+    FieldId land_;
     std::array<FieldId,3> pft_;
     FieldId carbon_,litter_;
 };
