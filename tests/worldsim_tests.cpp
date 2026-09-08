@@ -206,7 +206,7 @@ void test_determinism_and_snapshot() {
     check(snap.size()>11,"snapshot header is unexpectedly short");
     for (std::uint8_t legacy_version:{
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
-        std::uint8_t{6},std::uint8_t{7},std::uint8_t{8}
+        std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -1181,6 +1181,85 @@ void test_geology_model_process_contracts() {
     geology.advance_tectonics(volcanic_arc,volcanic_arc_direction,5.0e6);
     check(volcanic_arc.crust_thickness_m>volcanic_arc_before,
           "overriding volcanic arc did not accrete crust");
+
+    const double bare_production=
+        geology.regolith_production_rate_m_per_year(0.0,1.0);
+    const double covered_production=
+        geology.regolith_production_rate_m_per_year(2.0,1.0);
+    check(
+        bare_production>covered_production*5.0,
+        "regolith production did not decline beneath an existing mantle"
+    );
+    near(
+        geology.regolith_production_rate_m_per_year(0.0,0.0),
+        0.0,
+        1.0e-15,
+        "oceanic column produced continental regolith"
+    );
+
+    Vec3d weathering_direction{};
+    bool found_weathering_interior=false;
+    for (const TectonicPlate& plate:tectonics.plates()) {
+        const TectonicSample sample=tectonics.sample_direction(
+            plate.seed_direction
+        );
+        if (sample.divergence_forcing<=1.0e-12) {
+            weathering_direction=plate.seed_direction;
+            found_weathering_interior=true;
+            break;
+        }
+    }
+    check(
+        found_weathering_interior,
+        "regolith production test found no non-rifting plate interior"
+    );
+
+    GeologyState thin_cover=continent;
+    GeologyState thick_cover=continent;
+    thin_cover.continental_fraction=1.0;
+    thick_cover.continental_fraction=1.0;
+    thin_cover.regolith_thickness_m=0.10;
+    thick_cover.regolith_thickness_m=3.0;
+    geology.advance_tectonics(
+        thin_cover,
+        weathering_direction,
+        100'000.0
+    );
+    geology.advance_tectonics(
+        thick_cover,
+        weathering_direction,
+        100'000.0
+    );
+    check(
+        thin_cover.regolith_thickness_m-0.10>
+        4.0*(thick_cover.regolith_thickness_m-3.0),
+        "weathering advanced thin and thick regolith at nearly the same rate"
+    );
+
+    GeologyState one_step=continent;
+    GeologyState many_steps=continent;
+    one_step.continental_fraction=1.0;
+    many_steps.continental_fraction=1.0;
+    one_step.regolith_thickness_m=0.25;
+    many_steps.regolith_thickness_m=0.25;
+    geology.advance_tectonics(
+        one_step,
+        weathering_direction,
+        250'000.0
+    );
+    for (int i=0;i<250;++i) {
+        geology.advance_tectonics(
+            many_steps,
+            weathering_direction,
+            1'000.0
+        );
+    }
+    near(
+        one_step.regolith_thickness_m,
+        many_steps.regolith_thickness_m,
+        1.0e-12,
+        "analytical regolith production changed with geology timestep size"
+    );
 
     GeologyState source=continent;
     GeologyState sink=ocean;
