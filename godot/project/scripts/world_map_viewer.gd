@@ -42,6 +42,8 @@ const PLATE_COLORS := [
 var _heights := PackedFloat32Array()
 var _plate_ids := PackedInt32Array()
 var _forcing := PackedFloat32Array()
+var _uplift_forcing := PackedFloat32Array()
+var _divergence_forcing := PackedFloat32Array()
 var _crust_affinity := PackedFloat32Array()
 var _macro_elevation := PackedFloat32Array()
 var _current_layer := LAYER_ELEVATION
@@ -102,6 +104,8 @@ func _generate_map(seed: int) -> void:
     if (
         !tectonics.has("plate_id") or
         !tectonics.has("forcing") or
+        !tectonics.has("uplift_forcing") or
+        !tectonics.has("divergence_forcing") or
         !tectonics.has("crust_affinity") or
         !tectonics.has("macro_elevation_m")
     ):
@@ -110,11 +114,15 @@ func _generate_map(seed: int) -> void:
 
     var plate_ids: PackedInt32Array = tectonics["plate_id"]
     var forcing: PackedFloat32Array = tectonics["forcing"]
+    var uplift_forcing: PackedFloat32Array = tectonics["uplift_forcing"]
+    var divergence_forcing: PackedFloat32Array = tectonics["divergence_forcing"]
     var crust_affinity: PackedFloat32Array = tectonics["crust_affinity"]
     var macro_elevation: PackedFloat32Array = tectonics["macro_elevation_m"]
     if (
         plate_ids.size() != MAP_WIDTH * MAP_HEIGHT or
         forcing.size() != MAP_WIDTH * MAP_HEIGHT or
+        uplift_forcing.size() != MAP_WIDTH * MAP_HEIGHT or
+        divergence_forcing.size() != MAP_WIDTH * MAP_HEIGHT or
         crust_affinity.size() != MAP_WIDTH * MAP_HEIGHT or
         macro_elevation.size() != MAP_WIDTH * MAP_HEIGHT
     ):
@@ -124,6 +132,8 @@ func _generate_map(seed: int) -> void:
     _heights = heights
     _plate_ids = plate_ids
     _forcing = forcing
+    _uplift_forcing = uplift_forcing
+    _divergence_forcing = divergence_forcing
     _crust_affinity = crust_affinity
     _macro_elevation = macro_elevation
 
@@ -164,9 +174,12 @@ func _render_current_layer() -> void:
         var color := Color.BLACK
         match _current_layer:
             LAYER_PLATES:
-                color = _plate_color(int(_plate_ids[i]))
+                color = _plate_layer_color(i)
             LAYER_FORCING:
-                color = _forcing_color(float(_forcing[i]))
+                color = _forcing_color(
+                    float(_uplift_forcing[i]),
+                    float(_divergence_forcing[i])
+                )
             LAYER_CRUST:
                 color = _crust_color(float(_crust_affinity[i]))
             LAYER_MACRO_RELIEF:
@@ -191,11 +204,38 @@ func _render_current_layer() -> void:
 func _plate_color(plate_id: int) -> Color:
     return PLATE_COLORS[plate_id % PLATE_COLORS.size()]
 
-func _forcing_color(value: float) -> Color:
-    var neutral := Color(0.11, 0.12, 0.14)
-    if value > 0.0:
-        return neutral.lerp(Color(0.92, 0.20, 0.12), clampf(value / 0.65, 0.0, 1.0))
-    return neutral.lerp(Color(0.12, 0.34, 0.92), clampf(-value / 0.65, 0.0, 1.0))
+func _plate_layer_color(index: int) -> Color:
+    if _is_plate_boundary_pixel(index):
+        return Color(0.08, 0.09, 0.11)
+    return _plate_color(int(_plate_ids[index]))
+
+func _is_plate_boundary_pixel(index: int) -> bool:
+    var x := index % MAP_WIDTH
+    var y := index / MAP_WIDTH
+    var plate_id := int(_plate_ids[index])
+
+    var left_x := (x - 1 + MAP_WIDTH) % MAP_WIDTH
+    if int(_plate_ids[y * MAP_WIDTH + left_x]) != plate_id:
+        return true
+    if y > 0 and int(_plate_ids[(y - 1) * MAP_WIDTH + x]) != plate_id:
+        return true
+    return false
+
+func _forcing_color(uplift: float, divergence: float) -> Color:
+    # Visualize the terrain-driving response rather than the legacy nearest-pair
+    # boundary forcing. Zero is deliberately a visible neutral gray so plate
+    # interiors read as inactive, not as missing/invalid data.
+    var neutral := Color(0.26, 0.28, 0.31)
+    var convergent := Color(0.94, 0.30, 0.18)
+    var divergent := Color(0.18, 0.43, 0.92)
+    var signed_response := clampf(uplift - divergence, -1.0, 1.0)
+    var intensity := pow(clampf(absf(signed_response) / 0.55, 0.0, 1.0), 0.72)
+
+    if signed_response > 0.0:
+        return neutral.lerp(convergent, intensity)
+    if signed_response < 0.0:
+        return neutral.lerp(divergent, intensity)
+    return neutral
 
 func _crust_color(affinity: float) -> Color:
     var oceanic := Color(0.04, 0.10, 0.18)
