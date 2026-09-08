@@ -34,7 +34,6 @@ using worldsim::Vec3d;
 
 constexpr double kGoldenAngleRad=2.3999632297286533222;
 constexpr double kProbePhaseRad=0.917;
-constexpr double kFourPi=4.0*worldsim::kPi;
 
 struct Options {
     std::uint64_t seed_start=0;
@@ -242,7 +241,7 @@ struct GroupMean {
             throw std::invalid_argument("unknown argument: "+std::string(arg));
         }
     }
-    if (options.seed_start>std::numeric_limits<std::uint64_t>::max()-options.seed_count)
+    if (options.seed_start>std::numeric_limits<std::uint64_t>::max()-(options.seed_count-1U))
         throw std::invalid_argument("seed range overflows uint64");
     return options;
 }
