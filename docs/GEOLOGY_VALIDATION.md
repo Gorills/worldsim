@@ -51,12 +51,13 @@ For context, modern-Earth literature describes a strong continental/oceanic lith
 The authoritative simulation surface is no longer regenerated directly from `TerrainGenerator(seed)` after build. Geography stores persistent geological state in the normal adaptive field store:
 
 - `geology.crust_thickness_m` and `geology.crust_density_kg_m3`;
+- evolving `geology.continental_fraction`, so long-lived rifting can complete breakup instead of thinning an immutable continental label forever;
 - `geology.lithosphere_age_ma`;
 - extensive `geology.sediment_mass_kg`, which therefore conserves mass under LOD split/merge;
 - `geology.regolith_thickness_m`;
 - diagnostic `geology.erosion_rate_m_yr`.
 
-The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust; oceanic divergence renews young thin crust; oceanic convergence consumes crust. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
+The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust and progressively reduces the persistent continental fraction; once breakup crosses into an oceanic regime, divergence renews young thin crust instead of continuing unlimited continental thinning. Oceanic convergence consumes crust. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
 
 Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
 
