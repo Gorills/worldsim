@@ -284,6 +284,38 @@ void vegetation_carbon_budget() {
             "vegetation NPP/turnover spends more carbon than available");
     }
 }
+void magic_forcing_uses_elapsed_time() {
+    constexpr std::uint64_t seed=424242;
+    const auto forcing_at_six_hours=[&](double tick_seconds, Tick tick) {
+        auto sim=make_default_simulation(seed,{0,0,tick_seconds});
+        auto& fs=sim->world().stores().get<FieldStore>();
+        const CellId cell=*sim->world().active_cells().begin();
+        const FieldId mana=*sim->fields().find("magic.mana_j");
+        const double area=sim->world().topology().area_m2(cell);
+        const double baseline=area*2.0e6;
+        fs.set(cell,mana,baseline);
+        sim->world().set_tick(tick);
+
+        const double dt_days=
+            6.0*tick_seconds/86'400.0;
+        run_system(*sim,"magic.flux",dt_days);
+
+        const double alpha=
+            1.0-std::exp(-0.02*dt_days);
+        const double equilibrium=
+            baseline+(fs.get(cell,mana)-baseline)/alpha;
+        return equilibrium/(area*2.0e6);
+    };
+
+    const double hourly=forcing_at_six_hours(3'600.0,5);
+    const double half_hourly=forcing_at_six_hours(1'800.0,11);
+    near(
+        hourly,
+        half_hourly,
+        1.0e-10,
+        "magic forcing phase depends on base tick count instead of elapsed time"
+    );
+}
 void hydrology_water_budget() {
     auto sim=make_default_simulation(42,{0,0,3600});
     auto& fs=sim->world().stores().get<FieldStore>();
@@ -353,6 +385,7 @@ int main() {
         {"numeric input validation",numeric_input_validation},
         {"field default validation",field_default_validation},
         {"topology direction validation",topology_direction_validation},
+        {"magic forcing elapsed time",magic_forcing_uses_elapsed_time},
         {"vegetation carbon budget",vegetation_carbon_budget},
         {"hydrology water budget",hydrology_water_budget},
         {"C ABI invalid inputs",c_api_rejects_invalid_inputs},
