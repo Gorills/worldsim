@@ -74,6 +74,8 @@ did not return biomass, and a 100-year run could grow herbivores by roughly
   forage/prey;
 - unassimilated food and mortality enter litter;
 - maintenance enters `ecology.fauna_respired_carbon_kg`;
+- herbivore forage removal is capped at 2.5% of standing preference-weighted
+  forage per simulated day and scales with the elapsed fauna-step interval;
 - standing herbivore carbon is density-regulated around `1e-4` of
   preference-weighted forage carbon;
 - carnivore carbon is density-regulated around 8% of herbivore carbon.
