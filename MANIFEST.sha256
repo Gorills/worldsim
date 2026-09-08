@@ -49,7 +49,7 @@ e4177de43a7bc5de7adff4eaae549cc01ff8579e87ddda3423b1d81912f1e7e7  ./scripts/buil
 721b3cbd9625ce2a5d0aee02eabb8ae1b2f21a28cecbc425f936fbef8c51fe6a  ./scripts/build_godot.sh
 67cacf982cf38c1574769be4e10011c4c2f7a37a64f573cfdb79aa413a43d194  ./src/c_api.cpp
 d5e60cf13545e2c74627d158c116184be4e46e81df636f973507a8388460c020  ./src/fields.cpp
-5a3b68461f478404ea920db39a8f9c9ce4432104ab7e4317e4f04236391f26cf  ./src/geology.cpp
+d146c548a121d38dbdef3bf17a0d1d26a50969fef384766b371ebd47a93a4a57  ./src/geology.cpp
 1a857bc208ab2fdd278b6fa0e84ebb13fac627afc7ae9dd7543b65f64cec0661  ./src/modules.cpp
 b5fe072179ca9d0de3f7b4d34c9a7bf7d50ce5b4b069dbc588f8cd35dae8ec28  ./src/simulation.cpp
 b6f619be4bb5624d73b1215b3e4b956e1a8a6d1acdb18e070bb1dd7e54fd24ad  ./src/spatial.cpp
@@ -57,6 +57,6 @@ b6f619be4bb5624d73b1215b3e4b956e1a8a6d1acdb18e070bb1dd7e54fd24ad  ./src/spatial.
 1b6959f16b6bc0380a871f62954570d1ce00304cf5cc8b1b600999791dc160a2  ./src/tectonics.cpp
 cd602fa6e0557dbf0a531d7c94f8bdfabb7ae9d5de16d731195a9bdb150b3d00  ./src/terrain.cpp
 5d3a5fcbc6f36c42cf61efffd1dc25c40bd38c8f653fa031d6fd5966ac608fb7  ./tests/sanitizer_smoke.cpp
-f5d3a50d2d21439fe3414402fabeb2b0755584f8ffc8d4137673e836c8a9236c  ./tests/worldsim_tests.cpp
+5c8de03be1b6f607a85387304f2087144b4211f74902ebbc5eff2911157311f6  ./tests/worldsim_tests.cpp
 14cea906b991717fb38e14b05d00e2e50c41be8c51cc261381f7d78b9397c414  ./THIRD_PARTY.md
 e9dd8507f4bf0c6f42458e41aea833ad0bd3f6127272335eee9bf4d58541ed67  ./VERSION
