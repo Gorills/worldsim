@@ -16,6 +16,13 @@ struct GeologyState {
     double regolith_thickness_m{};
 };
 
+struct BoundaryFeatureSample {
+    double trench_forcing{};
+    double volcanic_arc_forcing{};
+    double collision_forcing{};
+    double rift_forcing{};
+};
+
 struct ErosionBudget {
     double sediment_removed_kg{};
     double bedrock_removed_kg{};
@@ -45,6 +52,11 @@ public:
         const GeologyState& state,
         Vec3d direction,
         double cell_area_m2
+    ) const;
+
+    [[nodiscard]] BoundaryFeatureSample boundary_features(
+        const GeologyState& state,
+        Vec3d direction
     ) const;
 
     [[nodiscard]] double erosion_rate_m_per_year(
