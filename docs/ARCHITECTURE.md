@@ -157,7 +157,7 @@ Production domains should introduce typed command payloads and typed event schem
 
 ## 8. Snapshots
 
-Snapshot version 24 contains:
+Snapshot version 25 contains:
 
 - magic header and format version;
 - field schema hash;

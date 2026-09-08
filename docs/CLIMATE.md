@@ -5,8 +5,9 @@
 > vegetation exposure and fire danger. Its current contract is documented in
 > `SNOW_ALBEDO.md`; the Climate-v2 execution record below remains historical
 > evidence for epoch 18. Fauna carbon accounting introduced epoch 22; the
-> grazing-timestep correction introduced epoch 23, and the magic forcing
-> timebase correction raises the current combined-world epoch to 24.
+> grazing-timestep correction introduced epoch 23, the magic forcing
+> timebase correction introduced epoch 24, and the wildfire burn-cap
+> timebase correction raises the current combined-world epoch to 25.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 
