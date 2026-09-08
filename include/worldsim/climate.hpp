@@ -4,6 +4,11 @@
 
 namespace worldsim {
 
+// Reduced snow-cover and broadband land-albedo closures used by the coupled
+// climate, diagnostics and tests. SWE is liquid-water-equivalent depth.
+[[nodiscard]] double snow_cover_fraction_from_swe(double swe_m);
+[[nodiscard]] double climate_land_albedo(double snow_cover_fraction);
+
 struct ClimateNode {
     CellId cell;
     double area_m2{};
@@ -20,6 +25,7 @@ struct ClimateNode {
     double east_wind_m_s{};
     double north_wind_m_s{};
     double weather_anomaly_k{};
+    double snow_cover_fraction{};
 };
 
 struct ClimateBudget {
@@ -38,7 +44,7 @@ class ClimateStore final : public IStateStore {
 public:
     static constexpr std::string_view kKey="climate.state";
     [[nodiscard]] std::string_view key() const override { return kKey; }
-    [[nodiscard]] std::uint32_t snapshot_version() const override { return 1; }
+    [[nodiscard]] std::uint32_t snapshot_version() const override { return 2; }
     void on_add_cell(CellId cell) override;
     void on_remove_cell(CellId) override {}
     void on_refine(CellId, std::span<const CellId>, const CubeSphereTopology&) override {}
@@ -69,6 +75,7 @@ private:
     };
 
     void rebuild_graph();
+    void update_snow_cover(const WorldState&, const FieldRegistry&);
     void update_diagnostics(double day);
     void project_surface_exchange(WorldState&, const FieldRegistry&) const;
     void advance_energy(double dt_days);

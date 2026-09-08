@@ -1,8 +1,10 @@
 # Wildfire v1 contract
 
-> Soil carbon v1 subsequently raises the current snapshot epoch to 20 and adds
-> conservative decomposition pools. The Wildfire-v1 execution record below is
-> retained as historical evidence for epoch 19.
+> Soil carbon v1 subsequently raised the snapshot epoch to 20 and added
+> conservative decomposition pools. Snow-albedo coupling v1 now raises the
+> current epoch to 21 and suppresses fire danger under projected snow cover.
+> The Wildfire-v1 execution record below is retained as historical evidence for
+> epoch 19.
 
 WorldSim wildfire v1 is a reduced, daily disturbance process coupled to the
 existing climate, hydrology, vegetation and fauna systems. It is designed to

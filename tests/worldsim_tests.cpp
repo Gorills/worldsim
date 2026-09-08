@@ -302,7 +302,7 @@ void test_determinism_and_snapshot() {
         std::uint8_t{10},std::uint8_t{11},std::uint8_t{12},
         std::uint8_t{13},std::uint8_t{14},std::uint8_t{15},
         std::uint8_t{16},std::uint8_t{17},std::uint8_t{18},
-        std::uint8_t{19}
+        std::uint8_t{19},std::uint8_t{20}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -734,6 +734,30 @@ void test_c_api() {
     check(ws_field_semantics(h,field,&semantics)==1 && semantics==WS_FIELD_INTENSIVE_V1,"C API field semantics failed");
     std::vector<double> values(count);
     check(ws_copy_field_values(h,field,values.data(),values.size())==count,"C API field copy failed");
+
+    check(
+        ws_find_field(h,"climate.surface_albedo",&field)==1,
+        "C API snow-albedo field lookup failed"
+    );
+    check(
+        ws_field_semantics(h,field,&semantics)==1 &&
+            semantics==WS_FIELD_INTENSIVE_V1,
+        "C API snow-albedo semantics failed"
+    );
+    check(
+        ws_copy_field_values(h,field,values.data(),values.size())==count,
+        "C API snow-albedo copy failed"
+    );
+    check(
+        std::all_of(
+            values.begin(),values.end(),
+            [](double value) {
+                return std::isfinite(value) &&
+                    value>=0.0 && value<=1.0;
+            }
+        ),
+        "C API snow-albedo values left registered bounds"
+    );
 
     check(ws_clear_events(h)==1,"C API event clear failed");
     check(ws_event_count(h)==0,"C API event clear did not empty queue");

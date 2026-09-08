@@ -269,6 +269,46 @@ void wet_weather_suppresses_fire() {
     );
 }
 
+void snow_cover_suppresses_fire() {
+    auto dry=make_default_simulation(
+        7007,SimulationConfig{1,1,3'600.0}
+    );
+    auto snowy=make_default_simulation(
+        7007,SimulationConfig{1,1,3'600.0}
+    );
+    clear_and_dry(*dry);
+    clear_and_dry(*snowy);
+    const CellId cell=*dry->world().active_cells().begin();
+    set_fuel(*dry,cell);
+    set_fuel(*snowy,cell);
+    ignite(*dry,cell,0.08);
+    ignite(*snowy,cell,0.08);
+    snowy->world().stores().get<FieldStore>().set(
+        cell,
+        field(*snowy,"climate.snow_cover_fraction"),
+        1.0
+    );
+
+    run_fire(*dry);
+    run_fire(*snowy);
+    const auto& dry_fields=dry->world().stores().get<FieldStore>();
+    const auto& snowy_fields=snowy->world().stores().get<FieldStore>();
+    check(
+        dry_fields.get(
+            cell,field(*dry,"ecology.fire_burned_fraction")
+        )>0.0,
+        "snow-control fire did not burn"
+    );
+    near(
+        snowy_fields.get(
+            cell,field(*snowy,"ecology.fire_danger")
+        ),
+        0.0,
+        0.0,
+        "complete snow cover retained fire danger"
+    );
+}
+
 void spread_resolves_refined_neighbor_region() {
     auto simulation=make_default_simulation(
         7003,SimulationConfig{1,2,3'600.0}
@@ -447,7 +487,7 @@ void snapshot_continuation_includes_fire_state() {
 
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"fire snapshot header is unexpectedly short");
-    check(snapshot[8]==std::byte{20},"unexpected soil-carbon snapshot epoch");
+    check(snapshot[8]==std::byte{21},"unexpected snow-albedo snapshot epoch");
     auto restored=make_default_simulation(
         7004,SimulationConfig{1,2,3'600.0}
     );
@@ -465,6 +505,7 @@ int main() {
         controlled_fire_closes_carbon();
         fuelless_fire_extinguishes();
         wet_weather_suppresses_fire();
+        snow_cover_suppresses_fire();
         spread_resolves_refined_neighbor_region();
         natural_ignition_is_stateless_and_deterministic();
         snapshot_continuation_includes_fire_state();

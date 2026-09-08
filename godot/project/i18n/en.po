@@ -177,6 +177,12 @@ msgstr "Solar flux"
 msgid "LAB_FIELD_NET_RADIATION"
 msgstr "Net radiation"
 
+msgid "LAB_FIELD_SNOW_COVER"
+msgstr "Snow cover"
+
+msgid "LAB_FIELD_SURFACE_ALBEDO"
+msgstr "Surface albedo"
+
 msgid "LAB_FIELD_EAST_WIND"
 msgstr "Eastward wind"
 

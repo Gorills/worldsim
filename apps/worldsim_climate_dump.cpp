@@ -96,7 +96,8 @@ int main(int argc, char** argv) {
             <<"planet_water_residual_m3,surface_heat_j,"
             <<"energy_residual_j,absorbed_solar_j,outgoing_longwave_j,"
             <<"land_temperature_k,ocean_temperature_k,"
-            <<"precipitation_m3_day,evaporation_m3_day\n";
+            <<"precipitation_m3_day,evaporation_m3_day,"
+            <<"land_snow_cover_fraction,land_albedo\n";
         for (unsigned day=0;day<=days;++day) {
             const ClimateStore& climate=
                 simulation->world().stores().get<ClimateStore>();
@@ -125,6 +126,8 @@ int main(int argc, char** argv) {
             double ocean_area=0.0;
             double precipitation=0.0;
             double evaporation=0.0;
+            double snow_cover=0.0;
+            double snow_albedo_area=0.0;
             for (const ClimateNode& node:climate.nodes()) {
                 const double local_ocean=std::max(
                     0.0,node.area_m2-node.land_area_m2
@@ -136,6 +139,11 @@ int main(int argc, char** argv) {
                 ocean_area+=local_ocean;
                 precipitation+=node.precipitation_m3_day;
                 evaporation+=node.evaporation_m3_day;
+                snow_cover+=
+                    node.snow_cover_fraction*node.land_area_m2;
+                snow_albedo_area+=
+                    climate_land_albedo(node.snow_cover_fraction)*
+                    node.land_area_m2;
             }
             history
                 <<day<<','<<climate.total_atmospheric_water_m3()<<','
@@ -148,7 +156,9 @@ int main(int argc, char** argv) {
                 <<budget.outgoing_longwave_j<<','
                 <<land_temperature/std::max(1.0,land_area)<<','
                 <<ocean_temperature/std::max(1.0,ocean_area)<<','
-                <<precipitation<<','<<evaporation<<'\n';
+                <<precipitation<<','<<evaporation<<','
+                <<snow_cover/std::max(1.0,land_area)<<','
+                <<snow_albedo_area/std::max(1.0,land_area)<<'\n';
             if (day==days) break;
             if (adaptive && day%90U==0U) {
                 if ((day/90U)%2U==0U)
@@ -165,7 +175,8 @@ int main(int argc, char** argv) {
             <<"land_temperature_k,ocean_temperature_k,relative_humidity,"
             <<"atmospheric_water_mm,precipitation_mm_day,"
             <<"evaporation_mm_day,wind_east_m_s,wind_north_m_s,"
-            <<"solar_flux_w_m2,net_radiation_w_m2\n";
+            <<"solar_flux_w_m2,net_radiation_w_m2,"
+            <<"snow_cover_fraction,land_albedo\n";
         const auto& final_climate=
             simulation->world().stores().get<ClimateStore>();
         for (const ClimateNode& node:final_climate.nodes()) {
@@ -181,7 +192,9 @@ int main(int argc, char** argv) {
                 <<node.precipitation_m3_day/node.area_m2*1'000.0<<','
                 <<node.evaporation_m3_day/node.area_m2*1'000.0<<','
                 <<node.east_wind_m_s<<','<<node.north_wind_m_s<<','
-                <<node.solar_flux_w_m2<<','<<node.net_radiation_w_m2<<'\n';
+                <<node.solar_flux_w_m2<<','<<node.net_radiation_w_m2<<','
+                <<node.snow_cover_fraction<<','
+                <<climate_land_albedo(node.snow_cover_fraction)<<'\n';
         }
 
         auto summary=output(directory/"summary.json");
@@ -206,6 +219,17 @@ int main(int argc, char** argv) {
                 sum_field(*simulation,"hydrology.groundwater_m3")+
                 simulation->world().stores()
                     .get<HydrologyStore>().total_surface_m3()
+            <<",\n  \"final_land_area_weighted_snow_cover\": "
+            <<[&] {
+                double covered=0.0;
+                double land_area=0.0;
+                for (const ClimateNode& node:final_climate.nodes()) {
+                    covered+=
+                        node.snow_cover_fraction*node.land_area_m2;
+                    land_area+=node.land_area_m2;
+                }
+                return covered/std::max(1.0,land_area);
+            }()
             <<"\n}\n";
         std::cout
             <<"Climate: "<<days<<" days, "

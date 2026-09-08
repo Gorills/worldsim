@@ -4,7 +4,7 @@ This file distinguishes what was actually executed from architectural intent.
 
 ## Current audit
 
-The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Climate v2, Wildfire v1 and Soil carbon v1 were implemented after that audit and are recorded in [CLIMATE.md](CLIMATE.md), [FIRE.md](FIRE.md) and [SOIL_CARBON.md](SOIL_CARBON.md). Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
+The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Climate v2, Wildfire v1, Soil carbon v1 and snow-albedo coupling were implemented after that audit and are recorded in [CLIMATE.md](CLIMATE.md), [FIRE.md](FIRE.md), [SOIL_CARBON.md](SOIL_CARBON.md) and [SNOW_ALBEDO.md](SNOW_ALBEDO.md). Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
 
 ## Core test coverage
 
@@ -18,7 +18,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 19);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 20);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -59,19 +59,21 @@ field inspection and focused LOD-map refinement.
 `worldsim_climate_tests` covers the coupled climate process contract: optional
 magic composition, cumulative energy accounting, closed atmospheric/ocean/land
 water inventory, land/ocean seasonal amplitude and phase, orographic rainfall,
-focus-LOD invariance, and snapshot continuation. The
+snow-dependent shortwave absorption, LOD-invariant reference snow cover,
+snow burial of short vegetation, focus-LOD invariance, malformed snow state,
+and snapshot continuation. The
 `worldsim_climate_dump_smoke` CTest target exercises the inspectable ledger/map
 export path.
 
-`worldsim_fire_tests` covers fire gating without fuel, wet-weather suppression,
-deterministic natural ignition, explicit fire-carbon transfer closure, PFT
+`worldsim_fire_tests` covers fire gating without fuel, wet-weather and
+snow-cover suppression, deterministic natural ignition, explicit fire-carbon transfer closure, PFT
 aggregate consistency, coarse-to-fine spread through the active-cover resolver,
 extensive-ledger LOD conservation and current snapshot round-trip.
 
 `worldsim_soil_carbon_tests` covers pure-model and integrated soil-carbon
 closure, bounded short/long steps, temperature/moisture response, staged pool
 transfers, dormant submerged stock, LOD conservation, aggregate reconstruction,
-snapshot epoch 20 round-trip and deterministic continuation.
+and current epoch-21 snapshot round-trip and deterministic continuation.
 
 The Soil carbon v1 integration run completed all **12/12** CTest targets.
 ASan, UBSan and float-cast-overflow instrumentation passed the dedicated suite,
@@ -91,6 +93,19 @@ The 2026-09-08 Climate v2 integration run completed all 10 CTest targets. Its
 surface energy to `8.98413e-13` relative. The exact process, sanitizer and Godot
 evidence is recorded in `CLIMATE.md`; climatology ranges remain diagnostics,
 not calibration claims.
+
+The Snow-albedo-v1 integration run completed all **12/12** CTest targets in
+53.52 seconds. The dedicated climate/fire regressions, bounded smoke and all 14
+annual audit scenarios passed under ASan, UBSan and float-cast-overflow
+instrumentation with leak detection disabled for the tracing environment.
+The 730-day level-2 adaptive diagnostic closed planet water to
+`1.68148e-10` relative and surface energy to `1.20263e-12` relative; final
+reference snow cover ranged from 0 to approximately 1 with a land-area mean of
+0.1613. Godot 4.7.2 rebuilt and its native smoke plus Russian laboratory run
+discovered 69 fields, rendered 512 x 256 diagnostics and completed at tick 48.
+English and Russian gettext catalogs passed `msgfmt --check`; the pre-existing
+missing-maintainer metadata warnings remain. Exact scope and limitations are
+recorded in `SNOW_ALBEDO.md`.
 
 ## Geology plausibility benchmark
 
@@ -200,5 +215,5 @@ full-world adaptive-cover diagnostic. The latter closes the land-water budget
 with maximum relative residual 2.70362e-14. Reference-grid river geometry is
 independent of camera refinement; this does not establish spatial convergence
 of an adaptive hydraulic solver. Basin hydrology introduced epoch 17; snapshot
-epoch 18 introduced persistent climate state, Wildfire v1 epoch 19, and Soil
-carbon v1 epoch 20 is current.
+epoch 18 introduced persistent climate state, Wildfire v1 epoch 19, Soil carbon
+v1 epoch 20, and the current snow-albedo coupling uses epoch 21.

@@ -20,6 +20,8 @@ constexpr double land_heat_capacity_j_m2_k=8.4e6;   // about 2 m water equivalen
 constexpr double ocean_heat_capacity_j_m2_k=2.05e8; // about 50 m mixed layer
 constexpr double land_albedo=0.28;
 constexpr double ocean_albedo=0.30;
+constexpr double snow_albedo=0.75;
+constexpr double snow_cover_swe_scale_m=0.02;
 constexpr double outgoing_a_w_m2=210.0;
 constexpr double outgoing_b_w_m2_k=2.0;
 constexpr double horizontal_heat_relaxation_days=20.0;
@@ -153,7 +155,8 @@ double shared_edge_length(
 class ClimateSystem final : public ISimSystem {
 public:
     explicit ClimateSystem(const FieldRegistry& r):
-        has_magic_(r.find("magic.temperature_anomaly_k").has_value()) {}
+        has_magic_(r.find("magic.temperature_anomaly_k").has_value()),
+        has_snow_(r.find("hydrology.snow_water_m3").has_value()) {}
 
     std::string_view id() const override { return "climate.surface"; }
     std::vector<std::string> after() const override {
@@ -168,6 +171,8 @@ public:
         };
         if (has_magic_)
             reads.push_back("field:magic.temperature_anomaly_k");
+        if (has_snow_)
+            reads.push_back("field:hydrology.snow_water_m3");
         return {
             std::move(reads),
             {
@@ -183,7 +188,9 @@ public:
                 "field:climate.wind_east_m_s",
                 "field:climate.wind_north_m_s",
                 "field:climate.evaporation_mm_day",
-                "field:climate.net_radiation_w_m2"
+                "field:climate.net_radiation_w_m2",
+                "field:climate.snow_cover_fraction",
+                "field:climate.surface_albedo"
             }
         };
     }
@@ -194,6 +201,7 @@ public:
     }
 private:
     bool has_magic_{};
+    bool has_snow_{};
 };
 
 class ClimateSurfaceExchangeSystem final : public ISimSystem {
@@ -242,6 +250,28 @@ private:
 
 } // namespace
 
+double snow_cover_fraction_from_swe(double swe_m) {
+    if (!std::isfinite(swe_m) || swe_m<0.0)
+        throw std::invalid_argument("invalid snow water equivalent");
+    return std::clamp(
+        -std::expm1(-swe_m/snow_cover_swe_scale_m),
+        0.0,
+        1.0
+    );
+}
+
+double climate_land_albedo(double snow_cover_fraction) {
+    if (
+        !std::isfinite(snow_cover_fraction) ||
+        snow_cover_fraction<0.0 ||
+        snow_cover_fraction>1.0
+    ) {
+        throw std::invalid_argument("invalid snow-cover fraction");
+    }
+    return land_albedo+
+        (snow_albedo-land_albedo)*snow_cover_fraction;
+}
+
 void ClimateStore::on_add_cell(CellId cell) {
     if (!has_level_) {
         reference_level_=cell.level();
@@ -289,6 +319,7 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
     }
     budget_={};
     rebuild_graph();
+    update_snow_cover(world,r);
     update_diagnostics(0.0);
     project(world,r);
 }
@@ -334,6 +365,36 @@ void ClimateStore::rebuild_graph() {
     }
 }
 
+void ClimateStore::update_snow_cover(
+    const WorldState& world,
+    const FieldRegistry& r
+) {
+    const auto snow=r.find("hydrology.snow_water_m3");
+    if (!snow) {
+        for (ClimateNode& node:nodes_)
+            node.snow_cover_fraction=0.0;
+        return;
+    }
+
+    const auto& fields=world.stores().get<FieldStore>();
+    std::vector<double> snow_volume_m3(nodes_.size());
+    // Every active cell is at or finer than the base/reference level.
+    // Map each extensive stock to that fixed ancestor exactly once instead of
+    // allocating one adaptive-cover traversal per reference node.
+    for (CellId cell:world.active_cells())
+        snow_volume_m3[node_index(cell)]+=fields.get(cell,*snow);
+
+    for (std::size_t i=0;i<nodes_.size();++i) {
+        ClimateNode& node=nodes_[i];
+        const double snow_water_equivalent_m=node.land_area_m2>1.0
+            ? snow_volume_m3[i]/node.land_area_m2
+            : 0.0;
+        node.snow_cover_fraction=snow_cover_fraction_from_swe(
+            std::max(0.0,snow_water_equivalent_m)
+        );
+    }
+}
+
 void ClimateStore::update_diagnostics(double day) {
     CubeSphereTopology topology;
     for (auto& node:nodes_) {
@@ -367,7 +428,10 @@ void ClimateStore::advance_energy(double dt_days) {
                 outgoing_a_w_m2+
                 outgoing_b_w_m2_k*(node.land_temperature_k-273.15)
             );
-            const double absorbed=node.solar_flux_w_m2*(1.0-land_albedo);
+            const double effective_land_albedo=
+                climate_land_albedo(node.snow_cover_fraction);
+            const double absorbed=
+                node.solar_flux_w_m2*(1.0-effective_land_albedo);
             const double net=absorbed-outgoing;
             node.land_temperature_k+=
                 net*seconds/land_heat_capacity_j_m2_k;
@@ -567,6 +631,8 @@ void ClimateStore::advance(
         node.precipitation_m3_day=0.0;
         node.evaporation_m3_day=0.0;
     }
+
+    update_snow_cover(world,r);
 
     double remaining=dt_days;
     double elapsed=0.0;
@@ -768,6 +834,12 @@ void ClimateStore::project(
     const FieldId net_radiation=required_field(
         r,"climate.net_radiation_w_m2"
     );
+    const FieldId snow_cover=required_field(
+        r,"climate.snow_cover_fraction"
+    );
+    const FieldId surface_albedo=required_field(
+        r,"climate.surface_albedo"
+    );
     const auto magic=r.find("magic.temperature_anomaly_k");
     for (CellId cell:world.active_cells()) {
         const std::size_t slot=fields.dense_index(cell);
@@ -806,6 +878,19 @@ void ClimateStore::project(
             node.evaporation_m3_day/node.area_m2*1'000.0
         );
         fields.set_dense(slot,net_radiation,node.net_radiation_w_m2);
+        fields.set_dense(
+            slot,snow_cover,node.snow_cover_fraction
+        );
+        const double effective_land_albedo=
+            climate_land_albedo(node.snow_cover_fraction);
+        const double reference_land_fraction=
+            node.land_area_m2/node.area_m2;
+        fields.set_dense(
+            slot,
+            surface_albedo,
+            reference_land_fraction*effective_land_albedo+
+                (1.0-reference_land_fraction)*ocean_albedo
+        );
     }
 }
 
@@ -860,11 +945,12 @@ void ClimateStore::save(BinaryWriter& writer) const {
         writer.pod(node.east_wind_m_s);
         writer.pod(node.north_wind_m_s);
         writer.pod(node.weather_anomaly_k);
+        writer.pod(node.snow_cover_fraction);
     }
 }
 
 void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
-    if (version!=1)
+    if (version!=2)
         throw std::runtime_error("unsupported climate state snapshot version");
     const std::uint8_t level=reader.pod<std::uint8_t>();
     if (!has_level_ || level!=reference_level_)
@@ -901,7 +987,7 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
     );
     const std::uint64_t count=reader.pod<std::uint64_t>();
     const std::uint64_t expected=6ULL*(1ULL<<(2U*level));
-    constexpr std::size_t bytes_per_node=8U+14U*8U;
+    constexpr std::size_t bytes_per_node=8U+15U*8U;
     if (count!=expected || count>reader.remaining()/bytes_per_node)
         throw std::runtime_error("invalid climate node count");
     std::vector<ClimateNode> nodes;
@@ -924,6 +1010,7 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
         node.east_wind_m_s=reader.pod<double>();
         node.north_wind_m_s=reader.pod<double>();
         node.weather_anomaly_k=reader.pod<double>();
+        node.snow_cover_fraction=reader.pod<double>();
         const bool cell_is_valid=
             node.cell.valid() && node.cell.level()==level;
         const double expected_area=cell_is_valid
@@ -962,7 +1049,10 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
             !std::isfinite(node.north_wind_m_s) ||
             std::abs(node.north_wind_m_s)>100.0 ||
             !std::isfinite(node.weather_anomaly_k) ||
-            std::abs(node.weather_anomaly_k)>30.0
+            std::abs(node.weather_anomaly_k)>30.0 ||
+            !std::isfinite(node.snow_cover_fraction) ||
+            node.snow_cover_fraction<0.0 ||
+            node.snow_cover_fraction>1.0
         ) {
             throw std::runtime_error("invalid climate node state");
         }
@@ -1043,6 +1133,14 @@ void ClimateModule::register_fields(FieldRegistry& r) {
     r.register_field({
         "climate.net_radiation_w_m2","W/m2",
         FieldSemantics::Intensive,0.0,-2'000.0,2'000.0
+    });
+    r.register_field({
+        "climate.snow_cover_fraction","1",
+        FieldSemantics::Intensive,0.0,0.0,1.0
+    });
+    r.register_field({
+        "climate.surface_albedo","1",
+        FieldSemantics::Intensive,land_albedo,0.0,1.0
     });
 }
 

@@ -707,6 +707,9 @@ public:
           water_(require_field(r,"hydrology.soil_water_m3")),
           flooded_(require_field(r,"hydrology.flooded_fraction")),
           inundation_(require_field(r,"hydrology.inundation_days")),
+          snow_cover_(
+              require_field(r,"climate.snow_cover_fraction")
+          ),
           growth_(r.find("magic.growth_factor")),
           fertility_(require_field(r,"ecology.soil_fertility")),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
@@ -734,6 +737,7 @@ public:
                     "field:hydrology.soil_water_m3",
                     "field:hydrology.flooded_fraction",
                     "field:hydrology.inundation_days",
+                    "field:climate.snow_cover_fraction",
                     "field:ecology.soil_fertility",
                     "field:ecology.litter_carbon_kg",
                     "field:ecology.grass_carbon_kg",
@@ -850,7 +854,19 @@ public:
                 ? fs.get(cell,*growth_)
                 : 1.0;
             const double flooded=fs.get(cell,flooded_);
+            const double snow_cover=std::clamp(
+                fs.get(cell,snow_cover_),0.0,1.0
+            );
             const double flood_mortality=0.02*flooded*(-std::expm1(-fs.get(cell,inundation_)/5.0));
+
+            // Snow buries short vegetation more completely than woody
+            // canopies. These are reduced exposure factors; snow mass and
+            // cover remain owned by hydrology and climate respectively.
+            const std::array<double,3> snow_exposure{
+                1.0-snow_cover,
+                1.0-0.50*snow_cover,
+                1.0-0.15*snow_cover
+            };
 
             const std::array<double,3> moisture_factor{
                 0.25+0.75*moisture,
@@ -933,7 +949,9 @@ public:
                     establishment*
                     shared_space*
                     own_space*
-                    light_factor[i]*(1.0-flooded);
+                    light_factor[i]*
+                    snow_exposure[i]*
+                    (1.0-flooded);
 
                 const double temperature_respiration=std::clamp(
                     std::pow(2.0,(temp-283.0)/10.0),
@@ -990,6 +1008,7 @@ public:
 
 private:
     FieldId temp_,solar_,land_,regolith_,water_,flooded_,inundation_;
+    FieldId snow_cover_;
     std::optional<FieldId> growth_;
     FieldId fertility_,litter_;
     std::array<FieldId,3> pft_;
@@ -1010,6 +1029,9 @@ public:
           regolith_(require_field(r,"geology.regolith_thickness_m")),
           water_(require_field(r,"hydrology.soil_water_m3")),
           flooded_(require_field(r,"hydrology.flooded_fraction")),
+          snow_cover_(
+              require_field(r,"climate.snow_cover_fraction")
+          ),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
           pft_{
               require_field(r,"ecology.grass_carbon_kg"),
@@ -1043,6 +1065,7 @@ public:
                     "field:geology.regolith_thickness_m",
                     "field:hydrology.soil_water_m3",
                     "field:hydrology.flooded_fraction",
+                    "field:climate.snow_cover_fraction",
                     "field:ecology.litter_carbon_kg",
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
@@ -1161,6 +1184,7 @@ public:
                 )*
                 temperature_factor*
                 rain_suppression*
+                (1.0-fs.get(cell,snow_cover_))*
                 (1.0-fs.get(cell,flooded_)),
                 0.0,
                 1.0
@@ -1380,7 +1404,7 @@ public:
 
 private:
     FieldId temp_,precipitation_,humidity_,east_wind_,north_wind_;
-    FieldId land_,regolith_,water_,flooded_,litter_;
+    FieldId land_,regolith_,water_,flooded_,snow_cover_,litter_;
     std::array<FieldId,3> pft_;
     FieldId carbon_,active_area_,active_,danger_,burned_,burned_area_;
     FieldId emitted_,char_;

@@ -177,6 +177,12 @@ msgstr "Солнечный поток"
 msgid "LAB_FIELD_NET_RADIATION"
 msgstr "Радиационный баланс"
 
+msgid "LAB_FIELD_SNOW_COVER"
+msgstr "Снежный покров"
+
+msgid "LAB_FIELD_SURFACE_ALBEDO"
+msgstr "Альбедо поверхности"
+
 msgid "LAB_FIELD_EAST_WIND"
 msgstr "Ветер на восток"
 

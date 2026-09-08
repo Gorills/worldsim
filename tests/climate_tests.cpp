@@ -73,6 +73,26 @@ std::unique_ptr<Simulation> climate_fixture(
     return simulation;
 }
 
+void run_vegetation(Simulation& simulation) {
+    Scheduler scheduler;
+    GeographyModule().register_systems(scheduler,simulation.fields());
+    ClimateModule().register_systems(scheduler,simulation.fields());
+    MagicModule().register_systems(scheduler,simulation.fields());
+    HydrologyModule().register_systems(scheduler,simulation.fields());
+    EcologyModule().register_systems(scheduler,simulation.fields());
+    scheduler.finalize();
+    SystemContext context{
+        simulation.world(),simulation.fields(),1.0
+    };
+    for (ISimSystem* system:scheduler.order()) {
+        if (system->id()=="ecology.vegetation") {
+            system->step(context);
+            return;
+        }
+    }
+    throw std::runtime_error("vegetation system is absent");
+}
+
 void optional_magic_contract() {
     auto climate_only=climate_fixture(42,1,1,3'600.0);
     climate_only->step(24);
@@ -183,6 +203,188 @@ void seasonal_thermal_inertia() {
     check(
         lag>=3 && lag<=150,
         "ocean mixed layer lacks a bounded seasonal phase lag"
+    );
+}
+
+void snow_albedo_feedback() {
+    near(
+        snow_cover_fraction_from_swe(0.0),0.0,0.0,
+        "zero SWE produced snow cover"
+    );
+    check(
+        snow_cover_fraction_from_swe(0.10)>0.99,
+        "deep SWE did not approach complete snow cover"
+    );
+    near(
+        climate_land_albedo(0.0),0.28,1.0e-15,
+        "snow-free land albedo changed"
+    );
+    near(
+        climate_land_albedo(1.0),0.75,1.0e-15,
+        "complete-snow land albedo changed"
+    );
+    auto bare=make_default_simulation(
+        89,SimulationConfig{2,2,3'600.0}
+    );
+    auto snowy=make_default_simulation(
+        89,SimulationConfig{2,2,3'600.0}
+    );
+    auto& snowy_fields=snowy->world().stores().get<FieldStore>();
+    const FieldId snow=*snowy->fields().find(
+        "hydrology.snow_water_m3"
+    );
+    const FieldId land=*snowy->fields().find(
+        "geography.land_fraction"
+    );
+    for (CellId cell:snowy->world().active_cells()) {
+        const double land_area=
+            snowy->world().topology().area_m2(cell)*
+            snowy_fields.get(cell,land);
+        snowy_fields.set(cell,snow,0.10*land_area);
+    }
+
+    const double snowy_initial_heat=snowy->world().stores()
+        .get<ClimateStore>().total_surface_heat_j();
+    bare->step();
+    snowy->step();
+    const double bare_absorbed=bare->world().stores()
+        .get<ClimateStore>().budget().absorbed_solar_j;
+    const double snowy_absorbed=snowy->world().stores()
+        .get<ClimateStore>().budget().absorbed_solar_j;
+    check(
+        snowy_absorbed<0.98*bare_absorbed,
+        "snow water did not reduce absorbed shortwave radiation"
+    );
+    const ClimateStore& snowy_climate=
+        snowy->world().stores().get<ClimateStore>();
+    near(
+        snowy_climate.total_surface_heat_j(),
+        snowy_initial_heat+
+            snowy_climate.budget().absorbed_solar_j-
+            snowy_climate.budget().outgoing_longwave_j,
+        2.0e-12,
+        "snow-dependent radiation broke the energy ledger"
+    );
+
+    const FieldId snow_cover=*snowy->fields().find(
+        "climate.snow_cover_fraction"
+    );
+    const FieldId surface_albedo=*snowy->fields().find(
+        "climate.surface_albedo"
+    );
+    double maximum_cover=0.0;
+    double maximum_albedo=0.0;
+    for (CellId cell:snowy->world().active_cells()) {
+        maximum_cover=std::max(
+            maximum_cover,snowy_fields.get(cell,snow_cover)
+        );
+        maximum_albedo=std::max(
+            maximum_albedo,snowy_fields.get(cell,surface_albedo)
+        );
+    }
+    check(
+        maximum_cover>0.99 && maximum_albedo>0.70,
+        "deep snow did not project its cover/albedo diagnostics"
+    );
+}
+
+void snow_coupling_is_lod_independent() {
+    auto coarse=make_default_simulation(
+        90,SimulationConfig{1,2,3'600.0}
+    );
+    auto focused=make_default_simulation(
+        90,SimulationConfig{1,2,3'600.0}
+    );
+    const FieldId snow=*coarse->fields().find(
+        "hydrology.snow_water_m3"
+    );
+    const FieldId land=*coarse->fields().find(
+        "geography.land_fraction"
+    );
+    for (Simulation* simulation:{coarse.get(),focused.get()}) {
+        auto& fields=simulation->world().stores().get<FieldStore>();
+        for (CellId cell:simulation->world().active_cells()) {
+            const double land_area=
+                simulation->world().topology().area_m2(cell)*
+                fields.get(cell,land);
+            const double depth=0.01*static_cast<double>(
+                1U+(cell.raw()%7U)
+            );
+            fields.set(cell,snow,depth*land_area);
+        }
+    }
+    focused->set_focus({1.0,0.2,0.1});
+    coarse->step();
+    focused->step();
+
+    const auto& a=coarse->world().stores().get<ClimateStore>();
+    const auto& b=focused->world().stores().get<ClimateStore>();
+    check(a.nodes().size()==b.nodes().size(),"focus changed climate grid");
+    for (std::size_t i=0;i<a.nodes().size();++i) {
+        near(
+            a.nodes()[i].snow_cover_fraction,
+            b.nodes()[i].snow_cover_fraction,
+            2.0e-14,
+            "focus LOD changed reference snow cover"
+        );
+        near(
+            a.nodes()[i].land_temperature_k,
+            b.nodes()[i].land_temperature_k,
+            2.0e-14,
+            "focus LOD changed snow-coupled land temperature"
+        );
+    }
+}
+
+void snow_burial_suppresses_short_vegetation() {
+    auto bare=make_default_simulation(
+        92,SimulationConfig{1,1,3'600.0}
+    );
+    auto snowy=make_default_simulation(
+        92,SimulationConfig{1,1,3'600.0}
+    );
+    const CellId cell=*bare->world().active_cells().begin();
+    const double area=bare->world().topology().area_m2(cell);
+    for (Simulation* simulation:{bare.get(),snowy.get()}) {
+        auto& fields=simulation->world().stores().get<FieldStore>();
+        const auto set=[&](std::string_view key, double value) {
+            fields.set(cell,*simulation->fields().find(key),value);
+        };
+        set("geography.land_fraction",1.0);
+        set("geology.regolith_thickness_m",1.0);
+        set(
+            "hydrology.soil_water_m3",
+            0.60*soil_water_capacity_depth_m(1.0)*area
+        );
+        set("hydrology.flooded_fraction",0.0);
+        set("hydrology.inundation_days",0.0);
+        set("climate.surface_temperature_k",286.0);
+        set("climate.solar_flux_w_m2",340.0);
+        set("ecology.soil_fertility",1.0);
+        set("magic.growth_factor",1.0);
+        set("ecology.grass_carbon_kg",0.20*area);
+        set("ecology.shrub_carbon_kg",0.0);
+        set("ecology.tree_carbon_kg",0.0);
+        set("ecology.vegetation_carbon_kg",0.20*area);
+    }
+    bare->world().stores().get<FieldStore>().set(
+        cell,*bare->fields().find("climate.snow_cover_fraction"),0.0
+    );
+    snowy->world().stores().get<FieldStore>().set(
+        cell,*snowy->fields().find("climate.snow_cover_fraction"),1.0
+    );
+
+    run_vegetation(*bare);
+    run_vegetation(*snowy);
+    const double bare_npp=bare->world().stores().get<FieldStore>().get(
+        cell,*bare->fields().find("ecology.npp_kg_day")
+    );
+    const double snowy_npp=snowy->world().stores().get<FieldStore>().get(
+        cell,*snowy->fields().find("ecology.npp_kg_day")
+    );
+    check(
+        bare_npp>snowy_npp+5.0e-4*area,
+        "complete snow burial did not suppress grass production"
     );
 }
 
@@ -305,6 +507,31 @@ void malformed_climate_store_is_rejected() {
         after.data()==writer.data(),
         "failed climate store load mutated live state"
     );
+
+    bytes=writer.data();
+    // The snow-cover fraction is the final (15th) node double.
+    constexpr std::size_t first_snow_cover_offset=
+        1U+8U+7U*8U+8U+8U+14U*8U;
+    std::copy(
+        nan.data().begin(),nan.data().end(),
+        bytes.begin()+static_cast<std::ptrdiff_t>(
+            first_snow_cover_offset
+        )
+    );
+    rejected=false;
+    try {
+        BinaryReader reader(bytes);
+        store.load(reader,store.snapshot_version());
+    } catch (const std::exception&) {
+        rejected=true;
+    }
+    check(rejected,"climate store accepted invalid snow cover");
+    BinaryWriter after_snow;
+    store.save(after_snow);
+    check(
+        after_snow.data()==writer.data(),
+        "failed snow-cover load mutated live climate state"
+    );
 }
 
 } // namespace
@@ -314,6 +541,9 @@ int main() {
         optional_magic_contract();
         energy_and_moisture_accounting();
         seasonal_thermal_inertia();
+        snow_albedo_feedback();
+        snow_coupling_is_lod_independent();
+        snow_burial_suppresses_short_vegetation();
         orographic_precipitation();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();

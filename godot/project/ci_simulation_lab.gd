@@ -79,6 +79,7 @@ func _process(_delta: float) -> bool:
     var has_ecology := false
     var has_fire := false
     var has_soil_carbon := false
+    var has_snow_albedo := false
     for index in range(selector.item_count):
         var metadata = selector.get_item_metadata(index)
         if !(metadata is Dictionary):
@@ -88,10 +89,11 @@ func _process(_delta: float) -> bool:
         has_ecology = has_ecology or key == "ecology.vegetation_carbon_kg"
         has_fire = has_fire or key == "ecology.fire_danger"
         has_soil_carbon = has_soil_carbon or key == "ecology.soil_carbon_kg"
+        has_snow_albedo = has_snow_albedo or key == "climate.surface_albedo"
         has_relative_humidity = has_relative_humidity or key == "climate.relative_humidity"
         if key == "climate.surface_temperature_k":
             climate_index = index
-    if !has_hydrology or !has_ecology or !has_fire or !has_soil_carbon or !has_relative_humidity or climate_index < 0:
+    if !has_hydrology or !has_ecology or !has_fire or !has_soil_carbon or !has_snow_albedo or !has_relative_humidity or climate_index < 0:
         push_error("Advanced simulation laboratory mode does not expose all fields")
         quit(7)
         return true
@@ -100,6 +102,7 @@ func _process(_delta: float) -> bool:
     scene.call("_apply_preset", 1, true)
     climate_index = -1
     has_relative_humidity = false
+    has_snow_albedo = false
     for index in range(selector.item_count):
         var metadata = selector.get_item_metadata(index)
         if metadata is Dictionary:
@@ -107,7 +110,8 @@ func _process(_delta: float) -> bool:
             if key == "climate.surface_temperature_k":
                 climate_index = index
             has_relative_humidity = has_relative_humidity or key == "climate.relative_humidity"
-    if climate_index < 0 or !has_relative_humidity:
+            has_snow_albedo = has_snow_albedo or key == "climate.surface_albedo"
+    if climate_index < 0 or !has_relative_humidity or !has_snow_albedo:
         push_error("Climate diagnostic mode lacks coupled climate indicators")
         quit(8)
         return true

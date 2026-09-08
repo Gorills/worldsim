@@ -29,6 +29,8 @@ const FIELD_LABELS := {
     "climate.relative_humidity": "LAB_FIELD_RELATIVE_HUMIDITY",
     "climate.solar_flux_w_m2": "LAB_FIELD_SOLAR",
     "climate.net_radiation_w_m2": "LAB_FIELD_NET_RADIATION",
+    "climate.snow_cover_fraction": "LAB_FIELD_SNOW_COVER",
+    "climate.surface_albedo": "LAB_FIELD_SURFACE_ALBEDO",
     "climate.wind_east_m_s": "LAB_FIELD_EAST_WIND",
     "climate.wind_north_m_s": "LAB_FIELD_NORTH_WIND",
     "climate.weather_anomaly_k": "LAB_FIELD_WEATHER_ANOMALY",
@@ -90,15 +92,17 @@ const PRESETS := [
             "climate.precipitation_mm_day",
             "climate.evaporation_mm_day",
             "climate.net_radiation_w_m2",
+            "climate.snow_cover_fraction",
+            "climate.surface_albedo",
             "climate.wind_east_m_s",
         ],
         "inspect": [
             "climate.surface_temperature_k",
             "climate.land_temperature_k",
-            "climate.ocean_temperature_k",
             "climate.relative_humidity",
             "climate.precipitation_mm_day",
-            "climate.evaporation_mm_day",
+            "climate.snow_cover_fraction",
+            "climate.surface_albedo",
         ],
         "purpose": "LAB_PURPOSE_CLIMATE",
         "description": "LAB_DESCRIPTION_CLIMATE",
@@ -113,14 +117,15 @@ const PRESETS := [
             "hydrology.soil_water_m3",
             "hydrology.groundwater_m3",
             "hydrology.snow_water_m3",
+            "climate.snow_cover_fraction",
             "hydrology.flooded_fraction",
         ],
         "inspect": [
             "climate.precipitation_mm_day",
             "hydrology.surface_depth_m",
-            "hydrology.river_discharge_m3_day",
             "hydrology.soil_water_m3",
-            "hydrology.groundwater_m3",
+            "hydrology.snow_water_m3",
+            "climate.snow_cover_fraction",
             "hydrology.flooded_fraction",
         ],
         "purpose": "LAB_PURPOSE_WATER",
@@ -675,6 +680,10 @@ func _color_for_value(
         )
 
     var t := clampf((value - lower) / maxf(upper - lower, 1.0e-30), 0.0, 1.0)
+    if key == "climate.snow_cover_fraction":
+        return _ramp3(t, Color(0.16, 0.23, 0.28), Color(0.57, 0.77, 0.88), Color(0.98, 0.99, 1.0))
+    if key == "climate.surface_albedo":
+        return _ramp3(t, Color(0.04, 0.06, 0.08), Color(0.48, 0.53, 0.57), Color(1.0, 1.0, 0.96))
     if key.begins_with("hydrology.") or key == "climate.precipitation_mm_day":
         return _ramp3(t, Color(0.94, 0.96, 0.91), Color(0.18, 0.62, 0.78), Color(0.02, 0.10, 0.32))
     if key.begins_with("ecology.fire_") or key == "ecology.pyrogenic_carbon_kg":

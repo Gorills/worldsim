@@ -1,5 +1,9 @@
 # Soil carbon v1
 
+> Snow-albedo coupling v1 subsequently raises the current snapshot epoch to 21.
+> The Soil-carbon-v1 execution record below remains historical evidence for
+> epoch 20.
+
 ## Why this slice exists
 
 Before this slice, `ecology.soil` removed a temperature- and moisture-dependent

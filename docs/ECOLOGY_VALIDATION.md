@@ -19,6 +19,13 @@ climate.surface
 
 This ordering gives geology the current terrestrial runoff, gives soil the current regolith state, gives vegetation the resulting soil state, and lets fauna react to the post-fire forage state in the same daily window.
 
+Snow-albedo coupling adds `climate.snow_cover_fraction` as a projected forcing
+for vegetation and fire. Grass loses all exposed productive area at complete
+cover, shrubs lose half and trees lose 15%; this is a reduced height ordering,
+not explicit canopy geometry. Fire danger is multiplied by the snow-free
+fraction. The stock, reference-grid aggregation and limitations are documented
+in `SNOW_ALBEDO.md`.
+
 ### Root-zone water storage
 
 `hydrology.soil_water_m3` remains an extensive water stock, but its local storage capacity is no longer a fixed water depth on every land cell. The capacity depth rises from a small fractured-substrate store toward a bounded developed-soil store as `geology.regolith_thickness_m` increases.
@@ -137,7 +144,8 @@ The dedicated `worldsim_soil_carbon_tests` suite checks:
 - incoming transfers do not cross multiple pools in one step;
 - submerged stock remains dormant instead of being deleted;
 - all component pools and the cumulative ledger survive refine/coarsen; and
-- snapshot epoch 20 round-trips and continues deterministically.
+- historical epoch-20 soil-carbon snapshots round-tripped and continued
+  deterministically; the current combined world uses epoch 21.
 
 The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
 
@@ -146,18 +154,21 @@ The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- snapshot epoch 20 includes authoritative soil-carbon state, version 19 is rejected, and the current snapshot round-trips exactly.
+- the current epoch-21 snapshot includes authoritative soil-carbon and
+  snow-coupled climate state, rejects version 20, and round-trips exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
 - active fire cannot burn without fuel;
 - a wet root zone plus humid/rainy weather suppresses an otherwise identical active fire;
+- complete snow cover suppresses an otherwise identical active fire;
 - natural ignition is reproducible from equal seed/tick/cell state;
 - biomass, litter, emission and pyrogenic-carbon transfers close for a controlled fire;
 - the aggregate vegetation field remains the exact sum of the PFT pools;
 - spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
 - extensive fire ledgers survive coarsening; and
-- snapshot epoch 20 round-trips authoritative fire and soil-carbon state.
+- snapshot epoch 21 round-trips authoritative fire, soil-carbon and
+  snow-coupled climate state.
 
 ## Explicitly unsupported ecology claims
 

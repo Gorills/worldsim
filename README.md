@@ -1,6 +1,6 @@
 # WorldSim
 
-WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, a reduced coupled energy/moisture climate with land/ocean thermal inertia and closed planetary water exchange, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus with persistent fast/slow soil carbon and respiration accounting, grass/shrub/tree plant functional types with local dispersal and competition, fuel/moisture/wind-driven wildfire with explicit fire-carbon transfers, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
+WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, a reduced coupled energy/moisture climate with land/ocean thermal inertia, closed planetary water exchange and snow-albedo feedback, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus with persistent fast/slow soil carbon and respiration accounting, grass/shrub/tree plant functional types with local dispersal, competition and snow burial, fuel/moisture/wind/snow-driven wildfire with explicit fire-carbon transfers, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
 
 This repository is **not** claiming that the included climate/ecology equations are a scientifically calibrated Earth model. They are deliberately replaceable domain implementations used to exercise the production architecture: spatial hierarchy, conservation across LOD, scheduling, state stores, snapshots, commands, events, engine boundaries, and module extension.
 
@@ -71,6 +71,15 @@ the generic field registry. Select `ecology.fire_danger`,
 `ecology.fire_active_fraction`, `ecology.fire_burned_area_m2` or the carbon
 ledgers to inspect the live disturbance state. The process, LOD and accounting
 boundaries are documented in [the wildfire contract](docs/FIRE.md).
+
+## Inspect snow-albedo coupling
+
+The climate and water views in the simulation laboratory expose
+`climate.snow_cover_fraction`, `climate.surface_albedo` and the authoritative
+`hydrology.snow_water_m3` stock. Snow cover now changes absorbed shortwave
+energy, PFT exposure and fire danger without making adaptive focus LOD own a
+second snow reservoir. The aggregation, scheduler and fidelity boundaries are
+documented in [the snow-albedo contract](docs/SNOW_ALBEDO.md).
 
 ## Inspect soil carbon
 

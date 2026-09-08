@@ -44,6 +44,8 @@ func _initialize() -> void:
         "climate.relative_humidity",
         "climate.evaporation_mm_day",
         "climate.net_radiation_w_m2",
+        "climate.snow_cover_fraction",
+        "climate.surface_albedo",
         "climate.wind_east_m_s",
         "climate.wind_north_m_s",
     ]:

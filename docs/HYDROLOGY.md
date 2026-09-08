@@ -221,6 +221,6 @@ script writes `history.png` and `maps.png` without interpolation of cell state.
   checks. The existing terrain-only render-packet negative check emits its
   expected handled error.
 - Basin hydrology's epoch **17** roundtrip and continuation passed; Climate v2
-  introduced epoch **18**, Wildfire v1 epoch **19**, and the current Soil
-  carbon v1 epoch is **20**.
+  introduced epoch **18**, Wildfire v1 epoch **19**, Soil carbon v1 epoch
+  **20**, and the current snow-albedo coupling epoch is **21**.
   `git diff --check` passed.
