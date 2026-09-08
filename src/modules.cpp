@@ -31,6 +31,8 @@ struct GeologyFieldIds {
     FieldId volcanic_arc_forcing{};
     FieldId collision_forcing{};
     FieldId rift_forcing{};
+    FieldId drainage_area{};
+    FieldId drainage_discharge{};
     std::optional<FieldId> runoff;
 };
 
@@ -49,6 +51,8 @@ GeologyFieldIds geology_fields(const FieldRegistry& r) {
         require_field(r,"geology.volcanic_arc_forcing"),
         require_field(r,"geology.collision_forcing"),
         require_field(r,"geology.rift_forcing"),
+        require_field(r,"geology.drainage_area_m2"),
+        require_field(r,"geology.drainage_discharge_m3_day"),
         r.find("hydrology.runoff_m3_day")
     };
 }
@@ -136,25 +140,6 @@ double region_mean_elevation(
     }
     if (!(area_sum>0.0)) throw std::runtime_error("zero-area geology region");
     return weighted_sum/area_sum;
-}
-
-void accumulate_region_mass(
-    const WorldState& world,
-    CellId region,
-    double mass_kg,
-    std::map<CellId,double>& deposits
-) {
-    if (!(mass_kg>0.0)) return;
-    const auto leaves=active_cells_covering_region(world,region);
-    if (leaves.size()==1 && leaves.front().level()<region.level()) {
-        deposits[leaves.front()]+=mass_kg;
-        return;
-    }
-    double area_sum=0.0;
-    for (CellId leaf:leaves) area_sum+=world.topology().area_m2(leaf);
-    if (!(area_sum>0.0)) throw std::runtime_error("zero-area sediment target");
-    for (CellId leaf:leaves)
-        deposits[leaf]+=mass_kg*world.topology().area_m2(leaf)/area_sum;
 }
 
 double land_fraction_from_elevation(double elevation_m) {
@@ -262,6 +247,7 @@ public:
     SystemAccess access() const override {
         std::vector<std::string> reads{
             "field:geography.elevation_m",
+            "field:geography.land_fraction",
             "field:geology.crust_thickness_m",
             "field:geology.crust_density_kg_m3",
             "field:geology.continental_fraction",
@@ -285,7 +271,9 @@ public:
                 "field:geology.trench_forcing",
                 "field:geology.volcanic_arc_forcing",
                 "field:geology.collision_forcing",
-                "field:geology.rift_forcing"
+                "field:geology.rift_forcing",
+                "field:geology.drainage_area_m2",
+                "field:geology.drainage_discharge_m3_day"
             }
         };
     }
@@ -313,14 +301,27 @@ public:
             write_geology_state(fs,cell,ids_,state);
         update_geography_surface(ctx.world,ctx.fields,geology);
 
-        std::map<CellId,double> deposits;
+        struct FlowTarget {
+            CellId cell;
+            double weight{};
+        };
+        struct FlowRoute {
+            std::vector<FlowTarget> targets;
+            double slope{};
+        };
+
+        std::map<CellId,FlowRoute> routes;
+        std::vector<CellId> elevation_order;
+        elevation_order.reserve(ctx.world.active_cells().size());
+
         for (CellId cell:ctx.world.active_cells()) {
+            elevation_order.push_back(cell);
             const double source_elevation=fs.get(cell,ids_.elevation);
             const Vec3d source_direction=ctx.world.topology().center_unit(cell);
             double downhill_elevation=source_elevation;
             double downhill_distance_m=1.0;
-
             std::optional<CellId> downhill_region;
+
             for (CellId same_level_neighbor:ctx.world.topology().neighbors4(cell)) {
                 const double candidate=region_mean_elevation(
                     ctx.world,
@@ -341,24 +342,92 @@ public:
                     ));
                 }
             }
+            if (!downhill_region) continue;
 
-            if (!downhill_region) {
-                fs.set(cell,ids_.erosion_rate,0.0);
-                continue;
+            const auto leaves=active_cells_covering_region(
+                ctx.world,
+                *downhill_region
+            );
+            std::vector<std::pair<CellId,double>> target_areas;
+            double target_area_sum=0.0;
+            for (CellId leaf:leaves) {
+                if (leaf==cell) continue;
+                if (!(fs.get(leaf,ids_.elevation)<source_elevation)) continue;
+                const double target_area=leaf.level()<downhill_region->level()
+                    ? ctx.world.topology().area_m2(*downhill_region)
+                    : ctx.world.topology().area_m2(leaf);
+                target_areas.emplace_back(leaf,target_area);
+                target_area_sum+=target_area;
             }
+            if (!(target_area_sum>0.0)) continue;
 
-            const double slope=std::max(
+            FlowRoute route;
+            route.slope=std::max(
                 0.0,
                 (source_elevation-downhill_elevation)/
                 std::max(1.0,downhill_distance_m)
             );
+            route.targets.reserve(target_areas.size());
+            for (const auto& [target,target_area]:target_areas)
+                route.targets.push_back({
+                    target,
+                    target_area/target_area_sum
+                });
+            routes.emplace(cell,std::move(route));
+        }
+
+        // Accumulate catchment area and runoff through a strictly downhill
+        // directed acyclic graph. Sorting by elevation guarantees all upstream
+        // contributions reach a cell before it is propagated farther down.
+        std::sort(
+            elevation_order.begin(),
+            elevation_order.end(),
+            [&](CellId a, CellId b) {
+                const double ea=fs.get(a,ids_.elevation);
+                const double eb=fs.get(b,ids_.elevation);
+                if (ea!=eb) return ea>eb;
+                return a.raw()<b.raw();
+            }
+        );
+        std::map<CellId,double> drainage_area;
+        std::map<CellId,double> discharge;
+        for (CellId cell:ctx.world.active_cells()) {
             const double area=ctx.world.topology().area_m2(cell);
-            const double runoff_m_day=ids_.runoff
-                ? fs.get(cell,*ids_.runoff)/std::max(1.0,area)
-                : 0.001;
+            const double land=fs.get(cell,ids_.land_fraction);
+            drainage_area[cell]=area*land;
+            discharge[cell]=ids_.runoff
+                ? fs.get(cell,*ids_.runoff)
+                : 0.001*area*land;
+        }
+        for (CellId cell:elevation_order) {
+            const auto route=routes.find(cell);
+            if (route==routes.end()) continue;
+            for (const FlowTarget& target:route->second.targets) {
+                drainage_area[target.cell]+=
+                    drainage_area[cell]*target.weight;
+                discharge[target.cell]+=
+                    discharge[cell]*target.weight;
+            }
+        }
+        for (CellId cell:ctx.world.active_cells()) {
+            fs.set(cell,ids_.drainage_area,drainage_area[cell]);
+            fs.set(cell,ids_.drainage_discharge,discharge[cell]);
+        }
+
+        std::map<CellId,double> deposits;
+        for (CellId cell:ctx.world.active_cells()) {
+            const auto route=routes.find(cell);
+            if (route==routes.end()) {
+                fs.set(cell,ids_.erosion_rate,0.0);
+                continue;
+            }
+
+            const double area=ctx.world.topology().area_m2(cell);
+            const double runoff_m_day=
+                discharge[cell]/std::max(1.0,area);
             GeologyState& state=states.at(cell);
             const double erosion_rate=geology.erosion_rate_m_per_year(
-                slope,
+                route->second.slope,
                 runoff_m_day,
                 state.regolith_thickness_m
             );
@@ -371,13 +440,9 @@ public:
                 area,
                 erosion_depth
             );
-            if (budget.transported_mass_kg()>0.0)
-                accumulate_region_mass(
-                    ctx.world,
-                    *downhill_region,
-                    budget.transported_mass_kg(),
-                    deposits
-                );
+            for (const FlowTarget& target:route->second.targets)
+                deposits[target.cell]+=
+                    budget.transported_mass_kg()*target.weight;
             fs.set(cell,ids_.erosion_rate,erosion_rate);
         }
 
@@ -617,6 +682,8 @@ void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geology.volcanic_arc_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"geology.collision_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"geology.rift_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
+    r.register_field({"geology.drainage_area_m2","m2",FieldSemantics::Intensive,0.0,0.0,1.0e30});
+    r.register_field({"geology.drainage_discharge_m3_day","m3/day",FieldSemantics::Intensive,0.0,0.0,1.0e30});
 }
 
 void GeographyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
