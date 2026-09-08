@@ -57,6 +57,6 @@ b6f619be4bb5624d73b1215b3e4b956e1a8a6d1acdb18e070bb1dd7e54fd24ad  ./src/spatial.
 1b6959f16b6bc0380a871f62954570d1ce00304cf5cc8b1b600999791dc160a2  ./src/tectonics.cpp
 cd602fa6e0557dbf0a531d7c94f8bdfabb7ae9d5de16d731195a9bdb150b3d00  ./src/terrain.cpp
 5d3a5fcbc6f36c42cf61efffd1dc25c40bd38c8f653fa031d6fd5966ac608fb7  ./tests/sanitizer_smoke.cpp
-cad325686e1a75c79cd0531f832893c37b4017871b85e950599077ce03968e7b  ./tests/worldsim_tests.cpp
+47c97d094deeac6cbfffe7eb79032c061641a7af00c179747f5ed7fb72f043c4  ./tests/worldsim_tests.cpp
 14cea906b991717fb38e14b05d00e2e50c41be8c51cc261381f7d78b9397c414  ./THIRD_PARTY.md
 e9dd8507f4bf0c6f42458e41aea833ad0bd3f6127272335eee9bf4d58541ed67  ./VERSION
