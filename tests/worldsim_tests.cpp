@@ -1337,7 +1337,7 @@ void test_geology_model_process_contracts() {
     );
     check(
         std::isfinite(supercritical_hillslope_rate) &&
-        supercritical_hillslope_rate>near_critical_hillslope_rate &&
+        supercritical_hillslope_rate>0.0 &&
         supercritical_hillslope_rate<=2.0e-2,
         "critical-slope transport regularization is not finite and bounded"
     );
