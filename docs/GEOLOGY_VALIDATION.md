@@ -1,8 +1,8 @@
 # Geology plausibility benchmark
 
-`worldsim_geology_benchmark` measures the current static tectonic/terrain generator against broad geological observables without changing authoritative generation behavior.
+`worldsim_geology_benchmark` measures the tectonic generator and the initialized stateful geology surface against broad geological observables without mutating simulation history.
 
-It is a **plausibility benchmark**, not a claim that WorldSim implements physical plate evolution. Scientific reference mismatches are reported as warnings in the generated JSON/stdout; they do not fail CTest. Kernel invariants and executable failures remain normal test failures.
+It is a **plausibility benchmark**, not a claim that WorldSim implements full physical plate evolution. WorldSim now carries persistent crust thickness/density, lithosphere age, sediment mass and regolith state, and evolves those fields through a deliberately reduced long-term process model. Scientific reference mismatches are reported as warnings in the generated JSON/stdout; they do not fail CTest. Kernel invariants and executable failures remain normal test failures.
 
 ## Why these observables
 
@@ -39,12 +39,34 @@ High-affinity crust is sampled on a same-level cube-sphere cover and thresholded
 - high/low-affinity transition-edge fraction;
 - macro-relief contrast between high- and low-affinity crust.
 
-These are generator diagnostics. `continental_affinity` is not yet a physical crust-thickness/composition model, so the benchmark does not equate its threshold directly with measured continental crust.
+These remain generator diagnostics. `continental_affinity` is the smooth tectonic control used to initialize persistent crust thickness and density; it is not itself a rock-composition measurement, so the benchmark does not equate its threshold directly with measured continental crust.
 
 For context, modern-Earth literature describes a strong continental/oceanic lithosphere distinction and bimodal hypsometry:
 
 - Cawood et al. (2022), *Secular Evolution of Continents and the Earth System*. https://doi.org/10.1029/2022RG000789
 - Forte et al. (2022), *Earth's Isostatic and Dynamic Topography—A Critical Perspective*. https://doi.org/10.1029/2021GC009740
+
+### Stateful geological evolution
+
+The authoritative simulation surface is no longer regenerated directly from `TerrainGenerator(seed)` after build. Geography stores persistent geological state in the normal adaptive field store:
+
+- `geology.crust_thickness_m` and `geology.crust_density_kg_m3`;
+- `geology.lithosphere_age_ma`;
+- extensive `geology.sediment_mass_kg`, which therefore conserves mass under LOD split/merge;
+- `geology.regolith_thickness_m`;
+- diagnostic `geology.erosion_rate_m_yr`.
+
+The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust; oceanic divergence renews young thin crust; oceanic convergence consumes crust. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
+
+Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
+
+- Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
+
+Erosion is slope/runoff driven using a bounded stream-power-like law. Eroded sediment and bedrock are converted to transported mass and deposited downslope; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass.
+
+- Whipple, K. X. & Tucker, G. E. (1999), *Dynamics of the stream-power river incision model*. https://doi.org/10.1029/1999JB900120
+
+The model is intentionally a reduced geological closure, not a 3-D mantle or thermo-mechanical lithosphere solver. Elastic-plate flexure remains the physical interpretation of the bounded spatial load response rather than a claim of detailed rheology.
 
 ### Hypsometry
 
@@ -117,15 +139,14 @@ CI publishes this directory as the `worldsim-geology-benchmark` artifact.
 
 ## What this benchmark cannot validate yet
 
-The current analytical model does not contain enough state to validate:
+The v1 model now has enough state to make process-level assertions about crustal thickness/density, lithosphere age, thermal subsidence, reduced isostasy, erosion and sediment mass transport. It still does **not** validate:
 
-- plate velocities in physical angular-rate units;
-- time evolution of plate geometry;
-- oceanic crust production, age and thermal subsidence;
-- subduction polarity, slab consumption or trench geometry;
-- crustal thickness, density, isostatic balance or compositional evolution;
-- transform-fault localization;
-- sedimentation, erosion or orogenic age;
-- supercontinent cycles.
+- plate velocities in physical angular-rate units or time-evolving plate geometry;
+- explicit subduction polarity, slab geometry, mantle convection or trench migration;
+- a solved elastic/viscoelastic lithosphere with spatially varying effective elastic thickness;
+- rock-type/mineral phase evolution, metamorphism or explicit crust/mantle chemistry;
+- multi-layer sediment stratigraphy, compaction and marine transport;
+- glacial, aeolian, coastal and groundwater geomorphology;
+- supercontinent-cycle plate reconstruction.
 
-Those require additional model state before a scientific validation claim is meaningful. The benchmark should gain new observables only when the generator gains the corresponding physical contract.
+Those are fidelity extensions rather than missing closure in the current terrain-causality loop. New benchmark gates should be added only when the model gains a corresponding explicit physical contract.
