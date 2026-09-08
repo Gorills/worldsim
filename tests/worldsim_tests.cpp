@@ -509,6 +509,63 @@ void test_tectonic_model_partition_and_determinism() {
     check(crust_edge_crossings>=100,
           "continental affinity regressed to overly simple spherical lobes");
 
+    // Visual-regression sentinel for overly broad, ribbon-like convergent uplift.
+    // Sample the same seed-42 equirectangular field that exposed the artifact.
+    // The old uniform 12-degree belt activates about 14.5% of this grid above
+    // uplift=0.05 and has a low contour-per-active-cell ratio (~0.74).
+    // Orogenic shaping should keep meaningful coverage while producing a thinner,
+    // less ribbon-like boundary footprint.
+    constexpr int uplift_map_width=128;
+    constexpr int uplift_map_height=64;
+    std::array<bool,uplift_map_width*uplift_map_height> uplift_active{};
+    int uplift_active_count=0;
+    for (int y=0;y<uplift_map_height;++y) {
+        const double v=(static_cast<double>(y)+0.5)/
+            static_cast<double>(uplift_map_height);
+        const double latitude=(0.5-v)*kPi;
+        const double sin_lat=std::sin(latitude);
+        const double cos_lat=std::cos(latitude);
+        for (int x=0;x<uplift_map_width;++x) {
+            const double u=(static_cast<double>(x)+0.5)/
+                static_cast<double>(uplift_map_width);
+            const double longitude=(2.0*u-1.0)*kPi;
+            const bool active=a.sample_direction({
+                cos_lat*std::cos(longitude),
+                cos_lat*std::sin(longitude),
+                sin_lat
+            }).uplift_forcing>=0.05;
+            uplift_active[static_cast<std::size_t>(y*uplift_map_width+x)]=active;
+            uplift_active_count+=active ? 1 : 0;
+        }
+    }
+
+    int uplift_contour_edges=0;
+    for (int y=0;y<uplift_map_height;++y) {
+        for (int x=0;x<uplift_map_width;++x) {
+            const auto at=[&](int sx, int sy) {
+                const int wrapped_x=(sx+uplift_map_width)%uplift_map_width;
+                return uplift_active[static_cast<std::size_t>(
+                    sy*uplift_map_width+wrapped_x
+                )];
+            };
+            const bool current=at(x,y);
+            if (current!=at(x+1,y)) ++uplift_contour_edges;
+            if (y+1<uplift_map_height && current!=at(x,y+1))
+                ++uplift_contour_edges;
+        }
+    }
+
+    const double uplift_active_fraction=
+        static_cast<double>(uplift_active_count)/
+        static_cast<double>(uplift_map_width*uplift_map_height);
+    const double uplift_contour_per_active=
+        static_cast<double>(uplift_contour_edges)/
+        static_cast<double>(std::max(uplift_active_count,1));
+    check(uplift_active_fraction>0.08 && uplift_active_fraction<0.135,
+          "convergent uplift regressed to an overly broad boundary ribbon");
+    check(uplift_contour_per_active>0.80,
+          "convergent uplift footprint is too smooth for orogenic belts");
+
     // Crust affinity must stay continuous when plate ownership changes. Project
     // one resolved near-boundary sample onto its exact owner/neighbor bisector,
     // then sample a tiny angular step on both sides.
