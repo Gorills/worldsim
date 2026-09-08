@@ -1,10 +1,11 @@
 # Developer entry points. The simulation kernel is still built with CMake presets;
 # this Makefile only wraps those presets and the Godot 4.7 scene launch.
 #
-#   make run    # build GDExtension if needed, then launch godot/project/main.tscn
-#   make map    # build GDExtension if needed, then launch godot/project/world_map.tscn
+#   make run     # build GDExtension if needed, then launch godot/project/main.tscn
+#   make map     # build GDExtension if needed, then launch godot/project/world_map.tscn
+#   make visual  # build core and write the five-seed C++ visual diagnostic suite
 
-.PHONY: help core godot run run-scene map test
+.PHONY: help core godot run run-scene map visual test
 
 GODOT ?= godot
 export GODOT
@@ -16,6 +17,7 @@ help:
 		'make run        build GDExtension, then launch main.tscn' \
 		'make run-scene  same as make run' \
 		'make map        build GDExtension, then launch world_map.tscn' \
+		'make visual     build core and generate C++ visual diagnostic suite' \
 		'make test       build kernel and run ctest --preset dev' \
 		'' \
 		'Override the editor with GODOT=/path/to/godot'
@@ -33,6 +35,9 @@ run run-scene: godot
 
 map: godot
 	SCENE=res://world_map.tscn ./scripts/run_godot.sh
+
+visual: core
+	./out/dev/worldsim_visual_dump --suite --width 512 --height 256 --output out/visual-dump
 
 test:
 	cmake --preset dev

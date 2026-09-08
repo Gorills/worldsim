@@ -35,6 +35,17 @@ jobs:
       - name: Test
         run: ctest --preset dev
 
+      - name: Generate C++ visual diagnostics
+        run: ./out/dev/worldsim_visual_dump --suite --width 512 --height 256 --output out/visual-dump
+
+      - name: Upload C++ visual diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: worldsim-visual-dump
+          path: out/visual-dump
+          if-no-files-found: error
+          retention-days: 14
+
   godot-linux:
     name: Godot 4.7 / Linux integration
     runs-on: ubuntu-22.04
