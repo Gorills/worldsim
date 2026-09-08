@@ -86,9 +86,10 @@ After simulation-cover refinement/coarsening, derived geography is recomputed fr
 Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain/geology contract changes. Tectonic authority introduced version 3, orogenic shaping version 4, plate-layout diversification version 5, the minimum-separation correction version 6, stateful geological evolution version 7, burial-dependent sediment compaction version 8, separated fluvial/hillslope geomorphology version 9, depth-dependent regolith production version 10, critical-slope hillslope acceleration version 11, and coast-to-basin marine sediment routing version 12. Global snapshot version 13 added persistent living-soil ecology fields; version 14 added persistent grass/shrub/tree functional-type pools and propagule-limited vegetation semantics; version 15 added habitat-selected fauna redistribution. Version 16 corrects crust restriction/buoyancy, seasons and vegetation loss accounting, version 17 adds persistent basin hydrology, version 18 adds persistent coupled climate heat/moisture state, version 19 adds authoritative wildfire state, version 20 adds persistent fast/slow soil carbon and respiration accounting, and version 21 adds snow-cover/albedo feedback state. At epoch 21, versions 2 through 20 were rejected by the authoritative-world snapshot contract.
 
 Fauna carbon accounting subsequently introduced epoch 22. The grazing-timestep
-correction introduced epoch 23. The magic forcing timebase correction introduces
-epoch 24. The current reader therefore rejects global snapshot versions 2 through
-23; the preceding history through epoch 23 is retained to show which terrain-era
+correction introduced epoch 23. The magic forcing timebase correction introduced
+epoch 24, and the wildfire burn-cap timebase correction introduces epoch 25. The
+current reader therefore rejects global snapshot versions 2 through 24; the
+preceding history through epoch 24 is retained to show which terrain-era
 states they contain.
 
 ## Godot large-world strategy
