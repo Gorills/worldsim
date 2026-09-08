@@ -49,6 +49,10 @@ if(WORLDSIM_BUILD_CLI)
   add_executable(worldsim_visual_dump apps/worldsim_visual_dump.cpp)
   target_link_libraries(worldsim_visual_dump PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_visual_dump)
+
+  add_executable(worldsim_geology_benchmark apps/worldsim_geology_benchmark.cpp)
+  target_link_libraries(worldsim_geology_benchmark PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_geology_benchmark)
 endif()
 
 if(WORLDSIM_BUILD_TESTS)
@@ -69,6 +73,14 @@ if(WORLDSIM_BUILD_TESTS)
         --width 64
         --height 32
         --output ${CMAKE_BINARY_DIR}/visual-smoke
+    )
+  endif()
+  if(TARGET worldsim_geology_benchmark)
+    add_test(
+      NAME worldsim_geology_benchmark_smoke
+      COMMAND worldsim_geology_benchmark
+        --quick
+        --output ${CMAKE_BINARY_DIR}/geology-smoke
     )
   endif()
 endif()
