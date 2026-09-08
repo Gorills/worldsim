@@ -426,11 +426,19 @@ public:
             const double runoff_m_day=
                 discharge[cell]/std::max(1.0,area);
             GeologyState& state=states.at(cell);
-            const double erosion_rate=geology.erosion_rate_m_per_year(
-                route->second.slope,
-                runoff_m_day,
-                state.regolith_thickness_m
-            );
+            const double fluvial_erosion_rate=
+                geology.erosion_rate_m_per_year(
+                    route->second.slope,
+                    runoff_m_day,
+                    state.regolith_thickness_m
+                );
+            const double hillslope_transport_rate=
+                geology.hillslope_transport_rate_m_per_year(
+                    route->second.slope,
+                    state.regolith_thickness_m
+                );
+            const double erosion_rate=
+                fluvial_erosion_rate+hillslope_transport_rate;
             const double erosion_depth=std::min(
                 0.05,
                 erosion_rate*dt_years
