@@ -59,6 +59,23 @@ private:
     FieldId field_{};
 };
 
+class ZeroRunoffModule final : public ISimModule {
+public:
+    [[nodiscard]] std::string_view id() const override {
+        return "test.zero_runoff";
+    }
+    void register_fields(FieldRegistry& r) override {
+        r.register_field({
+            "hydrology.runoff_m3_day",
+            "m3/day",
+            FieldSemantics::Extensive,
+            0.0,
+            0.0,
+            1.0e30
+        });
+    }
+};
+
 
 void test_scheduler_cadence_alignment() {
     Scheduler scheduler;
@@ -1207,6 +1224,96 @@ void test_geology_model_process_contracts() {
           "stream-power erosion does not increase with slope");
     near(geology.erosion_rate_m_per_year(0.0,0.003,2.0),0.0,1.0e-15,
          "flat terrain erodes under slope-driven erosion law");
+    near(geology.erosion_rate_m_per_year(0.10,0.0,2.0),0.0,1.0e-15,
+         "fluvial incision remained active without runoff");
+    check(
+        geology.hillslope_transport_rate_m_per_year(0.10,2.0)>0.0,
+        "soil-mantled slope lost water-independent hillslope creep"
+    );
+    near(
+        geology.hillslope_transport_rate_m_per_year(0.10,0.0),
+        0.0,
+        1.0e-15,
+        "bare slope transported nonexistent mobile regolith"
+    );
+    check(
+        geology.hillslope_transport_rate_m_per_year(0.20,2.0)>
+        geology.hillslope_transport_rate_m_per_year(0.10,2.0),
+        "hillslope creep does not increase with slope"
+    );
+}
+
+void test_geology_hillslope_transport_without_runoff() {
+    SimulationConfig cfg;
+    cfg.base_level=2;
+    cfg.max_level=2;
+    cfg.tick_seconds=365.2422*86'400.0;
+
+    Simulation sim(42,cfg);
+    sim.add_module(std::make_unique<GeographyModule>());
+    sim.add_module(std::make_unique<ZeroRunoffModule>());
+    sim.build();
+
+    const auto sediment=*sim.fields().find("geology.sediment_mass_kg");
+    const auto regolith=*sim.fields().find("geology.regolith_thickness_m");
+    const auto erosion_rate=*sim.fields().find("geology.erosion_rate_m_yr");
+    const auto runoff=*sim.fields().find("hydrology.runoff_m3_day");
+    auto& fs=sim.world().stores().get<FieldStore>();
+    const GeologyModel geology(sim.seed());
+
+    std::map<CellId,double> before;
+    double total_before=0.0;
+    for (CellId cell:sim.world().active_cells()) {
+        const double area=sim.world().topology().area_m2(cell);
+        const double mass=geology.sediment_mass_for_thickness_kg(
+            50.0,
+            area
+        );
+        fs.set(cell,sediment,mass);
+        fs.set(cell,regolith,2.0);
+        near(
+            fs.get(cell,runoff),
+            0.0,
+            1.0e-15,
+            "zero-runoff test module initialized nonzero runoff"
+        );
+        before[cell]=mass;
+        total_before+=mass;
+    }
+
+    // Geology runs every 24 base ticks. With one simulated year per base tick
+    // this executes one 24-year dry hillslope transport step.
+    sim.step(24);
+
+    double total_after=0.0;
+    double max_change=0.0;
+    bool saw_creep=false;
+    for (CellId cell:sim.world().active_cells()) {
+        const double mass=fs.get(cell,sediment);
+        total_after+=mass;
+        max_change=std::max(
+            max_change,
+            std::abs(mass-before.at(cell))
+        );
+        if (fs.get(cell,erosion_rate)>0.0) saw_creep=true;
+        near(
+            fs.get(cell,runoff),
+            0.0,
+            1.0e-15,
+            "zero-runoff field changed during geology-only simulation"
+        );
+    }
+
+    near(
+        total_after,
+        total_before,
+        1.0e-12,
+        "dry hillslope transport did not conserve sediment mass"
+    );
+    check(
+        saw_creep && max_change>1.0,
+        "zero-runoff hillslope creep was not wired into geology evolution"
+    );
 }
 
 void test_geology_mixed_margin_uses_both_crust_sides() {
@@ -1456,6 +1563,7 @@ int main() {
         test_authoritative_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geology_model_process_contracts();
+        test_geology_hillslope_transport_without_runoff();
         test_geology_mixed_margin_uses_both_crust_sides();
         test_geology_drainage_accumulation();
         test_geography_refinement_preserves_geology_state();
