@@ -392,7 +392,19 @@ struct GroupMean {
             const double edge_weight=angular_distance(sample.direction,other.direction);
             const double convergence=boundary.convergence;
             const double shear=boundary.shear;
-            if (std::abs(shear)>std::abs(convergence)) {
+            const double velocity_magnitude=std::hypot(convergence,shear);
+            if (velocity_magnitude<=1.0e-12) continue;
+
+            // Bird PB2002 treats a boundary step as strike-slip when relative
+            // velocity lies within +/-20 degrees of the boundary azimuth.
+            // convergence is the local normal component and shear the tangent
+            // component, so atan2(|normal|,|tangent|) is that angular test.
+            constexpr double transform_angle_rad=20.0*worldsim::kPi/180.0;
+            const double angle_from_tangent=std::atan2(
+                std::abs(convergence),
+                std::abs(shear)
+            );
+            if (angle_from_tangent<=transform_angle_rad) {
                 transform_weight+=edge_weight;
             } else if (convergence>=0.0) {
                 convergent_weight+=edge_weight;
@@ -676,6 +688,7 @@ template<class Fn>
     const double divergent=mean_metric(seeds,[](const SeedMetrics& s){ return s.plates.divergent_boundary_fraction; });
     const double transform=mean_metric(seeds,[](const SeedMetrics& s){ return s.plates.transform_boundary_fraction; });
     const double land=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.land_fraction; });
+    const double land_mode=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.land_mode_m; });
     const double mode_separation=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.mode_separation_m; });
     const double uplift_excess=mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.uplift_macro_excess_m; });
 
@@ -687,10 +700,29 @@ template<class Fn>
         out.emplace_back("WARN plate_geometry_too_regular: plate areas/center spacing have very low diversity for an Earth-like plate spectrum");
     if (convergent<0.05 || divergent<0.05 || transform<0.05)
         out.emplace_back("WARN boundary_kinematics_degenerate: one coarse convergent/divergent/transform class occupies <5% of resolved boundary length");
+
+    // PB2002 Table 3: convergent = CCB + OCB + SUB = 35.2%,
+    // divergent = CRB + OSR = 36.3%, transform = CTF + OTF = 28.3%
+    // (rounded published percentages). A 15 percentage-point tolerance is
+    // intentionally broad because WorldSim has only 16 analytical plates.
+    constexpr double pb2002_convergent=0.352;
+    constexpr double pb2002_divergent=0.363;
+    constexpr double pb2002_transform=0.283;
+    constexpr double boundary_reference_tolerance=0.15;
+    if (
+        std::abs(convergent-pb2002_convergent)>boundary_reference_tolerance ||
+        std::abs(divergent-pb2002_divergent)>boundary_reference_tolerance ||
+        std::abs(transform-pb2002_transform)>boundary_reference_tolerance
+    ) {
+        out.emplace_back("WARN boundary_kinematics_far_from_pb2002_reference: coarse boundary-length mix differs by >15 percentage points from PB2002");
+    }
+
     if (land<0.15 || land>0.45)
         out.emplace_back("WARN earthlike_land_fraction_outside_broad_reference: above-sea area is outside 15..45%");
     if (mode_separation<2500.0)
         out.emplace_back("WARN hypsometry_not_strongly_bimodal: ocean/land histogram modes are separated by <2500 m");
+    if (std::abs(land_mode)>500.0)
+        out.emplace_back("WARN earthlike_land_mode_displaced: land-elevation histogram mode is >500 m from modern-Earth near-sea-level reference");
     if (uplift_excess<=0.0)
         out.emplace_back("WARN convergence_relief_coupling_missing: uplift-active samples are not elevated relative to crust-matched inactive samples");
     if (out.empty()) out.emplace_back("INFO no_broad_plausibility_warnings");
@@ -776,6 +808,9 @@ void write_json(const std::filesystem::path& path,
     out << "    \"pb2002_plate_count\": 52,\n";
     out << "    \"pb2002_reported_power_law_area_range_sr_min\": 0.002,\n";
     out << "    \"pb2002_reported_power_law_area_range_sr_max\": 1.0,\n";
+    out << "    \"pb2002_convergent_boundary_length_fraction_approx\": 0.352,\n";
+    out << "    \"pb2002_divergent_boundary_length_fraction_approx\": 0.363,\n";
+    out << "    \"pb2002_transform_boundary_length_fraction_approx\": 0.283,\n";
     out << "    \"earth_water_covered_surface_fraction_approx\": 0.71,\n";
     out << "    \"note\": \"Reference values guide warnings only; they are not scientific calibration gates.\"\n";
     out << "  },\n";
@@ -793,6 +828,8 @@ void write_json(const std::filesystem::path& path,
     out << "    \"land_fraction_mean\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.land_fraction; }) << ",\n";
     out << "    \"land_fraction_min\": " << land_range.first << ",\n";
     out << "    \"land_fraction_max\": " << land_range.second << ",\n";
+    out << "    \"ocean_mode_mean_m\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.ocean_mode_m; }) << ",\n";
+    out << "    \"land_mode_mean_m\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.land_mode_m; }) << ",\n";
     out << "    \"hypsometric_mode_separation_mean_m\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.mode_separation_m; }) << ",\n";
     out << "    \"high_affinity_component_count_mean\": " << mean_metric(seeds,[](const SeedMetrics& s){ return static_cast<double>(s.crust.high_affinity_component_count); }) << ",\n";
     out << "    \"high_affinity_component_count_min\": " << components_range.first << ",\n";
