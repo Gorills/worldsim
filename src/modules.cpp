@@ -242,13 +242,17 @@ class GeologySystem final : public ISimSystem {
 public:
     explicit GeologySystem(const FieldRegistry& r):
         ids_(geology_fields(r)),
-        has_climate_(r.find("climate.surface_temperature_k").has_value()) {}
+        has_climate_(r.find("climate.surface_temperature_k").has_value()),
+        has_ecology_(r.find("ecology.vegetation_carbon_kg").has_value()) {}
 
     std::string_view id() const override { return "geology.evolution"; }
     Tick cadence_ticks() const override { return 24; }
 
     std::vector<std::string> after() const override {
-        if (ids_.runoff) return {"ecology.hydrology"};
+        // A runoff field may come from an external/test module without the
+        // default ecology system. Depend on ecology.hydrology only when the
+        // EcologyModule schema is actually present.
+        if (has_ecology_) return {"ecology.hydrology"};
         if (has_climate_) return {"climate.surface"};
         return {};
     }
@@ -510,6 +514,7 @@ public:
 private:
     GeologyFieldIds ids_;
     bool has_climate_{};
+    bool has_ecology_{};
 };
 
 class MagicSystem final : public ISimSystem {
