@@ -1,6 +1,6 @@
 # WorldSim
 
-WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, climate/weather, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus, grass/shrub/tree plant functional types with local dispersal and competition, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
+WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, a reduced coupled energy/moisture climate with land/ocean thermal inertia and closed planetary water exchange, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus, grass/shrub/tree plant functional types with local dispersal and competition, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
 
 This repository is **not** claiming that the included climate/ecology equations are a scientifically calibrated Earth model. They are deliberately replaceable domain implementations used to exercise the production architecture: spatial hierarchy, conservation across LOD, scheduling, state stores, snapshots, commands, events, engine boundaries, and module extension.
 
@@ -53,6 +53,17 @@ also pass through the existing C ABI/Godot field introspection. River geometry
 stays at the initial base level when the active simulation cover refines;
 see [the hydrology contract](docs/HYDROLOGY.md).
 
+## Inspect coupled climate
+
+```bash
+make climate
+```
+
+The diagnostic advances two years while alternating adaptive focus, then writes
+daily energy/water ledgers and reference-cover climate maps to
+`out/climate-diagnostics`. Its process and conservation boundary is documented
+in [the climate contract](docs/CLIMATE.md).
+
 ## Continuous integration
 
 GitHub Actions deliberately separates the fast simulation-core job from the Godot integration job. The Godot job uses a feature build profile (`godot/build_profile.json`) so cold builds generate only the C++ wrappers actually used by the adapter. It then runs a headless smoke test with pinned Godot 4.7.2.
@@ -80,7 +91,8 @@ That builds `libworldsim_godot.so` if needed and starts `godot/project/main.tscn
 Run `make lab` for the full-world diagnostic laboratory. It exposes every
 registered field as a live scalar map, normalizes extensive fields by active-cell
 area, advances authoritative time, reports active-cover statistics/history and
-inspects exact cells. `make map` remains the immutable seed/tectonic viewer.
+inspects exact cells. Long advances are cooperatively chunked across frames;
+`make map` remains the immutable seed/tectonic viewer.
 
 ## C++ extension model
 

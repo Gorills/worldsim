@@ -153,11 +153,35 @@ msgstr "Continental crust"
 msgid "LAB_FIELD_TEMPERATURE"
 msgstr "Surface temperature"
 
+msgid "LAB_FIELD_LAND_TEMPERATURE"
+msgstr "Land temperature"
+
+msgid "LAB_FIELD_OCEAN_TEMPERATURE"
+msgstr "Ocean temperature"
+
 msgid "LAB_FIELD_PRECIPITATION"
 msgstr "Precipitation"
 
+msgid "LAB_FIELD_EVAPORATION"
+msgstr "Evaporation"
+
+msgid "LAB_FIELD_ATMOSPHERIC_WATER"
+msgstr "Atmospheric water"
+
+msgid "LAB_FIELD_RELATIVE_HUMIDITY"
+msgstr "Relative humidity"
+
 msgid "LAB_FIELD_SOLAR"
 msgstr "Solar flux"
+
+msgid "LAB_FIELD_NET_RADIATION"
+msgstr "Net radiation"
+
+msgid "LAB_FIELD_EAST_WIND"
+msgstr "Eastward wind"
+
+msgid "LAB_FIELD_NORTH_WIND"
+msgstr "Northward wind"
 
 msgid "LAB_FIELD_WEATHER_ANOMALY"
 msgstr "Weather anomaly"
@@ -205,7 +229,7 @@ msgid "LAB_PURPOSE_CLIMATE"
 msgstr "Do latitude, elevation and time produce plausible heat and rainfall patterns? Step by 30 days to reveal seasonal movement."
 
 msgid "LAB_DESCRIPTION_CLIMATE"
-msgstr "Start with temperature, then switch to precipitation and solar flux. Broad belts should move smoothly; isolated hard seams are suspicious."
+msgstr "Compare land and ocean temperature, humidity, precipitation and evaporation. The ocean should respond more slowly; broad belts should move smoothly without isolated seams."
 
 msgid "LAB_PURPOSE_WATER"
 msgstr "Does precipitation become soil water, surface storage and downstream discharge without appearing over dry oceans or vanishing instantly?"

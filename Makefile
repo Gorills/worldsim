@@ -5,8 +5,9 @@
 #   make map     # build GDExtension if needed, then launch godot/project/world_map.tscn
 #   make lab     # build GDExtension, then launch the full-world simulation lab
 #   make visual  # build core and write the five-seed C++ visual diagnostic suite
+#   make climate # build core and run the two-year climate diagnostic
 
-.PHONY: help core godot run run-scene map lab visual geology test
+.PHONY: help core godot run run-scene map lab visual geology climate test
 
 GODOT ?= godot
 export GODOT
@@ -21,6 +22,7 @@ help:
 		'make lab        build GDExtension, then launch simulation_lab.tscn' \
 		'make visual     build core and generate C++ visual diagnostic suite' \
 		'make geology    build core and run geology plausibility benchmark' \
+		'make climate    build core and run two-year climate diagnostics' \
 		'make test       build kernel and run ctest --preset dev' \
 		'' \
 		'Override the editor with GODOT=/path/to/godot'
@@ -47,6 +49,9 @@ visual: core
 
 geology: core
 	./out/dev/worldsim_geology_benchmark --seed-count 64 --samples 4096 --cover-level 5 --output out/geology-benchmark
+
+climate: core
+	./out/dev/worldsim_climate_dump --days 730 --level 2 --adaptive --output out/climate-diagnostics
 
 test:
 	cmake --preset dev

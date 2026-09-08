@@ -153,11 +153,35 @@ msgstr "Континентальная кора"
 msgid "LAB_FIELD_TEMPERATURE"
 msgstr "Температура поверхности"
 
+msgid "LAB_FIELD_LAND_TEMPERATURE"
+msgstr "Температура суши"
+
+msgid "LAB_FIELD_OCEAN_TEMPERATURE"
+msgstr "Температура океана"
+
 msgid "LAB_FIELD_PRECIPITATION"
 msgstr "Осадки"
 
+msgid "LAB_FIELD_EVAPORATION"
+msgstr "Испарение"
+
+msgid "LAB_FIELD_ATMOSPHERIC_WATER"
+msgstr "Вода в атмосфере"
+
+msgid "LAB_FIELD_RELATIVE_HUMIDITY"
+msgstr "Относительная влажность"
+
 msgid "LAB_FIELD_SOLAR"
 msgstr "Солнечный поток"
+
+msgid "LAB_FIELD_NET_RADIATION"
+msgstr "Радиационный баланс"
+
+msgid "LAB_FIELD_EAST_WIND"
+msgstr "Ветер на восток"
+
+msgid "LAB_FIELD_NORTH_WIND"
+msgstr "Ветер на север"
 
 msgid "LAB_FIELD_WEATHER_ANOMALY"
 msgstr "Погодная аномалия"
@@ -205,7 +229,7 @@ msgid "LAB_PURPOSE_CLIMATE"
 msgstr "Создают ли широта, высота и время правдоподобные зоны тепла и осадков? Делайте шаг по 30 дней, чтобы увидеть сезонное смещение."
 
 msgid "LAB_DESCRIPTION_CLIMATE"
-msgstr "Начните с температуры, затем сравните осадки и солнечный поток. Широкие зоны должны меняться плавно; резкие одиночные швы подозрительны."
+msgstr "Сравните температуру суши и океана, влажность, осадки и испарение. Океан должен реагировать медленнее; широкие зоны — меняться плавно, без одиночных швов."
 
 msgid "LAB_PURPOSE_WATER"
 msgstr "Переходят ли осадки в почвенную воду, поверхностные запасы и речной сток — без воды над сухим океаном и мгновенных исчезновений?"

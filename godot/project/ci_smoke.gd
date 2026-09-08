@@ -37,6 +37,34 @@ func _initialize() -> void:
         quit(6)
         return
 
+    for key in [
+        "climate.land_temperature_k",
+        "climate.ocean_temperature_k",
+        "climate.atmospheric_water_m3",
+        "climate.relative_humidity",
+        "climate.evaporation_mm_day",
+        "climate.net_radiation_w_m2",
+        "climate.wind_east_m_s",
+        "climate.wind_north_m_s",
+    ]:
+        var climate_values := sim.get_field_values(key)
+        if climate_values.size() != packet["positions"].size():
+            push_error("Climate field is missing or misaligned: %s" % key)
+            quit(21)
+            return
+        for climate_value in climate_values:
+            if not is_finite(climate_value):
+                push_error("Climate field contains invalid state: %s" % key)
+                quit(22)
+                return
+
+    var humidity := sim.get_field_values("climate.relative_humidity")
+    for value in humidity:
+        if value < 0.0 or value > 2.0:
+            push_error("Relative humidity left its registered bounds")
+            quit(25)
+            return
+
     for key in ["hydrology.snow_water_m3", "hydrology.groundwater_m3",
                 "hydrology.surface_water_m3", "hydrology.river_discharge_m3_day",
                 "hydrology.flooded_fraction"]:

@@ -185,12 +185,17 @@ public:
     explicit GeologySystem(const FieldRegistry& r):
         ids_(geology_fields(r)),
         has_climate_(r.find("climate.surface_temperature_k").has_value()),
+        has_climate_exchange_(
+            r.find("climate.atmospheric_water_m3").has_value()
+        ),
         has_hydrology_(r.find("hydrology.surface_water_m3").has_value()) {}
 
     std::string_view id() const override { return "geology.evolution"; }
     Tick cadence_ticks() const override { return 24; }
 
     std::vector<std::string> after() const override {
+        if (has_climate_exchange_)
+            return {"climate.surface_exchange"};
         if (has_hydrology_) return {"hydrology.balance"};
         if (has_climate_) return {"climate.surface"};
         return {};
@@ -480,6 +485,7 @@ public:
 private:
     GeologyFieldIds ids_;
     bool has_climate_{};
+    bool has_climate_exchange_{};
     bool has_hydrology_{};
 };
 
@@ -512,50 +518,6 @@ public:
     }
 private:
     FieldId mana_,growth_,temp_;
-};
-
-class ClimateSystem final : public ISimSystem {
-public:
-    explicit ClimateSystem(const FieldRegistry& r)
-        : elev_(require_field(r,"geography.elevation_m")), land_(require_field(r,"geography.land_fraction")),
-          magic_temp_(require_field(r,"magic.temperature_anomaly_k")), temp_(require_field(r,"climate.surface_temperature_k")),
-          precip_(require_field(r,"climate.precipitation_mm_day")), solar_(require_field(r,"climate.solar_flux_w_m2")),
-          anomaly_(require_field(r,"climate.weather_anomaly_k")) {}
-    std::string_view id() const override { return "climate.surface"; }
-    std::vector<std::string> after() const override { return {"magic.flux"}; }
-    SystemAccess access() const override {
-        return {{"field:geography.elevation_m","field:geography.land_fraction","field:magic.temperature_anomaly_k","field:climate.weather_anomaly_k"},
-                {"field:climate.surface_temperature_k","field:climate.precipitation_mm_day","field:climate.solar_flux_w_m2","field:climate.weather_anomaly_k"}};
-    }
-    void step(SystemContext& ctx) override {
-        auto& fs=ctx.world.stores().get<FieldStore>();
-        const double day=static_cast<double>(ctx.world.tick())*ctx.dt_days;
-        const double decl=23.44*kPi/180.0*std::sin(2.0*kPi*(day-80.0)/365.2422);
-        for (CellId cell:ctx.world.active_cells()) {
-            const auto [lat,lon]=ctx.world.topology().lat_lon_rad(cell); (void)lon;
-            const double elev=fs.get(cell,elev_);
-            const double land=fs.get(cell,land_);
-            const double u=deterministic_unit(ctx.world.seed(),fnv1a64("climate.weather"),ctx.world.tick(),cell.raw());
-            const double old_anom=fs.get(cell,anomaly_);
-            const double decay=std::exp(-ctx.dt_days/2.0);
-            const double anom=old_anom*decay+(u*2.0-1.0)*2.2*(1.0-decay);
-            const double lat_cooling=42.0*std::pow(std::abs(std::sin(lat)),1.25);
-            const double seasonal=10.0*std::sin(lat)*std::sin(2.0*kPi*(day-80.0)/365.2422);
-            const double lapse=std::max(0.0,elev)*0.0065;
-            const double t=301.0-lat_cooling+seasonal-lapse+anom+fs.get(cell,magic_temp_);
-            const double insolation=340.0*std::max(0.08,std::cos(lat-decl));
-            const double tropical=4.5*std::pow(std::cos(lat),2.0);
-            const double stormbelt=2.5*std::exp(-std::pow((std::abs(lat)*180.0/kPi-50.0)/16.0,2.0));
-            const double rain_shadow=std::exp(-std::max(0.0,elev)/5000.0);
-            const double precip=(0.35+tropical+stormbelt)*(0.75+0.35*(1.0-land))*rain_shadow*std::clamp(1.0+anom*0.06,0.2,2.0);
-            fs.set(cell,anomaly_,anom);
-            fs.set(cell,temp_,t);
-            fs.set(cell,solar_,insolation);
-            fs.set(cell,precip_,precip);
-        }
-    }
-private:
-    FieldId elev_,land_,magic_temp_,temp_,precip_,solar_,anomaly_;
 };
 
 class SoilSystem final : public ISimSystem {
@@ -696,7 +658,7 @@ public:
           water_(require_field(r,"hydrology.soil_water_m3")),
           flooded_(require_field(r,"hydrology.flooded_fraction")),
           inundation_(require_field(r,"hydrology.inundation_days")),
-          growth_(require_field(r,"magic.growth_factor")),
+          growth_(r.find("magic.growth_factor")),
           fertility_(require_field(r,"ecology.soil_fertility")),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
           pft_{
@@ -710,10 +672,12 @@ public:
     std::string_view id() const override { return "ecology.vegetation"; }
     Tick cadence_ticks() const override { return 24; }
     std::vector<std::string> after() const override {
-        return {"ecology.soil","magic.flux"};
+        auto dependencies=std::vector<std::string>{"ecology.soil"};
+        if (growth_) dependencies.push_back("magic.flux");
+        return dependencies;
     }
     SystemAccess access() const override {
-        return {{
+        SystemAccess result{{
                     "field:climate.surface_temperature_k",
                     "field:climate.solar_flux_w_m2",
                     "field:geography.land_fraction",
@@ -721,7 +685,6 @@ public:
                     "field:hydrology.soil_water_m3",
                     "field:hydrology.flooded_fraction",
                     "field:hydrology.inundation_days",
-                    "field:magic.growth_factor",
                     "field:ecology.soil_fertility",
                     "field:ecology.litter_carbon_kg",
                     "field:ecology.grass_carbon_kg",
@@ -736,6 +699,9 @@ public:
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.npp_kg_day"
                 }};
+        if (growth_)
+            result.reads.push_back("field:magic.growth_factor");
+        return result;
     }
 
     void step(SystemContext& ctx) override {
@@ -831,7 +797,9 @@ public:
                 0.0,
                 1.0
             );
-            const double magic_growth=fs.get(cell,growth_);
+            const double magic_growth=growth_
+                ? fs.get(cell,*growth_)
+                : 1.0;
             const double flooded=fs.get(cell,flooded_);
             const double flood_mortality=0.02*flooded*(-std::expm1(-fs.get(cell,inundation_)/5.0));
 
@@ -972,7 +940,8 @@ public:
     }
 
 private:
-    FieldId temp_,solar_,land_,regolith_,water_,flooded_,inundation_,growth_;
+    FieldId temp_,solar_,land_,regolith_,water_,flooded_,inundation_;
+    std::optional<FieldId> growth_;
     FieldId fertility_,litter_;
     std::array<FieldId,3> pft_;
     FieldId carbon_,npp_;
@@ -1365,27 +1334,6 @@ void MagicModule::initialize(WorldState& world, const FieldRegistry& r) {
         const double area=world.topology().area_m2(c);
         const double variation=0.65+0.7*deterministic_unit(world.seed(),fnv1a64("magic.initial"),0,c.raw());
         fs.set(c,mana,area*2.0e6*variation);
-    }
-}
-
-void ClimateModule::register_fields(FieldRegistry& r) {
-    r.register_field({"climate.surface_temperature_k","K",FieldSemantics::Intensive,288.0,150.0,360.0});
-    r.register_field({"climate.precipitation_mm_day","mm/day",FieldSemantics::Intensive,2.0,0.0,1000.0});
-    r.register_field({"climate.solar_flux_w_m2","W/m2",FieldSemantics::Intensive,250.0,0.0,1500.0});
-    r.register_field({"climate.weather_anomaly_k","K",FieldSemantics::Intensive,0.0,-30.0,30.0});
-}
-void ClimateModule::register_systems(Scheduler& s, const FieldRegistry& r) { s.add(std::make_unique<ClimateSystem>(r)); }
-void ClimateModule::initialize(WorldState& world, const FieldRegistry& r) {
-    auto& fs=world.stores().get<FieldStore>();
-    const auto temp=require_field(r,"climate.surface_temperature_k");
-    const auto precip=require_field(r,"climate.precipitation_mm_day");
-    const auto solar=require_field(r,"climate.solar_flux_w_m2");
-    const auto elev=require_field(r,"geography.elevation_m");
-    for (CellId c:world.active_cells()) {
-        const auto [lat,lon]=world.topology().lat_lon_rad(c); (void)lon;
-        fs.set(c,temp,301.0-42.0*std::pow(std::abs(std::sin(lat)),1.25)-std::max(0.0,fs.get(c,elev))*0.0065);
-        fs.set(c,precip,0.5+4.5*std::pow(std::cos(lat),2.0));
-        fs.set(c,solar,340.0*std::max(0.08,std::cos(lat)));
     }
 }
 

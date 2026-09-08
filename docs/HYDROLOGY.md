@@ -95,9 +95,9 @@ On an all-land planet, the lowest node is a closed sink, not an invented ocean.
 
 ## Coupling and accounting
 
-`climate.surface -> hydrology.balance -> geology.evolution -> ecology.soil
--> ecology.vegetation -> ecology.fauna` remains a serial, declared dependency
-chain (magic precedes climate). Hydrology owns all water withdrawals, including
+`climate.surface -> hydrology.balance -> climate.surface_exchange ->
+geology.evolution -> ecology.soil -> ecology.vegetation -> ecology.fauna`
+is the serial, declared dependency chain (magic may precede climate). Hydrology owns all water withdrawals, including
 transpiration, so vegetation does not independently spend that stock again.
 Geology consumes accumulated routed volume over its elapsed interval instead
 of multiplying the final instantaneous runoff sample by an entire day. Soil
@@ -112,8 +112,10 @@ Derived field arrays are projections, not a second surface-water inventory.
 They include surface volume/depth/level, flooded fraction, inundation duration,
 river discharge, baseflow, snowmelt, evapotranspiration, basin/outlet identity
 and spill elevation. Core state and integrated histories are snapshotted;
-adjacency and drainage caches rebuild deterministically. Epoch **17** rejects
-older snapshots under the repository's existing strict policy.
+adjacency and drainage caches rebuild deterministically. Climate consumes the
+actual evaporation and terrestrial ocean-export window after hydrology, closing
+the default world's planet-water inventory. Epoch **18** rejects older
+snapshots under the repository's existing strict policy.
 
 ## Completion evidence
 
@@ -126,7 +128,7 @@ window; smaller-timestep comparison; multiple seasonal cycles. A headless
 diagnostic executable must export map fields and basin histories so results
 are inspectable beyond test assertions.
 
-Exclusions: atmospheric/ocean water reservoirs, sea-level feedback, aquifer
+Exclusions: dynamic sea-level feedback, aquifer
 pressure PDEs, calibrated river cross-sections, resolved flood velocities,
 glacial mechanics, aquatic species, human water use and a dynamic water mesh.
 
@@ -218,5 +220,6 @@ script writes `history.png` and `maps.png` without interpolation of cell state.
   `ci_smoke.gd` passed, including new finite/nonnegative/aligned hydrology field
   checks. The existing terrain-only render-packet negative check emits its
   expected handled error.
-- Snapshot epoch **17** roundtrip and continuation pass; epoch 16 is rejected.
+- Basin hydrology's epoch **17** roundtrip and continuation passed; the current
+  coupled-climate epoch is **18**, and epoch 17 is rejected.
   `git diff --check` passed.

@@ -28,6 +28,7 @@ class HydrologyStore final : public IStateStore {
 public:
     static constexpr std::string_view kKey="hydrology.basins";
     std::string_view key() const override { return kKey; }
+    std::uint32_t snapshot_version() const override { return 2; }
     void on_add_cell(CellId cell) override;
     void on_remove_cell(CellId) override {}
     void on_refine(CellId, std::span<const CellId>, const CubeSphereTopology&) override {}
@@ -60,6 +61,9 @@ public:
     // Projects elapsed-window discharge into geology diagnostics, then consumes
     // the window. Terrain-only worlds keep their independent geology fallback.
     void consume_geology_discharge(WorldState&, const FieldRegistry&);
+    // Climate consumes this transfer exactly once while the cumulative budget
+    // remains available for land-hydrology diagnostics.
+    double take_pending_ocean_export_m3();
 
 private:
     friend class HydrologySystem;
@@ -68,6 +72,7 @@ private:
     void rebuild_drainage();
     void rebuild_lakes();
     double take_surface(std::size_t node, double requested_m3);
+    void export_to_ocean(double volume_m3);
     std::uint8_t reference_level_{};
     bool has_level_{};
     std::vector<HydrologyNode> nodes_;
@@ -78,6 +83,7 @@ private:
     std::vector<std::size_t> basin_,lake_;
     WaterBudget budget_;
     double geology_days_{};
+    double pending_ocean_export_m3_{};
 };
 
 class HydrologyModule final : public ISimModule {

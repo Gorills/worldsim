@@ -1,4 +1,5 @@
 #include "worldsim/c_api.h"
+#include "worldsim/climate.hpp"
 #include "worldsim/geology.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
@@ -129,22 +130,25 @@ void geology_erosion_floor() {
 void climate_seasons() {
     auto sim=make_default_simulation(42,{1,1,3600.0});
     auto& fs=sim->world().stores().get<FieldStore>();
-    const auto temp=*sim->fields().find("climate.surface_temperature_k");
-    const auto anomaly=*sim->fields().find("climate.weather_anomaly_k");
-    const auto magic=*sim->fields().find("magic.temperature_anomaly_k");
-    const auto elev=*sim->fields().find("geography.elevation_m");
-    for (CellId cell:sim->world().active_cells()) fs.set(cell,elev,0.0);
+    const auto solar=*sim->fields().find("climate.solar_flux_w_m2");
     for (Tick day:{Tick{172},Tick{355}}) {
         sim->world().set_tick(day*24);
         run_system(*sim,"climate.surface",1.0/24.0);
+        double north=0.0,south=0.0;
+        std::size_t north_count=0,south_count=0;
         for (CellId cell:sim->world().active_cells()) {
             const double lat=sim->world().topology().lat_lon_rad(cell).first;
-            const double base=301-42*std::pow(std::abs(std::sin(lat)),1.25)-
-                std::max(0.0,fs.get(cell,elev))*0.0065;
-            const double seasonal=fs.get(cell,temp)-base-fs.get(cell,anomaly)-fs.get(cell,magic);
-            if (std::abs(lat)>0.3) check(seasonal/std::sin(lat)*(day==172 ? 1 : -1)>8,
-                "temperature season disagrees with solstice hemisphere");
+            if (lat>0.3) { north+=fs.get(cell,solar); ++north_count; }
+            if (lat<-0.3) { south+=fs.get(cell,solar); ++south_count; }
         }
+        check(north_count>0 && south_count>0,"season fixture lacks hemispheres");
+        const double signed_difference=
+            north/static_cast<double>(north_count)-
+            south/static_cast<double>(south_count);
+        check(
+            signed_difference*(day==172 ? 1.0 : -1.0)>100.0,
+            "solar season disagrees with solstice hemisphere"
+        );
     }
 }
 void snapshot_failure_is_atomic() {

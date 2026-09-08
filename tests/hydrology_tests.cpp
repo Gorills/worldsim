@@ -198,7 +198,7 @@ void malformed_store_and_flood_feedback() {
     BinaryWriter nan; nan.pod(std::numeric_limits<double>::quiet_NaN());
     std::copy(nan.data().begin(),nan.data().end(),bad.begin()+1);
     bool rejected=false;
-    try { BinaryReader reader(bad); store.load(reader,1); } catch (const std::exception&) { rejected=true; }
+    try { BinaryReader reader(bad); store.load(reader,store.snapshot_version()); } catch (const std::exception&) { rejected=true; }
     check(rejected,"hydrology accepted nonfinite budget");
     rejected=false;
     try { store.route(1e30); } catch (const std::invalid_argument&) { rejected=true; }

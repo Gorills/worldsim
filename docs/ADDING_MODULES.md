@@ -84,9 +84,9 @@ Couple domains through named resources and explicit scheduler ordering. Do not c
 Example:
 
 ```text
-magic.weather writes   magic.temperature_anomaly_k
-climate.update reads   magic.temperature_anomaly_k
-climate.update writes  climate.surface_temperature_k
+magic.flux writes      magic.temperature_anomaly_k
+climate.surface reads  magic.temperature_anomaly_k (when present)
+climate.surface writes climate.surface_temperature_k
 vegetation.growth reads climate.surface_temperature_k
 vegetation.growth reads magic.growth_factor
 ```

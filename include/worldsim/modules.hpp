@@ -17,8 +17,10 @@ class ClimateModule final : public ISimModule {
 public:
     [[nodiscard]] std::string_view id() const override { return "climate"; }
     void register_fields(FieldRegistry&) override;
+    void register_stores(StateStoreRegistry&, const FieldRegistry&) override;
     void register_systems(Scheduler&, const FieldRegistry&) override;
     void initialize(WorldState&, const FieldRegistry&) override;
+    void on_spatial_cover_changed(WorldState&, const FieldRegistry&) override;
 };
 
 class MagicModule final : public ISimModule {

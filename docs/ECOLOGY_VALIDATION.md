@@ -9,6 +9,7 @@ The ecology pipeline now follows this scheduler order when the default modules a
 ```text
 climate.surface
     -> hydrology.balance
+    -> climate.surface_exchange
     -> geology.evolution
     -> ecology.soil
     -> ecology.vegetation
@@ -110,7 +111,7 @@ The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- snapshot epoch 17 includes basin hydrology, version 16 is rejected, and the current snapshot round-trips exactly.
+- snapshot epoch 18 includes coupled persistent climate state, version 17 is rejected, and the current snapshot round-trips exactly.
 
 ## Explicitly unsupported ecology claims
 

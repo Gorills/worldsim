@@ -5,6 +5,7 @@ const MAP_HEIGHT := 256
 const PLAY_INTERVAL_SECONDS := 0.45
 const MAX_HISTORY_SAMPLES := 240
 const STEP_HOURS := [1, 24, 720]
+const MAX_STEP_HOURS_PER_FRAME := 24
 const LOD_PALETTE := [
     Color(0.10, 0.18, 0.30),
     Color(0.13, 0.34, 0.52),
@@ -20,8 +21,16 @@ const FIELD_LABELS := {
     "geography.land_fraction": "LAB_FIELD_LAND",
     "geology.continental_fraction": "LAB_FIELD_CONTINENTAL",
     "climate.surface_temperature_k": "LAB_FIELD_TEMPERATURE",
+    "climate.land_temperature_k": "LAB_FIELD_LAND_TEMPERATURE",
+    "climate.ocean_temperature_k": "LAB_FIELD_OCEAN_TEMPERATURE",
     "climate.precipitation_mm_day": "LAB_FIELD_PRECIPITATION",
+    "climate.evaporation_mm_day": "LAB_FIELD_EVAPORATION",
+    "climate.atmospheric_water_m3": "LAB_FIELD_ATMOSPHERIC_WATER",
+    "climate.relative_humidity": "LAB_FIELD_RELATIVE_HUMIDITY",
     "climate.solar_flux_w_m2": "LAB_FIELD_SOLAR",
+    "climate.net_radiation_w_m2": "LAB_FIELD_NET_RADIATION",
+    "climate.wind_east_m_s": "LAB_FIELD_EAST_WIND",
+    "climate.wind_north_m_s": "LAB_FIELD_NORTH_WIND",
     "climate.weather_anomaly_k": "LAB_FIELD_WEATHER_ANOMALY",
     "hydrology.surface_depth_m": "LAB_FIELD_WATER_DEPTH",
     "hydrology.river_discharge_m3_day": "LAB_FIELD_RIVER_DISCHARGE",
@@ -63,16 +72,21 @@ const PRESETS := [
         "primary": "climate.surface_temperature_k",
         "fields": [
             "climate.surface_temperature_k",
+            "climate.land_temperature_k",
+            "climate.ocean_temperature_k",
+            "climate.relative_humidity",
             "climate.precipitation_mm_day",
-            "climate.solar_flux_w_m2",
-            "climate.weather_anomaly_k",
+            "climate.evaporation_mm_day",
+            "climate.net_radiation_w_m2",
+            "climate.wind_east_m_s",
         ],
         "inspect": [
             "climate.surface_temperature_k",
+            "climate.land_temperature_k",
+            "climate.ocean_temperature_k",
+            "climate.relative_humidity",
             "climate.precipitation_mm_day",
-            "climate.solar_flux_w_m2",
-            "climate.weather_anomaly_k",
-            "geography.elevation_m",
+            "climate.evaporation_mm_day",
         ],
         "purpose": "LAB_PURPOSE_CLIMATE",
         "description": "LAB_DESCRIPTION_CLIMATE",
@@ -185,6 +199,8 @@ var _preset_index := 0
 var _play_elapsed := 0.0
 var _busy := false
 var _focused := false
+var _pending_step_hours := 0
+var _requested_step_hours := 0
 var _mode_buttons: Array[Button] = []
 
 func _ready() -> void:
@@ -228,6 +244,9 @@ func _ready() -> void:
     _reset_world()
 
 func _process(delta: float) -> void:
+    if _pending_step_hours > 0:
+        _advance_pending_chunk()
+        return
     if !play_button.button_pressed or _busy:
         return
     _play_elapsed += delta
@@ -343,18 +362,30 @@ func _selected_step_hours() -> int:
     return STEP_HOURS[index]
 
 func _advance_simulation(hours: int) -> void:
+    if _busy or hours <= 0:
+        return
+    _requested_step_hours = hours
+    _pending_step_hours = hours
     _set_busy(true)
-    sim.step_hours(hours)
+    _advance_pending_chunk()
+
+func _advance_pending_chunk() -> void:
+    var chunk_hours := mini(_pending_step_hours, MAX_STEP_HOURS_PER_FRAME)
+    sim.step_hours(chunk_hours)
     if !_check_sim_error():
+        _pending_step_hours = 0
         play_button.button_pressed = false
         _set_busy(false)
+        return
+    _pending_step_hours -= chunk_hours
+    if _pending_step_hours > 0:
         return
     if !_refresh_visualization(false, true):
         play_button.button_pressed = false
         _set_busy(false)
         return
     _inspect_direction(_selected_direction, _selected_uv)
-    status.text = tr("LAB_STATUS_ADVANCED") % hours
+    status.text = tr("LAB_STATUS_ADVANCED") % _requested_step_hours
     _set_busy(false)
 
 func _on_field_selected(_index: int) -> void:
@@ -632,7 +663,11 @@ func _color_for_value(
         return _ramp3(t, Color(0.94, 0.96, 0.91), Color(0.18, 0.62, 0.78), Color(0.02, 0.10, 0.32))
     if key.begins_with("ecology."):
         return _ramp3(t, Color(0.16, 0.12, 0.08), Color(0.55, 0.68, 0.24), Color(0.05, 0.37, 0.15))
-    if key == "climate.surface_temperature_k":
+    if key in [
+        "climate.surface_temperature_k",
+        "climate.land_temperature_k",
+        "climate.ocean_temperature_k",
+    ]:
         return _ramp3(t, Color(0.10, 0.28, 0.65), Color(0.92, 0.86, 0.43), Color(0.82, 0.16, 0.10))
     if key.begins_with("magic."):
         return _ramp3(t, Color(0.08, 0.05, 0.16), Color(0.38, 0.20, 0.66), Color(0.92, 0.55, 1.0))

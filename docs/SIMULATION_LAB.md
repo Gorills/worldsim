@@ -96,11 +96,14 @@ magenta and remain a test failure in the authoritative core.
 - reset creates a full default world for the selected seed;
 - play/pause advances one selected time quantum at a bounded wall-clock cadence;
 - manual steps support 1 hour, 1 day and 30 days;
+- advances longer than one day are divided into at most 24-hour chunks across
+  rendered frames; scene-tree reads and redraws remain on the main thread;
 - selecting a field redraws the scalar map and selected-field mean history;
 - clicking the map inspects the active cell without changing simulation state;
 - focus/clear-focus changes simulation interest policy and takes effect on the
   next authoritative tick, as required by `Simulation::step()`;
-- map textures are rebuilt only after a step, layer/range change or reset, not
+- map textures are rebuilt only after a complete requested step,
+  layer/range change or reset, not
   every rendered frame.
 
 The map sampler is intentionally CPU-side diagnostic code. Interactive cost on

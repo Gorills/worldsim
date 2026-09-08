@@ -56,7 +56,7 @@ void HydrologyStore::initialize(const WorldState& world, const FieldRegistry& r)
         nodes_.push_back({cell,fs.get(cell,field(r,"geography.elevation_m")),
             world.topology().area_m2(cell)*fs.get(cell,field(r,"geography.land_fraction")),0,0,0});
     }
-    budget_={}; geology_days_=0;
+    budget_={}; geology_days_=0; pending_ocean_export_m3_=0;
     rebuild_graph();
 }
 std::size_t HydrologyStore::node_index(CellId cell) const {
@@ -96,6 +96,18 @@ double HydrologyStore::take_surface(std::size_t i, double request) {
     const double taken=std::min(n.surface_m3,std::max(0.0,request));
     n.surface_m3-=taken;
     return taken;
+}
+void HydrologyStore::export_to_ocean(double volume) {
+    nonnegative(volume);
+    budget_.ocean_export_m3+=volume;
+    pending_ocean_export_m3_+=volume;
+    nonnegative(budget_.ocean_export_m3);
+    nonnegative(pending_ocean_export_m3_);
+}
+double HydrologyStore::take_pending_ocean_export_m3() {
+    const double volume=pending_ocean_export_m3_;
+    pending_ocean_export_m3_=0.0;
+    return volume;
 }
 void HydrologyStore::set_bed_elevation(CellId region, double elevation) {
     if (region.level()!=reference_level_ || !std::isfinite(elevation) || std::abs(elevation)>1.0e6)
@@ -200,7 +212,7 @@ void HydrologyStore::route(double dt_days) {
     std::vector<std::size_t> donors(links_.size());
     // All-land sinks retain their water. Ocean nodes have no return boundary flux.
     for (auto& n:nodes_) if (n.bed_m<0) {
-        budget_.ocean_export_m3+=n.surface_m3; n.surface_m3=0;
+        export_to_ocean(n.surface_m3); n.surface_m3=0;
     }
     double remaining=dt_days;
     while (remaining>0) {
@@ -238,7 +250,7 @@ void HydrologyStore::route(double dt_days) {
             const double scale=out[a]>nodes_[a].surface_m3 ? nodes_[a].surface_m3/out[a] : 1.0;
             const double q=transfers[k]*scale;
             delta[a]-=q; sent[a]+=q;
-            if (nodes_[b].bed_m<0) budget_.ocean_export_m3+=q;
+            if (nodes_[b].bed_m<0) export_to_ocean(q);
             else delta[b]+=q;
         }
         for (std::size_t i=0;i<nodes_.size();++i)
@@ -293,19 +305,23 @@ void HydrologyStore::consume_geology_discharge(WorldState& world, const FieldReg
 void HydrologyStore::save(BinaryWriter& w) const {
     w.pod(reference_level_);
     w.pod(budget_.precipitation_m3); w.pod(budget_.evaporation_m3); w.pod(budget_.ocean_export_m3);
-    w.pod(geology_days_); w.pod<std::uint64_t>(nodes_.size());
+    w.pod(geology_days_); w.pod(pending_ocean_export_m3_);
+    w.pod<std::uint64_t>(nodes_.size());
     for (const auto& n:nodes_) {
         w.pod(n.cell.raw()); w.pod(n.bed_m); w.pod(n.land_area_m2);
         w.pod(n.surface_m3); w.pod(n.discharge_m3_day); w.pod(n.erosion_volume_m3);
     }
 }
 void HydrologyStore::load(BinaryReader& r, std::uint32_t version) {
-    if (version!=1) throw std::runtime_error("unsupported hydrology store version");
+    if (version!=2) throw std::runtime_error("unsupported hydrology store version");
     const auto level=r.pod<std::uint8_t>();
     if (!has_level_ || level!=reference_level_) throw std::runtime_error("hydrology reference level mismatch");
     WaterBudget budget{r.pod<double>(),r.pod<double>(),r.pod<double>()};
     nonnegative(budget.precipitation_m3); nonnegative(budget.evaporation_m3); nonnegative(budget.ocean_export_m3);
     const double days=r.pod<double>(); nonnegative(days);
+    const double pending_ocean=r.pod<double>(); nonnegative(pending_ocean);
+    if (pending_ocean>budget.ocean_export_m3)
+        throw std::runtime_error("pending ocean export exceeds cumulative budget");
     const auto count=r.pod<std::uint64_t>();
     const auto expected=6ULL*(1ULL<<(2U*level));
     if (count!=expected || count>r.remaining()/48U)
@@ -325,6 +341,7 @@ void HydrologyStore::load(BinaryReader& r, std::uint32_t version) {
         nodes.push_back(n);
     }
     nodes_=std::move(nodes); budget_=budget; geology_days_=days;
+    pending_ocean_export_m3_=pending_ocean;
     rebuild_graph();
 }
 void HydrologyStore::validate_active_cover(const std::set<CellId>& cover) const {
@@ -360,12 +377,16 @@ public:
         const auto drainage=field(r_,"hydrology.drainage_since_soil_m3");
         const auto base=field(r_,"hydrology.baseflow_m3_day"),melt=field(r_,"hydrology.snowmelt_m3_day");
         const auto evap=field(r_,"hydrology.evapotranspiration_m3_day");
+        const auto evaporation_to_atmosphere=field(r_,"hydrology.evaporation_to_atmosphere_m3_day");
         const auto duration=field(r_,"hydrology.inundation_days");
         const auto temp=field(r_,"climate.surface_temperature_k"),precip=field(r_,"climate.precipitation_mm_day");
         const auto land=field(r_,"geography.land_fraction"),regolith=field(r_,"geology.regolith_thickness_m");
         const auto vegetation=r_.find("ecology.vegetation_carbon_kg");
-        for (CellId cell:ctx.world.active_cells()) for (auto id:{runoff,base,melt,evap}) fs.set(cell,id,0);
+        for (CellId cell:ctx.world.active_cells())
+            for (auto id:{runoff,base,melt,evap,evaporation_to_atmosphere})
+                fs.set(cell,id,0);
         std::vector<double> routed(store.nodes_.size());
+        std::vector<double> surface_evaporation(store.nodes_.size());
         double remaining=ctx.dt_days;
         while (remaining>0) {
             const double dt=std::min(remaining,max_substep_days);
@@ -380,7 +401,7 @@ public:
                 const double area=ctx.world.topology().area_m2(cell)*fs.get(cell,land);
                 double s=fs.get(cell,snow),w=fs.get(cell,soil),g=fs.get(cell,ground);
                 if (area<=1.0) {
-                    store.budget_.ocean_export_m3+=s+w+g;
+                    store.export_to_ocean(s+w+g);
                     fs.set(cell,snow,0); fs.set(cell,soil,0); fs.set(cell,ground,0);
                     fs.set(cell,duration,0);
                     continue;
@@ -424,17 +445,31 @@ public:
                 fs.set(cell,snow,s); fs.set(cell,soil,w); fs.set(cell,ground,g);
                 fs.add(cell,runoff,surface/ctx.dt_days); fs.add(cell,base,baseflow/ctx.dt_days);
                 fs.add(cell,melt,thaw/ctx.dt_days); fs.add(cell,evap,actual/ctx.dt_days);
+                fs.add(cell,evaporation_to_atmosphere,actual/ctx.dt_days);
                 fs.add(cell,drainage,recharge+surface-baseflow);
                 const double old_duration=fs.get(cell,duration);
                 fs.set(cell,duration,flooded>0.1 ? old_duration+dt : old_duration*std::exp(-dt/2.0));
             }
             for (std::size_t i=0;i<store.nodes_.size();++i) {
                 store.nodes_[i].surface_m3+=surface_input[i];
-                store.budget_.evaporation_m3+=store.take_surface(i,surface_evap[i]);
+                const double actual_surface_evaporation=
+                    store.take_surface(i,surface_evap[i]);
+                store.budget_.evaporation_m3+=actual_surface_evaporation;
+                surface_evaporation[i]+=actual_surface_evaporation;
             }
             store.route(dt);
             for (std::size_t i=0;i<routed.size();++i) routed[i]+=store.nodes_[i].discharge_m3_day*dt;
             remaining-=dt;
+        }
+        for (CellId cell:ctx.world.active_cells()) {
+            const auto i=store.node_index(cell);
+            const double share=ctx.world.topology().area_m2(cell)/
+                ctx.world.topology().area_m2(store.nodes_[i].cell);
+            fs.add(
+                cell,
+                evaporation_to_atmosphere,
+                surface_evaporation[i]*share/ctx.dt_days
+            );
         }
         for (std::size_t i=0;i<routed.size();++i) store.nodes_[i].discharge_m3_day=routed[i]/ctx.dt_days;
         store.project(ctx.world,r_);
@@ -446,7 +481,7 @@ private:
 void HydrologyModule::register_fields(FieldRegistry& r) {
     for (const auto* key:{"soil_water_m3","snow_water_m3","groundwater_m3","surface_water_m3","drainage_since_soil_m3"})
         r.register_field({"hydrology."+std::string(key),"m3",FieldSemantics::Extensive,0,0,1e30});
-    for (const auto* key:{"runoff_m3_day","river_discharge_m3_day","baseflow_m3_day","snowmelt_m3_day","evapotranspiration_m3_day"})
+    for (const auto* key:{"runoff_m3_day","river_discharge_m3_day","baseflow_m3_day","snowmelt_m3_day","evapotranspiration_m3_day","evaporation_to_atmosphere_m3_day"})
         r.register_field({"hydrology."+std::string(key),"m3/day",FieldSemantics::Extensive,0,0,1e30});
     r.register_field({"hydrology.surface_depth_m","m",FieldSemantics::Intensive,0,0,1e30});
     for (const auto* key:{"surface_level_m","spill_elevation_m"})

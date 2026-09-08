@@ -74,6 +74,7 @@ func _process(_delta: float) -> bool:
 
     advanced.button_pressed = true
     var climate_index := -1
+    var has_relative_humidity := false
     var has_hydrology := false
     var has_ecology := false
     for index in range(selector.item_count):
@@ -83,9 +84,10 @@ func _process(_delta: float) -> bool:
         var key := String((metadata as Dictionary).get("key", ""))
         has_hydrology = has_hydrology or key == "hydrology.surface_water_m3"
         has_ecology = has_ecology or key == "ecology.vegetation_carbon_kg"
+        has_relative_humidity = has_relative_humidity or key == "climate.relative_humidity"
         if key == "climate.surface_temperature_k":
             climate_index = index
-    if !has_hydrology or !has_ecology or climate_index < 0:
+    if !has_hydrology or !has_ecology or !has_relative_humidity or climate_index < 0:
         push_error("Advanced simulation laboratory mode does not expose all fields")
         quit(7)
         return true
@@ -93,13 +95,16 @@ func _process(_delta: float) -> bool:
     advanced.button_pressed = false
     scene.call("_apply_preset", 1, true)
     climate_index = -1
+    has_relative_humidity = false
     for index in range(selector.item_count):
         var metadata = selector.get_item_metadata(index)
-        if metadata is Dictionary and String((metadata as Dictionary).get("key", "")) == "climate.surface_temperature_k":
-            climate_index = index
-            break
-    if climate_index < 0:
-        push_error("Climate diagnostic mode lacks its primary indicator")
+        if metadata is Dictionary:
+            var key := String((metadata as Dictionary).get("key", ""))
+            if key == "climate.surface_temperature_k":
+                climate_index = index
+            has_relative_humidity = has_relative_humidity or key == "climate.relative_humidity"
+    if climate_index < 0 or !has_relative_humidity:
+        push_error("Climate diagnostic mode lacks coupled climate indicators")
         quit(8)
         return true
     selector.select(climate_index)
@@ -127,6 +132,12 @@ func _process(_delta: float) -> bool:
     if int(chart.call("get_sample_count")) < 2:
         push_error("Simulation laboratory did not append selected-field history")
         quit(12)
+        return true
+
+    scene.call("_advance_simulation", 720)
+    if sim.get_tick() != 48 or int(scene.get("_pending_step_hours")) != 696:
+        push_error("Simulation laboratory did not split a long advance across frames")
+        quit(13)
         return true
 
     print("WORLDSIM_SIMULATION_LAB_OK fields=%d map=%dx%d tick=%d history=%d" % [
