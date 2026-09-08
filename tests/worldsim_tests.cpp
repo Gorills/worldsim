@@ -207,7 +207,7 @@ void test_determinism_and_snapshot() {
     for (std::uint8_t legacy_version:{
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
         std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9},
-        std::uint8_t{10},std::uint8_t{11}
+        std::uint8_t{10},std::uint8_t{11},std::uint8_t{12}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -240,16 +240,156 @@ void test_ecology_invariants() {
     sim->step(24*60);
     const auto& fs=sim->world().stores().get<FieldStore>();
     const auto water=*sim->fields().find("hydrology.soil_water_m3");
+    const auto fertility=*sim->fields().find("ecology.soil_fertility");
+    const auto litter=*sim->fields().find("ecology.litter_carbon_kg");
     const auto veg=*sim->fields().find("ecology.vegetation_carbon_kg");
     const auto mana=*sim->fields().find("magic.mana_j");
     for (CellId c:sim->world().active_cells()) {
         check(std::isfinite(fs.get(c,water)) && fs.get(c,water)>=0.0,"invalid water");
+        check(
+            std::isfinite(fs.get(c,fertility)) &&
+            fs.get(c,fertility)>=0.0 &&
+            fs.get(c,fertility)<=1.0,
+            "invalid soil fertility"
+        );
+        check(
+            std::isfinite(fs.get(c,litter)) &&
+            fs.get(c,litter)>=0.0,
+            "invalid litter carbon"
+        );
         check(std::isfinite(fs.get(c,veg)) && fs.get(c,veg)>=0.0,"invalid vegetation");
         check(std::isfinite(fs.get(c,mana)) && fs.get(c,mana)>=0.0,"invalid mana");
     }
     for (const auto& [id,c]:sim->world().stores().get<CohortStore>().all()) {
         (void)id; check(std::isfinite(c.count) && c.count>=0.0,"invalid cohort count");
     }
+}
+
+void test_living_soil_ecology_contracts() {
+    constexpr std::uint64_t seed=4242;
+
+    auto probe_cell=[](Simulation& sim) {
+        const auto land=*sim.fields().find("geography.land_fraction");
+        const auto& fs=sim.world().stores().get<FieldStore>();
+        for (CellId cell:sim.world().active_cells()) {
+            if (fs.get(cell,land)>0.90)
+                return cell;
+        }
+        throw std::runtime_error(
+            "living-soil fixture found no mostly-land cell"
+        );
+    };
+
+    // Regolith must control root-zone storage rather than every land cell
+    // receiving the old fixed 0.35 m water bucket.
+    auto thin_soil=make_default_simulation(seed);
+    auto deep_soil=make_default_simulation(seed);
+    const CellId hydrology_cell=probe_cell(*thin_soil);
+    check(
+        deep_soil->world().active_cells().contains(hydrology_cell),
+        "paired living-soil simulations diverged in initial cover"
+    );
+
+    const auto land=*thin_soil->fields().find("geography.land_fraction");
+    const auto regolith=*thin_soil->fields().find(
+        "geology.regolith_thickness_m"
+    );
+    const auto water=*thin_soil->fields().find("hydrology.soil_water_m3");
+    const auto runoff=*thin_soil->fields().find("hydrology.runoff_m3_day");
+    const double effective_area=
+        thin_soil->world().topology().area_m2(hydrology_cell)*
+        thin_soil->world().stores().get<FieldStore>().get(
+            hydrology_cell,
+            land
+        );
+
+    auto& thin_fs=thin_soil->world().stores().get<FieldStore>();
+    auto& deep_fs=deep_soil->world().stores().get<FieldStore>();
+    thin_fs.set(hydrology_cell,regolith,0.0);
+    deep_fs.set(hydrology_cell,regolith,3.0);
+    thin_fs.set(hydrology_cell,water,0.20*effective_area);
+    deep_fs.set(hydrology_cell,water,0.20*effective_area);
+
+    thin_soil->step(6);
+    deep_soil->step(6);
+    check(
+        thin_fs.get(hydrology_cell,runoff)>
+        deep_fs.get(hydrology_cell,runoff)+
+            0.05*effective_area,
+        "thin and deep regolith retained nearly the same storm water"
+    );
+
+    // Soil fertility must affect plant production through the actual scheduler
+    // rather than existing as an unused diagnostic field.
+    auto poor=make_default_simulation(seed);
+    auto fertile=make_default_simulation(seed);
+    const CellId vegetation_cell=probe_cell(*poor);
+    auto& poor_fs=poor->world().stores().get<FieldStore>();
+    auto& fertile_fs=fertile->world().stores().get<FieldStore>();
+    const auto fertility=*poor->fields().find("ecology.soil_fertility");
+    const auto litter=*poor->fields().find("ecology.litter_carbon_kg");
+    const auto vegetation=*poor->fields().find(
+        "ecology.vegetation_carbon_kg"
+    );
+    const auto npp=*poor->fields().find("ecology.npp_kg_day");
+    const auto veg_land=*poor->fields().find("geography.land_fraction");
+    const double veg_effective_area=
+        poor->world().topology().area_m2(vegetation_cell)*
+        poor_fs.get(vegetation_cell,veg_land);
+    const double controlled_carbon=0.5*veg_effective_area;
+
+    poor_fs.set(vegetation_cell,fertility,0.0);
+    fertile_fs.set(vegetation_cell,fertility,1.0);
+    poor_fs.set(vegetation_cell,litter,0.0);
+    fertile_fs.set(vegetation_cell,litter,0.0);
+    poor_fs.set(vegetation_cell,vegetation,controlled_carbon);
+    fertile_fs.set(vegetation_cell,vegetation,controlled_carbon);
+
+    poor->step(24);
+    fertile->step(24);
+    check(
+        fertile_fs.get(vegetation_cell,npp)>
+        poor_fs.get(vegetation_cell,npp)+
+            1.0e-5*veg_effective_area,
+        "soil fertility did not limit vegetation NPP"
+    );
+    check(
+        poor_fs.get(vegetation_cell,litter)>0.0 &&
+        fertile_fs.get(vegetation_cell,litter)>0.0,
+        "vegetation turnover did not return carbon to litter"
+    );
+
+    // Detritus must feed back into the persistent soil state.
+    auto bare_litter=make_default_simulation(seed);
+    auto rich_litter=make_default_simulation(seed);
+    const CellId soil_cell=probe_cell(*bare_litter);
+    auto& bare_fs=bare_litter->world().stores().get<FieldStore>();
+    auto& rich_fs=rich_litter->world().stores().get<FieldStore>();
+    const auto soil_fertility=*bare_litter->fields().find(
+        "ecology.soil_fertility"
+    );
+    const auto soil_litter=*bare_litter->fields().find(
+        "ecology.litter_carbon_kg"
+    );
+    const auto soil_land=*bare_litter->fields().find(
+        "geography.land_fraction"
+    );
+    const double soil_effective_area=
+        bare_litter->world().topology().area_m2(soil_cell)*
+        bare_fs.get(soil_cell,soil_land);
+
+    bare_fs.set(soil_cell,soil_fertility,0.20);
+    rich_fs.set(soil_cell,soil_fertility,0.20);
+    bare_fs.set(soil_cell,soil_litter,0.0);
+    rich_fs.set(soil_cell,soil_litter,2.0*soil_effective_area);
+
+    bare_litter->step(24);
+    rich_litter->step(24);
+    check(
+        rich_fs.get(soil_cell,soil_fertility)>
+        bare_fs.get(soil_cell,soil_fertility)+1.0e-3,
+        "litter decomposition did not improve reduced soil fertility"
+    );
 }
 
 
@@ -1806,6 +1946,7 @@ int main() {
         test_command_routing_across_lod();
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
+        test_living_soil_ecology_contracts();
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();
         test_authoritative_terrain_tracks_tectonic_macro_relief();
