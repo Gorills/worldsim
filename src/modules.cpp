@@ -1120,6 +1120,11 @@ public:
         constexpr double minimum_ignition_area_m2=2.0e7;
         constexpr double maximum_ignition_area_m2=8.0e7;
         constexpr double maximum_daily_burn_fraction=0.25;
+        const double maximum_burn_fraction=std::clamp(
+            maximum_daily_burn_fraction*ctx.dt_days,
+            0.0,
+            1.0
+        );
         const std::uint64_t ignition_stream=fnv1a64(
             "ecology.fire.natural_ignition"
         );
@@ -1257,7 +1262,7 @@ public:
                         std::min(3.0,growth_rate*ctx.dt_days)
                     )*local.danger,
                     0.0,
-                    maximum_daily_burn_fraction
+                    maximum_burn_fraction
                 );
             }
             fs.set(cell,burned_,local.burned_fraction);
@@ -1400,7 +1405,7 @@ public:
                 std::clamp(
                     local.next_active_fraction+incoming,
                     0.0,
-                    maximum_daily_burn_fraction
+                    maximum_burn_fraction
                 )
             );
             fs.set(

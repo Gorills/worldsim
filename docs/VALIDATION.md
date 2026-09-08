@@ -67,14 +67,15 @@ and snapshot continuation. The
 export path.
 
 `worldsim_fire_tests` covers fire gating without fuel, wet-weather and
-snow-cover suppression, deterministic natural ignition, explicit fire-carbon transfer closure, PFT
-aggregate consistency, coarse-to-fine spread through the active-cover resolver,
-extensive-ledger LOD conservation and current snapshot round-trip.
+snow-cover suppression, deterministic natural ignition, elapsed-time scaling of the daily
+burn cap, explicit fire-carbon transfer closure, PFT aggregate consistency,
+coarse-to-fine spread through the active-cover resolver, extensive-ledger LOD
+conservation and current snapshot round-trip.
 
 `worldsim_soil_carbon_tests` covers pure-model and integrated soil-carbon
 closure, bounded short/long steps, temperature/moisture response, staged pool
 transfers, dormant submerged stock, LOD conservation, aggregate reconstruction,
-and current epoch-24 snapshot round-trip and deterministic continuation.
+and current epoch-25 snapshot round-trip and deterministic continuation.
 
 The Soil carbon v1 integration run completed all **12/12** CTest targets.
 ASan, UBSan and float-cast-overflow instrumentation passed the dedicated suite,
@@ -218,5 +219,6 @@ independent of camera refinement; this does not establish spatial convergence
 of an adaptive hydraulic solver. Basin hydrology introduced epoch 17; snapshot
 epoch 18 introduced persistent climate state, Wildfire v1 epoch 19, Soil carbon
 v1 epoch 20, snow-albedo coupling epoch 21, fauna carbon accounting epoch 22,
-the grazing-timestep correction epoch 23, and the magic forcing timebase
-correction uses the current epoch 24.
+the grazing-timestep correction epoch 23, the magic forcing timebase
+correction epoch 24, and the wildfire burn-cap timebase correction uses the
+current epoch 25.

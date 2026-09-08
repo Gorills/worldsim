@@ -111,7 +111,7 @@ Executable coverage must demonstrate:
 - complete cover suppresses grass production and fire danger;
 - malformed persisted snow-cover state is rejected without mutating the live
   store;
-- current epoch-24 snapshot round trip and continuation are deterministic;
+- current epoch-25 snapshot round trip and continuation are deterministic;
 - generic C ABI/Godot discovery exposes finite cover and albedo fields.
 
 ## Explicit limits

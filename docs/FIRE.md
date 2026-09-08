@@ -4,8 +4,9 @@
 > conservative decomposition pools. Snow-albedo coupling v1 introduced epoch
 > 21 and suppresses fire danger under projected snow cover. Fauna carbon
 > accounting introduced epoch 22; the grazing-timestep correction introduced
-> epoch 23, and the magic forcing timebase correction raises the current
-> combined-world epoch to 24.
+> epoch 23, the magic forcing timebase correction introduced epoch 24, and the
+> wildfire burn-cap timebase correction raises the current combined-world epoch
+> to 25.
 > The Wildfire-v1 execution record below is retained as historical evidence for
 > epoch 19.
 
@@ -84,7 +85,10 @@ so changing iteration order does not change the draw and refining a cell does
 not assign the same per-cell hazard to every child. No human ignitions or
 suppression are synthesized without an authoritative population state.
 
-The burning fraction is bounded per daily pass. PFT-specific mortality and
+The burning fraction is bounded by a 25% per-day ceiling converted to the
+current integration window with elapsed simulation time. A half-day fire pass
+therefore caps burning at 12.5%, while the default one-day pass retains the
+existing 25% calibration. PFT-specific mortality and
 combustion fractions remove plant carbon; uncombusted killed biomass becomes
 litter. Burning litter is split between emitted carbon and persistent
 pyrogenic carbon. Every fire pass therefore satisfies, to floating-point
