@@ -11,6 +11,8 @@ namespace {
 constexpr double kGoldenAngleRad=2.3999632297286533222;
 constexpr double kMacroCompetitionScoreGap=0.10;
 constexpr double kPlateLayoutJitterRad=1.0;
+constexpr double kPlateMinimumSeedSeparationRad=20.0*kPi/180.0;
+constexpr std::array<double,5> kPlateJitterBackoffFactors{1.0,0.75,0.5,0.25,0.0};
 constexpr std::uint32_t kCrustCalibrationSamples=128;
 
 double smoothstep01(double x) {
@@ -239,27 +241,52 @@ TectonicModel::TectonicModel(std::uint64_t seed):
         0
     );
 
+    std::array<Vec3d,kPlateCount> base_directions{};
     for (std::uint32_t i=0;i<kPlateCount;++i) {
-        const double z=1.0-2.0*(static_cast<double>(i)+0.5)/static_cast<double>(kPlateCount);
+        const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
+            static_cast<double>(kPlateCount);
         const double phi=phase+static_cast<double>(i)*kGoldenAngleRad;
         const double radial=std::sqrt(std::max(0.0,1.0-z*z));
-        const Vec3d base{radial*std::cos(phi),radial*std::sin(phi),z};
+        base_directions[i]={radial*std::cos(phi),radial*std::sin(phi),z};
+    }
 
+    const double maximum_seed_dot=std::cos(kPlateMinimumSeedSeparationRad);
+    for (std::uint32_t i=0;i<kPlateCount;++i) {
+        const Vec3d base=base_directions[i];
         const Vec3d tangent=seeded_tangent(
             seed,
             fnv1a64("tectonics.layout.jitter"),
             i,
             base
         );
-        // Keep the Fibonacci scaffold as a guard against pathological random
-        // clustering, but allow enough deterministic displacement for the
-        // Voronoi cells to develop a meaningful plate-area hierarchy.
-        const double jitter_angle=(
+        const double desired_jitter_angle=(
             deterministic_unit(seed,fnv1a64("tectonics.layout.angle"),0,i)-0.5
         )*kPlateLayoutJitterRad;
-        const Vec3d seed_direction=normalized(
-            base*std::cos(jitter_angle)+tangent*std::sin(jitter_angle)
-        );
+
+        // Large jitter is useful for plate-area diversity, but unconstrained
+        // jitter can place two seeds almost on top of each other. Back off only
+        // when needed. Every accepted seed also stays clear of all remaining
+        // Fibonacci anchors, so factor 0 (the original anchor) remains a safe
+        // deterministic fallback for later plates.
+        Vec3d seed_direction=base;
+        for (double factor:kPlateJitterBackoffFactors) {
+            const double jitter_angle=desired_jitter_angle*factor;
+            const Vec3d candidate=normalized(
+                base*std::cos(jitter_angle)+tangent*std::sin(jitter_angle)
+            );
+
+            bool separated=true;
+            for (std::uint32_t j=0;j<i && separated;++j) {
+                separated=dot(candidate,plates_[j].seed_direction)<=maximum_seed_dot;
+            }
+            for (std::uint32_t j=0;j<kPlateCount && separated;++j) {
+                if (j==i) continue;
+                separated=dot(candidate,base_directions[j])<=maximum_seed_dot;
+            }
+            if (!separated) continue;
+            seed_direction=candidate;
+            break;
+        }
 
         const Vec3d rotation_axis=seeded_unit_vector(
             seed,

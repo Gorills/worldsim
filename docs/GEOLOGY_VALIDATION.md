@@ -29,6 +29,8 @@ PB2002 Table 3 totals imply coarse present-day length fractions of about 35.2% c
 
 The current warning `plate_geometry_too_regular` is deliberately conservative: it fires when the mean largest/smallest area ratio is below 2 or center-spacing CV is below 0.10. Those numbers are **diagnostic floors**, not Earth calibration targets. PB2002's published area spectrum spans orders of magnitude; a nearly equal-area 16-plate partition cannot express that type of hierarchy.
 
+Plate-layout diversity is also bounded away from a different numerical pathology: near-coincident Voronoi seeds. The generator starts from a 16-point Fibonacci scaffold, applies the deterministic large jitter needed for area diversity, and backs that jitter off when necessary to retain at least 20 degrees between accepted seed centers while keeping later scaffold anchors available. The 20-degree separation is an engineering guard for this low-resolution analytical model, not a claimed Earth plate-spacing law.
+
 ### Crust topology
 
 High-affinity crust is sampled on a same-level cube-sphere cover and thresholded at `continental_affinity >= 0.5`. The benchmark reports:
