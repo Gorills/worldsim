@@ -300,7 +300,7 @@ void test_determinism_and_snapshot() {
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
         std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9},
         std::uint8_t{10},std::uint8_t{11},std::uint8_t{12},
-        std::uint8_t{13}
+        std::uint8_t{13},std::uint8_t{14}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
