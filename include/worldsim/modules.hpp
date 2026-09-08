@@ -38,6 +38,7 @@ public:
     void register_stores(StateStoreRegistry&, const FieldRegistry&) override;
     void register_systems(Scheduler&, const FieldRegistry&) override;
     void initialize(WorldState&, const FieldRegistry&) override;
+    void on_spatial_cover_changed(WorldState&, const FieldRegistry&) override;
 };
 
 } // namespace worldsim

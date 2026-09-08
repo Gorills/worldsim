@@ -219,6 +219,27 @@ msgstr "Grass carbon"
 msgid "LAB_FIELD_TREES"
 msgstr "Tree carbon"
 
+msgid "LAB_FIELD_FIRE_ACTIVE"
+msgstr "Active fire fraction"
+
+msgid "LAB_FIELD_FIRE_ACTIVE_AREA"
+msgstr "Active fire area"
+
+msgid "LAB_FIELD_FIRE_DANGER"
+msgstr "Fire danger"
+
+msgid "LAB_FIELD_FIRE_BURNED"
+msgstr "Daily burned fraction"
+
+msgid "LAB_FIELD_FIRE_AREA"
+msgstr "Cumulative burned area"
+
+msgid "LAB_FIELD_FIRE_EMISSIONS"
+msgstr "Fire carbon emissions"
+
+msgid "LAB_FIELD_PYROGENIC_CARBON"
+msgstr "Pyrogenic carbon"
+
 msgid "LAB_PURPOSE_OVERVIEW"
 msgstr "Does the generated world have coherent oceans, continents and habitable land? Compare relief first, then land cover and vegetation."
 
@@ -241,7 +262,7 @@ msgid "LAB_PURPOSE_ECOSYSTEM"
 msgstr "Does biomass grow only where land, water, temperature and fertility permit it? Watch production before expecting total biomass to move."
 
 msgid "LAB_DESCRIPTION_ECOSYSTEM"
-msgstr "Vegetation carbon changes slowly. Net primary production is the faster signal: step by 30 days and compare it with fertility and plant types."
+msgstr "Vegetation carbon changes slowly. Compare production and fuel with fire danger; during dry periods, active fire transfers biomass into emissions and char before fauna responds."
 
 msgid "LAB_PURPOSE_LOD"
 msgstr "Does simulation detail increase only around the selected focus while physical quantities remain stable across refinement transitions?"

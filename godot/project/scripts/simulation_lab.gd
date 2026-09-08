@@ -43,6 +43,13 @@ const FIELD_LABELS := {
     "ecology.soil_fertility": "LAB_FIELD_FERTILITY",
     "ecology.grass_carbon_kg": "LAB_FIELD_GRASS",
     "ecology.tree_carbon_kg": "LAB_FIELD_TREES",
+    "ecology.fire_active_area_m2": "LAB_FIELD_FIRE_ACTIVE_AREA",
+    "ecology.fire_active_fraction": "LAB_FIELD_FIRE_ACTIVE",
+    "ecology.fire_danger": "LAB_FIELD_FIRE_DANGER",
+    "ecology.fire_burned_fraction": "LAB_FIELD_FIRE_BURNED",
+    "ecology.fire_burned_area_m2": "LAB_FIELD_FIRE_AREA",
+    "ecology.fire_emitted_carbon_kg": "LAB_FIELD_FIRE_EMISSIONS",
+    "ecology.pyrogenic_carbon_kg": "LAB_FIELD_PYROGENIC_CARBON",
 }
 
 const PRESETS := [
@@ -124,14 +131,17 @@ const PRESETS := [
             "ecology.soil_fertility",
             "ecology.grass_carbon_kg",
             "ecology.tree_carbon_kg",
+            "ecology.fire_danger",
+            "ecology.fire_active_fraction",
+            "ecology.fire_emitted_carbon_kg",
         ],
         "inspect": [
             "ecology.vegetation_carbon_kg",
             "ecology.npp_kg_day",
             "ecology.soil_fertility",
-            "ecology.grass_carbon_kg",
-            "ecology.tree_carbon_kg",
-            "climate.surface_temperature_k",
+            "ecology.fire_danger",
+            "ecology.fire_active_fraction",
+            "ecology.fire_emitted_carbon_kg",
         ],
         "purpose": "LAB_PURPOSE_ECOSYSTEM",
         "description": "LAB_DESCRIPTION_ECOSYSTEM",
@@ -661,6 +671,8 @@ func _color_for_value(
     var t := clampf((value - lower) / maxf(upper - lower, 1.0e-30), 0.0, 1.0)
     if key.begins_with("hydrology.") or key == "climate.precipitation_mm_day":
         return _ramp3(t, Color(0.94, 0.96, 0.91), Color(0.18, 0.62, 0.78), Color(0.02, 0.10, 0.32))
+    if key.begins_with("ecology.fire_") or key == "ecology.pyrogenic_carbon_kg":
+        return _ramp3(t, Color(0.10, 0.06, 0.04), Color(0.92, 0.36, 0.08), Color(1.0, 0.88, 0.24))
     if key.begins_with("ecology."):
         return _ramp3(t, Color(0.16, 0.12, 0.08), Color(0.55, 0.68, 0.24), Color(0.05, 0.37, 0.15))
     if key in [

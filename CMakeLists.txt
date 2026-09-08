@@ -93,6 +93,11 @@ if(WORLDSIM_BUILD_TESTS)
   worldsim_enable_warnings(worldsim_climate_tests)
   add_test(NAME worldsim_climate_tests COMMAND worldsim_climate_tests)
 
+  add_executable(worldsim_fire_tests tests/fire_tests.cpp)
+  target_link_libraries(worldsim_fire_tests PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_fire_tests)
+  add_test(NAME worldsim_fire_tests COMMAND worldsim_fire_tests)
+
   add_executable(worldsim_sanitizer_smoke tests/sanitizer_smoke.cpp)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_sanitizer_smoke)

@@ -13,10 +13,11 @@ climate.surface
     -> geology.evolution
     -> ecology.soil
     -> ecology.vegetation
+    -> ecology.fire
     -> ecology.fauna
 ```
 
-This ordering gives geology the current terrestrial runoff, gives soil the current regolith state, and gives vegetation the resulting soil state.
+This ordering gives geology the current terrestrial runoff, gives soil the current regolith state, gives vegetation the resulting soil state, and lets fauna react to the post-fire forage state in the same daily window.
 
 ### Root-zone water storage
 
@@ -87,6 +88,20 @@ This is a reduced population redistribution model, not a trajectory-level moveme
 - Nathan et al. (2008), *A movement ecology paradigm for unifying organismal movement research*: https://doi.org/10.1073/pnas.0800375105
 - Avgar et al. (2016), *Integrated step selection analysis: bridging the gap between resource selection and animal movement*: https://doi.org/10.1111/2041-210X.12528
 
+### Wildfire v1: climate-driven disturbance
+
+Wildfire is evaluated after vegetation and before fauna. Its fire-danger state
+combines dynamic fuel density, root-zone wetness, relative humidity, daily
+precipitation, temperature and inundation. Natural ignition uses stateless
+seed/tick/cell randomness, and wind biases a frozen one-hop spread plan through
+the adaptive active-cover resolver. Fire removes PFT-specific live biomass and
+litter, returns uncombusted mortality to litter, and transfers combusted carbon
+to explicit emission and pyrogenic-carbon ledgers.
+
+The fire transfer itself closes carbon, but the wider ecology still lacks a
+closed atmospheric/ocean/soil carbon cycle. The complete field, LOD,
+accounting, reference and unsupported-claim contract is in [FIRE.md](FIRE.md).
+
 ## Executable validation
 
 The core `worldsim_tests` suite continues to check living-soil, adaptive-cover and Flora v1 contracts:
@@ -111,7 +126,18 @@ The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- snapshot epoch 18 includes coupled persistent climate state, version 17 is rejected, and the current snapshot round-trips exactly.
+- snapshot epoch 19 includes authoritative wildfire state, version 18 is rejected, and the current snapshot round-trips exactly.
+
+The dedicated `worldsim_fire_tests` suite checks:
+
+- active fire cannot burn without fuel;
+- a wet root zone plus humid/rainy weather suppresses an otherwise identical active fire;
+- natural ignition is reproducible from equal seed/tick/cell state;
+- biomass, litter, emission and pyrogenic-carbon transfers close for a controlled fire;
+- the aggregate vegetation field remains the exact sum of the PFT pools;
+- spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
+- extensive fire ledgers survive coarsening; and
+- snapshot epoch 19 round-trips authoritative fire state.
 
 ## Explicitly unsupported ecology claims
 
@@ -122,7 +148,7 @@ The current ecology slice does **not** yet provide:
 - spatial aquifer-pressure and vadose-zone flow;
 - species-level plant physiology, explicit seed banks, long-distance dispersal kernels or evolutionary adaptation;
 - species-specific physiology, genetics or evolution;
-- explicit wildfire, storm damage, grazing-driven state transitions or species-specific disturbance regimes (reduced inundation mortality is implemented);
+- operational or calibrated wildfire, storm damage, grazing-driven state transitions or species-specific disturbance regimes (reduced wildfire and inundation mortality are implemented);
 - individual trajectories, home ranges, movement memory, explicit barriers, long-distance dispersal or seasonal migration;
 - aquatic food webs;
 - disease, parasites or decomposer cohorts;

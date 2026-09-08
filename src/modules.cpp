@@ -947,6 +947,396 @@ private:
     FieldId carbon_,npp_;
 };
 
+class FireSystem final : public ISimSystem {
+public:
+    explicit FireSystem(const FieldRegistry& r)
+        : temp_(require_field(r,"climate.surface_temperature_k")),
+          precipitation_(
+              require_field(r,"climate.precipitation_mm_day")
+          ),
+          humidity_(require_field(r,"climate.relative_humidity")),
+          east_wind_(require_field(r,"climate.wind_east_m_s")),
+          north_wind_(require_field(r,"climate.wind_north_m_s")),
+          land_(require_field(r,"geography.land_fraction")),
+          regolith_(require_field(r,"geology.regolith_thickness_m")),
+          water_(require_field(r,"hydrology.soil_water_m3")),
+          flooded_(require_field(r,"hydrology.flooded_fraction")),
+          litter_(require_field(r,"ecology.litter_carbon_kg")),
+          pft_{
+              require_field(r,"ecology.grass_carbon_kg"),
+              require_field(r,"ecology.shrub_carbon_kg"),
+              require_field(r,"ecology.tree_carbon_kg")
+          },
+          carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+          active_area_(require_field(r,"ecology.fire_active_area_m2")),
+          active_(require_field(r,"ecology.fire_active_fraction")),
+          danger_(require_field(r,"ecology.fire_danger")),
+          burned_(require_field(r,"ecology.fire_burned_fraction")),
+          burned_area_(require_field(r,"ecology.fire_burned_area_m2")),
+          emitted_(
+              require_field(r,"ecology.fire_emitted_carbon_kg")
+          ),
+          char_(require_field(r,"ecology.pyrogenic_carbon_kg")) {}
+
+    std::string_view id() const override { return "ecology.fire"; }
+    Tick cadence_ticks() const override { return 24; }
+    std::vector<std::string> after() const override {
+        return {"ecology.vegetation"};
+    }
+    SystemAccess access() const override {
+        return {{
+                    "field:climate.surface_temperature_k",
+                    "field:climate.precipitation_mm_day",
+                    "field:climate.relative_humidity",
+                    "field:climate.wind_east_m_s",
+                    "field:climate.wind_north_m_s",
+                    "field:geography.land_fraction",
+                    "field:geology.regolith_thickness_m",
+                    "field:hydrology.soil_water_m3",
+                    "field:hydrology.flooded_fraction",
+                    "field:ecology.litter_carbon_kg",
+                    "field:ecology.grass_carbon_kg",
+                    "field:ecology.shrub_carbon_kg",
+                    "field:ecology.tree_carbon_kg",
+                    "field:ecology.vegetation_carbon_kg",
+                    "field:ecology.fire_active_area_m2",
+                    "field:ecology.fire_burned_area_m2",
+                    "field:ecology.fire_emitted_carbon_kg",
+                    "field:ecology.pyrogenic_carbon_kg"
+                },
+                {
+                    "field:ecology.litter_carbon_kg",
+                    "field:ecology.grass_carbon_kg",
+                    "field:ecology.shrub_carbon_kg",
+                    "field:ecology.tree_carbon_kg",
+                    "field:ecology.vegetation_carbon_kg",
+                    "field:ecology.fire_active_area_m2",
+                    "field:ecology.fire_active_fraction",
+                    "field:ecology.fire_danger",
+                    "field:ecology.fire_burned_fraction",
+                    "field:ecology.fire_burned_area_m2",
+                    "field:ecology.fire_emitted_carbon_kg",
+                    "field:ecology.pyrogenic_carbon_kg"
+                }};
+    }
+
+    void step(SystemContext& ctx) override {
+        auto& fs=ctx.world.stores().get<FieldStore>();
+
+        struct FireState {
+            double land_area_m2{};
+            double danger{};
+            double east_wind_m_s{};
+            double north_wind_m_s{};
+            double burned_fraction{};
+            double next_active_fraction{};
+        };
+        std::map<CellId,FireState> state;
+
+        constexpr double lower_fuel_density_kg_m2=0.03;
+        constexpr double upper_fuel_density_kg_m2=0.35;
+        constexpr double ignition_hazard_m2_day=2.0e-16;
+        constexpr double minimum_ignition_area_m2=2.0e7;
+        constexpr double maximum_ignition_area_m2=8.0e7;
+        constexpr double maximum_daily_burn_fraction=0.25;
+        const std::uint64_t ignition_stream=fnv1a64(
+            "ecology.fire.natural_ignition"
+        );
+        const std::uint64_t size_stream=fnv1a64(
+            "ecology.fire.ignition_area"
+        );
+
+        // Freeze danger and today's burning fraction before applying either
+        // biomass loss or neighbor spread. Newly spread fire cannot move a
+        // second spatial step during this pass.
+        for (CellId cell:ctx.world.active_cells()) {
+            FireState local;
+            const double area=ctx.world.topology().area_m2(cell);
+            local.land_area_m2=area*fs.get(cell,land_);
+            local.east_wind_m_s=fs.get(cell,east_wind_);
+            local.north_wind_m_s=fs.get(cell,north_wind_);
+
+            if (!(local.land_area_m2>1.0)) {
+                fs.set(cell,danger_,0.0);
+                fs.set(cell,burned_,0.0);
+                fs.set(cell,active_area_,0.0);
+                fs.set(cell,active_,0.0);
+                state.emplace(cell,local);
+                continue;
+            }
+
+            const double surface_fuel=
+                fs.get(cell,litter_)+
+                fs.get(cell,pft_[0])+
+                0.55*fs.get(cell,pft_[1])+
+                0.25*fs.get(cell,pft_[2]);
+            const double fuel_density=
+                surface_fuel/local.land_area_m2;
+            const double fuel_availability=std::clamp(
+                (fuel_density-lower_fuel_density_kg_m2)/
+                    (
+                        upper_fuel_density_kg_m2-
+                        lower_fuel_density_kg_m2
+                    ),
+                0.0,
+                1.0
+            );
+            const double capacity=
+                soil_water_capacity_depth_m(
+                    fs.get(cell,regolith_)
+                )*local.land_area_m2;
+            const double root_zone_wetness=std::clamp(
+                fs.get(cell,water_)/std::max(1.0,0.65*capacity),
+                0.0,
+                1.0
+            );
+            const double soil_dryness=1.0-root_zone_wetness;
+            const double humidity_dryness=std::clamp(
+                (0.85-fs.get(cell,humidity_))/0.65,
+                0.0,
+                1.0
+            );
+            const double temperature_factor=std::clamp(
+                (fs.get(cell,temp_)-273.15)/20.0,
+                0.0,
+                1.0
+            );
+            const double rain_suppression=std::exp(
+                -std::max(0.0,fs.get(cell,precipitation_))/5.0
+            );
+            local.danger=std::clamp(
+                fuel_availability*
+                std::pow(
+                    0.70*soil_dryness+0.30*humidity_dryness,
+                    1.5
+                )*
+                temperature_factor*
+                rain_suppression*
+                (1.0-fs.get(cell,flooded_)),
+                0.0,
+                1.0
+            );
+            fs.set(cell,danger_,local.danger);
+
+            double active=std::clamp(
+                fs.get(cell,active_area_)/local.land_area_m2,
+                0.0,
+                1.0
+            );
+            bool natural_ignition=false;
+            if (local.danger>0.0) {
+                const double hazard=
+                    ignition_hazard_m2_day*
+                    local.land_area_m2*
+                    std::pow(local.danger,4.0)*
+                    ctx.dt_days;
+                const double probability=-std::expm1(-hazard);
+                const double draw=deterministic_unit(
+                    ctx.world.seed(),
+                    ignition_stream,
+                    ctx.world.tick(),
+                    cell.raw()
+                );
+                if (draw<probability) {
+                    const double size_draw=deterministic_unit(
+                        ctx.world.seed(),
+                        size_stream,
+                        ctx.world.tick(),
+                        cell.raw()
+                    );
+                    const double ignition_area=
+                        minimum_ignition_area_m2+
+                        (
+                            maximum_ignition_area_m2-
+                            minimum_ignition_area_m2
+                        )*size_draw;
+                    active=std::max(
+                        active,
+                        std::min(
+                            1.0,
+                            ignition_area/local.land_area_m2
+                        )
+                    );
+                    natural_ignition=true;
+                }
+            }
+
+            const double wind_speed=std::hypot(
+                local.east_wind_m_s,
+                local.north_wind_m_s
+            );
+            if (active>0.0 && local.danger>0.0) {
+                const double growth_rate=
+                    0.25+
+                    0.65*local.danger+
+                    0.015*std::min(20.0,wind_speed);
+                local.burned_fraction=std::clamp(
+                    active*std::exp(
+                        std::min(3.0,growth_rate*ctx.dt_days)
+                    )*local.danger,
+                    0.0,
+                    maximum_daily_burn_fraction
+                );
+            }
+            fs.set(cell,burned_,local.burned_fraction);
+            const double persistence=std::clamp(
+                0.10+0.70*local.danger,
+                0.0,
+                0.80
+            );
+            local.next_active_fraction=
+                local.burned_fraction*persistence;
+            if (natural_ignition && local.burned_fraction>0.0) {
+                ctx.world.emit({
+                    ctx.world.tick(),
+                    "ecology.fire_ignited",
+                    cell,
+                    0,
+                    local.land_area_m2*local.burned_fraction
+                });
+            }
+            state.emplace(cell,local);
+        }
+
+        constexpr std::array<double,3> mortality_fraction{
+            0.92,0.70,0.35
+        };
+        constexpr std::array<double,3> combustion_fraction{
+            0.80,0.60,0.35
+        };
+        constexpr std::array<double,3> char_fraction{
+            0.03,0.05,0.07
+        };
+        constexpr double litter_char_fraction=0.08;
+
+        for (CellId cell:ctx.world.active_cells()) {
+            const FireState& local=state.at(cell);
+            const double fraction=local.burned_fraction;
+            if (!(fraction>0.0)) continue;
+
+            const double litter_before=fs.get(cell,litter_);
+            double litter_after=litter_before;
+            double emitted=0.0;
+            double charred=0.0;
+            double vegetation_after=0.0;
+            for (std::size_t i=0;i<pft_.size();++i) {
+                const double before=fs.get(cell,pft_[i]);
+                const double killed=std::min(
+                    before,
+                    before*fraction*mortality_fraction[i]
+                );
+                const double combusted=killed*combustion_fraction[i];
+                const double pft_char=killed*char_fraction[i];
+                litter_after+=killed-combusted-pft_char;
+                emitted+=combusted;
+                charred+=pft_char;
+                const double after=before-killed;
+                fs.set(cell,pft_[i],after);
+                vegetation_after+=after;
+            }
+
+            const double litter_affected=std::min(
+                litter_before,
+                litter_before*fraction*(0.55+0.40*local.danger)
+            );
+            litter_after-=litter_affected;
+            emitted+=litter_affected*(1.0-litter_char_fraction);
+            charred+=litter_affected*litter_char_fraction;
+
+            fs.set(cell,litter_,std::max(0.0,litter_after));
+            fs.set(cell,carbon_,vegetation_after);
+            fs.add(cell,emitted_,emitted);
+            fs.add(cell,char_,charred);
+            fs.add(
+                cell,
+                burned_area_,
+                local.land_area_m2*fraction
+            );
+        }
+
+        // Spread a bounded ignition area rather than copying a source-cell
+        // fraction into differently sized neighbors. This keeps the coarse /
+        // fine transfer scale explicit while the active-cover weights select
+        // the actual leaves representing each neighboring region.
+        std::map<CellId,double> incoming_active_area_m2;
+        for (CellId source:ctx.world.active_cells()) {
+            const FireState& local=state.at(source);
+            if (!(local.burned_fraction>0.0)) continue;
+
+            const Vec3d position=ctx.world.topology().center_unit(source);
+            Vec3d east=normalized(Vec3d{-position.y,position.x,0.0});
+            if (std::abs(position.x)+std::abs(position.y)<1.0e-12)
+                east={0.0,1.0,0.0};
+            const Vec3d north=normalized(cross(position,east));
+            const Vec3d wind=
+                east*local.east_wind_m_s+
+                north*local.north_wind_m_s;
+            const double wind_speed=norm(wind);
+            const double burned_area=
+                local.land_area_m2*local.burned_fraction;
+
+            for (const auto& side:ctx.world.active_neighbors4(source)) {
+                for (const ActiveCoverPart& part:side) {
+                    const FireState& target=state.at(part.cell);
+                    if (!(target.danger>0.15)) continue;
+
+                    const Vec3d target_position=
+                        ctx.world.topology().center_unit(part.cell);
+                    const Vec3d toward=normalized(
+                        target_position-
+                        position*dot(position,target_position)
+                    );
+                    const double alignment=wind_speed>1.0e-12
+                        ? dot(wind,toward)/wind_speed
+                        : 0.0;
+                    const double directional=std::clamp(
+                        1.0+0.75*alignment,
+                        0.25,
+                        1.75
+                    );
+                    const double spread_area=
+                        burned_area*
+                        0.0125*
+                        local.danger*
+                        target.danger*
+                        directional*
+                        part.weight*
+                        std::min(2.0,ctx.dt_days);
+                    incoming_active_area_m2[part.cell]+=spread_area;
+                }
+            }
+        }
+
+        for (CellId cell:ctx.world.active_cells()) {
+            FireState& local=state.at(cell);
+            const double incoming=local.land_area_m2>1.0
+                ? incoming_active_area_m2[cell]/local.land_area_m2
+                : 0.0;
+            fs.set(
+                cell,
+                active_,
+                std::clamp(
+                    local.next_active_fraction+incoming,
+                    0.0,
+                    maximum_daily_burn_fraction
+                )
+            );
+            fs.set(
+                cell,
+                active_area_,
+                fs.get(cell,active_)*local.land_area_m2
+            );
+        }
+    }
+
+private:
+    FieldId temp_,precipitation_,humidity_,east_wind_,north_wind_;
+    FieldId land_,regolith_,water_,flooded_,litter_;
+    std::array<FieldId,3> pft_;
+    FieldId carbon_,active_area_,active_,danger_,burned_,burned_area_;
+    FieldId emitted_,char_;
+};
+
 class FaunaSystem final : public ISimSystem {
 public:
     explicit FaunaSystem(const FieldRegistry& r)
@@ -962,7 +1352,7 @@ public:
     std::string_view id() const override { return "ecology.fauna"; }
     Tick cadence_ticks() const override { return 24; }
     std::vector<std::string> after() const override {
-        return {"ecology.vegetation"};
+        return {"ecology.fire"};
     }
     SystemAccess access() const override {
         return {{
@@ -1345,11 +1735,19 @@ void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.tree_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.vegetation_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.npp_kg_day","kgC/day",FieldSemantics::Extensive,0.0,-1.0e30,1.0e30});
+    r.register_field({"ecology.fire_active_area_m2","m2",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.fire_active_fraction","1",FieldSemantics::Intensive,0.0,0.0,1.0});
+    r.register_field({"ecology.fire_danger","1",FieldSemantics::Intensive,0.0,0.0,1.0});
+    r.register_field({"ecology.fire_burned_fraction","1",FieldSemantics::Intensive,0.0,0.0,1.0});
+    r.register_field({"ecology.fire_burned_area_m2","m2",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.fire_emitted_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.pyrogenic_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
 }
 void EcologyModule::register_stores(StateStoreRegistry& stores, const FieldRegistry&) { stores.emplace<CohortStore>(); }
 void EcologyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
     s.add(std::make_unique<SoilSystem>(r));
     s.add(std::make_unique<VegetationSystem>(r));
+    s.add(std::make_unique<FireSystem>(r));
     s.add(std::make_unique<FaunaSystem>(r));
 }
 void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
@@ -1430,6 +1828,31 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
                 70.0,4.0
             });
         }
+    }
+}
+
+void EcologyModule::on_spatial_cover_changed(
+    WorldState& world,
+    const FieldRegistry& r
+) {
+    auto& fs=world.stores().get<FieldStore>();
+    const FieldId land=require_field(r,"geography.land_fraction");
+    const FieldId active_area=require_field(
+        r,"ecology.fire_active_area_m2"
+    );
+    const FieldId active_fraction=require_field(
+        r,"ecology.fire_active_fraction"
+    );
+    for (CellId cell:world.active_cells()) {
+        const double land_area=
+            world.topology().area_m2(cell)*fs.get(cell,land);
+        fs.set(
+            cell,
+            active_fraction,
+            land_area>1.0
+                ? std::clamp(fs.get(cell,active_area)/land_area,0.0,1.0)
+                : 0.0
+        );
     }
 }
 

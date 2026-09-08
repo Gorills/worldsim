@@ -42,11 +42,15 @@ The included ABI command is a scheduled field impulse. It is deliberately small;
 
 ## Snapshot files
 
-`ws_save_snapshot_file()` and `ws_load_snapshot_file()` expose the authoritative snapshot. Save compatibility is strict by design: schema/config mismatches fail instead of corrupting state silently. The current epoch is 18. A rejected load leaves the simulation unchanged, including its cover, queued commands and events. Non-finite command deltas and null load paths fail at the API boundary.
+`ws_save_snapshot_file()` and `ws_load_snapshot_file()` expose the authoritative snapshot. Save compatibility is strict by design: schema/config mismatches fail instead of corrupting state silently. The current epoch is 19. A rejected load leaves the simulation unchanged, including its cover, queued commands and events. Non-finite command deltas and null load paths fail at the API boundary.
 
 Climate v2 fields are discovered through the same generic registry API. The
 authoritative atmospheric-water, land/ocean heat and ocean-water reservoirs
 live in `ClimateStore`; scalar field arrays are active-cover projections.
+
+Wildfire v1 likewise needs no ABI-specific getter. Active/burned area,
+fire-danger, emission and pyrogenic-carbon fields use the same descriptor and
+aligned-value calls; epoch 19 persists them through `core.fields`.
 
 Hydrology fields are available through the existing registry/field-array API.
 `hydrology.surface_water_m3` is a projection of `HydrologyStore`, not an

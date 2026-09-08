@@ -1,6 +1,6 @@
 # WorldSim
 
-WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, a reduced coupled energy/moisture climate with land/ocean thermal inertia and closed planetary water exchange, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus, grass/shrub/tree plant functional types with local dispersal and competition, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
+WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, a reduced coupled energy/moisture climate with land/ocean thermal inertia and closed planetary water exchange, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus, grass/shrub/tree plant functional types with local dispersal and competition, fuel/moisture/wind-driven wildfire with explicit fire-carbon transfers, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
 
 This repository is **not** claiming that the included climate/ecology equations are a scientifically calibrated Earth model. They are deliberately replaceable domain implementations used to exercise the production architecture: spatial hierarchy, conservation across LOD, scheduling, state stores, snapshots, commands, events, engine boundaries, and module extension.
 
@@ -63,6 +63,14 @@ The diagnostic advances two years while alternating adaptive focus, then writes
 daily energy/water ledgers and reference-cover climate maps to
 `out/climate-diagnostics`. Its process and conservation boundary is documented
 in [the climate contract](docs/CLIMATE.md).
+
+## Inspect wildfire
+
+The simulation laboratory (`make lab`) discovers the wildfire fields through
+the generic field registry. Select `ecology.fire_danger`,
+`ecology.fire_active_fraction`, `ecology.fire_burned_area_m2` or the carbon
+ledgers to inspect the live disturbance state. The process, LOD and accounting
+boundaries are documented in [the wildfire contract](docs/FIRE.md).
 
 ## Continuous integration
 
@@ -135,4 +143,4 @@ The architecture is informed by established patterns rather than copied from a s
 
 ## Important scope boundary
 
-This archive provides the architectural foundation and a working multi-domain vertical slice. A production world still requires domain work: calibrated atmospheric/ocean models, explicit soil biogeochemistry, calibrated plant traits/phenology/disturbance and long-range dispersal, species databases and behavior, aquatic ecology, population dispersal/migration, eventual settlement/population models, transport, markets, institutions, diplomacy, warfare, epidemiology, content pipelines, persistence scaling, and profiling on the target hardware. Those belong behind the module/state-store/system contracts already present; they are not hidden TODOs that require redesigning the kernel.
+This archive provides the architectural foundation and a working multi-domain vertical slice. A production world still requires domain work: calibrated atmospheric/ocean models, explicit soil biogeochemistry, calibrated plant traits/phenology and long-range dispersal, additional disturbance regimes and fire calibration, species databases and behavior, aquatic ecology, population dispersal/migration, eventual settlement/population models, transport, markets, institutions, diplomacy, warfare, epidemiology, content pipelines, persistence scaling, and profiling on the target hardware. Those belong behind the module/state-store/system contracts already present; they are not hidden TODOs that require redesigning the kernel.

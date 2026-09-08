@@ -4,7 +4,7 @@ This file distinguishes what was actually executed from architectural intent.
 
 ## Current audit
 
-The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Climate v2 was implemented after that audit and is recorded in [CLIMATE.md](CLIMATE.md). Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
+The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Climate v2 and Wildfire v1 were implemented after that audit and are recorded in [CLIMATE.md](CLIMATE.md) and [FIRE.md](FIRE.md). Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
 
 ## Core test coverage
 
@@ -18,7 +18,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 17);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 18);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -62,6 +62,17 @@ water inventory, land/ocean seasonal amplitude and phase, orographic rainfall,
 focus-LOD invariance, and snapshot continuation. The
 `worldsim_climate_dump_smoke` CTest target exercises the inspectable ledger/map
 export path.
+
+`worldsim_fire_tests` covers fire gating without fuel, wet-weather suppression,
+deterministic natural ignition, explicit fire-carbon transfer closure, PFT
+aggregate consistency, coarse-to-fine spread through the active-cover resolver,
+extensive-ledger LOD conservation and snapshot epoch 19 round-trip.
+
+The Wildfire v1 integration run completed all **11/11** CTest targets. ASan,
+UBSan and float-cast-overflow instrumentation passed the dedicated fire suite,
+bounded smoke and all 14 audit scenarios. Godot 4.7.2 rebuilt and its native
+smoke plus Russian simulation-laboratory integration discovered all 62 fields,
+including fire state. Exact scope and limitations are recorded in `FIRE.md`.
 
 The 2026-09-08 Climate v2 integration run completed all 10 CTest targets. Its
 730-day adaptive diagnostic closed planet water to `2.06951e-10` relative and
@@ -177,4 +188,4 @@ full-world adaptive-cover diagnostic. The latter closes the land-water budget
 with maximum relative residual 2.70362e-14. Reference-grid river geometry is
 independent of camera refinement; this does not establish spatial convergence
 of an adaptive hydraulic solver. Basin hydrology introduced epoch 17; snapshot
-epoch 18 with persistent climate state is current.
+epoch 18 introduced persistent climate state; Wildfire v1 epoch 19 is current.

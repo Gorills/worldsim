@@ -5,7 +5,7 @@
 The existing first-person scene and global tectonic map both initialize the
 terrain-only simulation. They can validate authoritative geological elevation,
 walking reconstruction and collision, but they cannot expose the implemented
-`climate -> hydrology -> geology -> soil -> vegetation -> fauna` chain. The
+`climate -> hydrology -> geology -> soil -> vegetation -> fire -> fauna` chain. The
 GDExtension already exposes the full simulation, active-cell render packet,
 field descriptors and aligned field arrays; the missing contract is a generic,
 time-aware diagnostic client.
@@ -120,5 +120,11 @@ Headless integration must verify:
 - direction inspection returns aligned fields and valid cell metadata;
 - the LOD map reports refinement after a focused authoritative tick;
 - the scene initializes a full world, renders a non-empty map, exposes
-  hydrology/ecology fields, advances time, updates statistics/history and can
-  inspect a cell.
+  hydrology/ecology/fire fields, advances time, updates statistics/history and
+  can inspect a cell.
+
+Wildfire v1 extends the curated ecosystem view with localized fire-danger,
+active-fraction and emission layers plus a distinct fire color ramp. The full
+active/burned-area and pyrogenic-carbon state remains available through the
+advanced field list. See `FIRE.md` for the simulation contract and its Godot
+4.7 localization reference.

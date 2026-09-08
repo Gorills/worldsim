@@ -292,16 +292,16 @@ void test_determinism_and_snapshot() {
     a->world().emit({a->world().tick(),"test.pending_event",future_target,77,3.5});
     auto snap=a->save_snapshot();
 
-    // Authoritative geography semantics changed across snapshot epochs. Older
-    // snapshots may contain state generated under a previous terrain/geology
-    // contract, so reject them rather than mixing incompatible world state.
+    // Authoritative domain semantics change across snapshot epochs. Older
+    // snapshots may omit or encode state under previous domain contracts, so
+    // reject them rather than mixing incompatible world state.
     check(snap.size()>11,"snapshot header is unexpectedly short");
     for (std::uint8_t legacy_version:{
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
         std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9},
         std::uint8_t{10},std::uint8_t{11},std::uint8_t{12},
         std::uint8_t{13},std::uint8_t{14},std::uint8_t{15},
-        std::uint8_t{16},std::uint8_t{17}
+        std::uint8_t{16},std::uint8_t{17},std::uint8_t{18}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);

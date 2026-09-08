@@ -220,6 +220,6 @@ script writes `history.png` and `maps.png` without interpolation of cell state.
   `ci_smoke.gd` passed, including new finite/nonnegative/aligned hydrology field
   checks. The existing terrain-only render-packet negative check emits its
   expected handled error.
-- Basin hydrology's epoch **17** roundtrip and continuation passed; the current
-  coupled-climate epoch is **18**, and epoch 17 is rejected.
+- Basin hydrology's epoch **17** roundtrip and continuation passed; Climate v2
+  introduced epoch **18**, and the current Wildfire-v1 epoch is **19**.
   `git diff --check` passed.
