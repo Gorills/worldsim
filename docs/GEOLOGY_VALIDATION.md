@@ -55,7 +55,7 @@ The authoritative simulation surface is no longer regenerated directly from `Ter
 - `geology.lithosphere_age_ma`;
 - extensive `geology.sediment_mass_kg`, which therefore conserves mass under LOD split/merge;
 - `geology.regolith_thickness_m`;
-- diagnostic `geology.erosion_rate_m_yr`;
+- diagnostic `geology.erosion_rate_m_yr`, `geology.drainage_area_m2` and `geology.drainage_discharge_m3_day`;
 - derived `geology.trench_forcing`, `geology.volcanic_arc_forcing`, `geology.collision_forcing` and `geology.rift_forcing` for process inspection.
 
 The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust and progressively reduces the persistent continental fraction; once breakup crosses into an oceanic regime, divergence renews young thin crust instead of continuing unlimited continental thinning. Convergent plate pairs receive deterministic, pair-stable subduction polarity: the subducting side forms a compact trench and loses crust, while the overriding side receives a volcanic-arc forcing offset inland from the boundary and modest magmatic crustal addition. High-continental-fraction convergence switches to broad collision forcing instead of creating an artificial subduction trench. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
@@ -64,7 +64,7 @@ Oceanic age-depth behavior follows the broad empirical form documented by Parson
 
 - Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
 
-Erosion is slope/runoff driven using a bounded stream-power-like law. Eroded sediment and bedrock are converted to transported mass and deposited downslope; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass. Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign.
+Erosion is slope/runoff driven using a bounded stream-power-like law. The geology pass first builds a strictly downhill routing graph from the current surface, accumulates contributing land area and runoff in descending-elevation order, and uses that accumulated discharge rather than only local rainfall/runoff to drive incision. Eroded sediment and bedrock are converted to transported mass and deposited along the same downstream routing weights; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass. Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign.
 
 - Whipple, K. X. & Tucker, G. E. (1999), *Dynamics of the stream-power river incision model*. https://doi.org/10.1029/1999JB900120
 
