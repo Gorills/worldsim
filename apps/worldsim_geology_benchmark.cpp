@@ -699,6 +699,10 @@ template<class Fn>
     const double divergent=mean_metric(seeds,[](const SeedMetrics& s){ return s.plates.divergent_boundary_fraction; });
     const double transform=mean_metric(seeds,[](const SeedMetrics& s){ return s.plates.transform_boundary_fraction; });
     const double land=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.land_fraction; });
+    const auto land_range=minmax_metric(
+        seeds,
+        [](const SeedMetrics& s){ return s.hypsometry.land_fraction; }
+    );
     const double mode_separation=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.mode_separation_m; });
     const double uplift_excess=mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.uplift_macro_excess_m; });
 
@@ -728,7 +732,9 @@ template<class Fn>
     }
 
     if (land<0.15 || land>0.45)
-        out.emplace_back("WARN earthlike_land_fraction_outside_broad_reference: above-sea area is outside 15..45%");
+        out.emplace_back("WARN earthlike_land_fraction_outside_broad_reference: mean above-sea area is outside 15..45%");
+    if (land_range.first<0.15 || land_range.second>0.45)
+        out.emplace_back("WARN earthlike_land_fraction_seed_outlier: at least one seed is outside the broad 15..45% above-sea range");
     if (mode_separation<2500.0)
         out.emplace_back("WARN hypsometry_not_strongly_bimodal: ocean/land histogram modes are separated by <2500 m");
     if (uplift_excess<=0.0)
@@ -802,7 +808,7 @@ void write_json(const std::filesystem::path& path,
     const auto components_range=minmax_metric(seeds,[](const SeedMetrics& s){ return static_cast<double>(s.crust.high_affinity_component_count); });
 
     out << "{\n";
-    out << "  \"schema\": \"worldsim.geology_plausibility.v1\",\n";
+    out << "  \"schema\": \"worldsim.geology_plausibility.v2\",\n";
     out << "  \"method\": {\n";
     out << "    \"seed_start\": " << options.seed_start << ",\n";
     out << "    \"seed_count\": " << options.seed_count << ",\n";
