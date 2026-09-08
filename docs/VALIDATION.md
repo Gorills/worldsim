@@ -14,7 +14,7 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative geography/geology snapshot epochs (versions 2 through 8);
+- rejection of stale authoritative geography/geology snapshot epochs (versions 2 through 9);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -26,6 +26,7 @@ This file distinguishes what was actually executed from architectural intent.
 - post-load spatial-store/active-cover validation through normal snapshot round trips;
 - sediment mass/thickness inversion and burial-compaction regression for equal added mass at shallow versus deep burial;
 - fluvial incision shuts off at zero runoff, while a zero-runoff integration still performs conservative slope/regolith-driven hillslope sediment transport;
+- regolith production declines exponentially with existing mantle thickness, shuts off for zero continental fraction, and gives timestep-invariant analytical weathering for a stable plate interior;
 - seed-42 convergent-uplift footprint width/contour complexity regression, 64-seed tectonic robustness/diversity sweep, and 256-seed anti-clustering guard;
 - Godot debug-map response arrays and presentation checks for terrain-driving uplift/divergence colors and explicit plate topology outlines.
 
