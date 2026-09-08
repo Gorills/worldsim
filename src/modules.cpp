@@ -1,9 +1,12 @@
 #include "worldsim/modules.hpp"
+#include "worldsim/geology.hpp"
 #include "worldsim/terrain.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <numeric>
+#include <optional>
 
 namespace worldsim {
 namespace {
@@ -14,17 +17,272 @@ FieldId require_field(const FieldRegistry& r, std::string_view key) {
     return *id;
 }
 
-void populate_geography(WorldState& world, const FieldRegistry& r) {
+struct GeologyFieldIds {
+    FieldId elevation{};
+    FieldId land_fraction{};
+    FieldId crust_thickness{};
+    FieldId crust_density{};
+    FieldId lithosphere_age{};
+    FieldId sediment_mass{};
+    FieldId regolith_thickness{};
+    FieldId erosion_rate{};
+    std::optional<FieldId> runoff;
+};
+
+GeologyFieldIds geology_fields(const FieldRegistry& r) {
+    return {
+        require_field(r,"geography.elevation_m"),
+        require_field(r,"geography.land_fraction"),
+        require_field(r,"geology.crust_thickness_m"),
+        require_field(r,"geology.crust_density_kg_m3"),
+        require_field(r,"geology.lithosphere_age_ma"),
+        require_field(r,"geology.sediment_mass_kg"),
+        require_field(r,"geology.regolith_thickness_m"),
+        require_field(r,"geology.erosion_rate_m_yr"),
+        r.find("hydrology.runoff_m3_day")
+    };
+}
+
+GeologyState read_geology_state(
+    const FieldStore& fs,
+    CellId cell,
+    const GeologyFieldIds& ids
+) {
+    return {
+        fs.get(cell,ids.crust_thickness),
+        fs.get(cell,ids.crust_density),
+        fs.get(cell,ids.lithosphere_age),
+        fs.get(cell,ids.sediment_mass),
+        fs.get(cell,ids.regolith_thickness)
+    };
+}
+
+void write_geology_state(
+    FieldStore& fs,
+    CellId cell,
+    const GeologyFieldIds& ids,
+    const GeologyState& state
+) {
+    fs.set(cell,ids.crust_thickness,state.crust_thickness_m);
+    fs.set(cell,ids.crust_density,state.crust_density_kg_m3);
+    fs.set(cell,ids.lithosphere_age,state.lithosphere_age_ma);
+    fs.set(cell,ids.sediment_mass,state.sediment_mass_kg);
+    fs.set(cell,ids.regolith_thickness,state.regolith_thickness_m);
+}
+
+CellId active_cell_at_direction(const WorldState& world, Vec3d direction) {
+    for (std::uint8_t level=0;level<=CellId::kMaxLevel;++level) {
+        const CellId candidate=world.topology().from_direction(direction,level);
+        if (world.active_cells().contains(candidate)) return candidate;
+        if (level==CellId::kMaxLevel) break;
+    }
+    throw std::runtime_error("adaptive cover does not contain direction");
+}
+
+double land_fraction_from_elevation(double elevation_m) {
+    const double t=std::clamp((elevation_m+100.0)/200.0,0.0,1.0);
+    return t*t*(3.0-2.0*t);
+}
+
+void update_geography_surface(
+    WorldState& world,
+    const FieldRegistry& r,
+    const GeologyModel& geology
+) {
     auto& fs=world.stores().get<FieldStore>();
-    const auto elev=require_field(r,"geography.elevation_m");
-    const auto land=require_field(r,"geography.land_fraction");
-    const TerrainGenerator terrain(world.seed());
+    const GeologyFieldIds ids=geology_fields(r);
+    std::map<CellId,double> local_elevation;
     for (CellId cell:world.active_cells()) {
-        const TerrainSample sample=terrain.sample_direction(world.topology().center_unit(cell));
-        fs.set(cell,elev,sample.elevation_m);
-        fs.set(cell,land,sample.land_fraction);
+        const GeologyState state=read_geology_state(fs,cell,ids);
+        local_elevation.emplace(
+            cell,
+            geology.surface_elevation_m(
+                state,
+                world.topology().center_unit(cell),
+                world.topology().area_m2(cell)
+            )
+        );
+    }
+
+    // A short-range elastic-load approximation spreads part of the local
+    // isostatic response to adjacent columns. It is deliberately conservative:
+    // the persistent mass state remains local, while only the derived surface
+    // responds flexurally across the adaptive cover.
+    constexpr double flexural_coupling=0.15;
+    for (CellId cell:world.active_cells()) {
+        double neighbor_sum=0.0;
+        std::size_t neighbor_count=0;
+        for (CellId same_level_neighbor:world.topology().neighbors4(cell)) {
+            const Vec3d direction=world.topology().center_unit(same_level_neighbor);
+            const CellId neighbor=active_cell_at_direction(world,direction);
+            if (neighbor==cell) continue;
+            neighbor_sum+=local_elevation.at(neighbor);
+            ++neighbor_count;
+        }
+        const double local=local_elevation.at(cell);
+        const double flexed=neighbor_count>0
+            ? (1.0-flexural_coupling)*local+
+              flexural_coupling*neighbor_sum/static_cast<double>(neighbor_count)
+            : local;
+        fs.set(cell,ids.elevation,flexed);
+        fs.set(cell,ids.land_fraction,land_fraction_from_elevation(flexed));
     }
 }
+
+void initialize_geology(WorldState& world, const FieldRegistry& r) {
+    auto& fs=world.stores().get<FieldStore>();
+    const GeologyFieldIds ids=geology_fields(r);
+    const GeologyModel geology(world.seed());
+    for (CellId cell:world.active_cells()) {
+        const GeologyState state=geology.initial_state(
+            world.topology().center_unit(cell),
+            world.topology().area_m2(cell)
+        );
+        write_geology_state(fs,cell,ids,state);
+        fs.set(cell,ids.erosion_rate,0.0);
+    }
+    update_geography_surface(world,r,geology);
+}
+
+class GeologySystem final : public ISimSystem {
+public:
+    explicit GeologySystem(const FieldRegistry& r):
+        ids_(geology_fields(r)),
+        has_climate_(r.find("climate.surface_temperature_k").has_value()),
+        has_ecology_(r.find("ecology.vegetation_carbon_kg").has_value()) {}
+
+    std::string_view id() const override { return "geology.evolution"; }
+    Tick cadence_ticks() const override { return 24; }
+
+    std::vector<std::string> after() const override {
+        if (has_ecology_) return {"ecology.vegetation"};
+        if (has_climate_) return {"climate.surface"};
+        return {};
+    }
+
+    SystemAccess access() const override {
+        std::vector<std::string> reads{
+            "field:geography.elevation_m",
+            "field:geology.crust_thickness_m",
+            "field:geology.crust_density_kg_m3",
+            "field:geology.lithosphere_age_ma",
+            "field:geology.sediment_mass_kg",
+            "field:geology.regolith_thickness_m"
+        };
+        if (ids_.runoff) reads.push_back("field:hydrology.runoff_m3_day");
+        return {
+            std::move(reads),
+            {
+                "field:geography.elevation_m",
+                "field:geography.land_fraction",
+                "field:geology.crust_thickness_m",
+                "field:geology.crust_density_kg_m3",
+                "field:geology.lithosphere_age_ma",
+                "field:geology.sediment_mass_kg",
+                "field:geology.regolith_thickness_m",
+                "field:geology.erosion_rate_m_yr"
+            }
+        };
+    }
+
+    void step(SystemContext& ctx) override {
+        auto& fs=ctx.world.stores().get<FieldStore>();
+        const GeologyModel geology(ctx.world.seed());
+        const double dt_years=ctx.dt_days/365.2422;
+
+        std::map<CellId,GeologyState> states;
+        for (CellId cell:ctx.world.active_cells()) {
+            GeologyState state=read_geology_state(fs,cell,ids_);
+            geology.advance_tectonics(
+                state,
+                ctx.world.topology().center_unit(cell),
+                dt_years
+            );
+            states.emplace(cell,state);
+        }
+
+        // Use post-tectonic, pre-erosion relief to route one conservative
+        // sediment hop downslope. Updates are accumulated before deposition so
+        // iteration order cannot create or destroy transported mass.
+        for (const auto& [cell,state]:states)
+            write_geology_state(fs,cell,ids_,state);
+        update_geography_surface(ctx.world,ctx.fields,geology);
+
+        std::map<CellId,double> deposits;
+        for (CellId cell:ctx.world.active_cells()) {
+            const double source_elevation=fs.get(cell,ids_.elevation);
+            const Vec3d source_direction=ctx.world.topology().center_unit(cell);
+            CellId downhill=cell;
+            double downhill_elevation=source_elevation;
+            double downhill_distance_m=1.0;
+
+            for (CellId same_level_neighbor:ctx.world.topology().neighbors4(cell)) {
+                const Vec3d neighbor_direction=
+                    ctx.world.topology().center_unit(same_level_neighbor);
+                const CellId neighbor=active_cell_at_direction(
+                    ctx.world,
+                    neighbor_direction
+                );
+                if (neighbor==cell) continue;
+                const double candidate=fs.get(neighbor,ids_.elevation);
+                if (candidate<downhill_elevation) {
+                    downhill=neighbor;
+                    downhill_elevation=candidate;
+                    downhill_distance_m=kEarthRadiusM*std::acos(std::clamp(
+                        dot(source_direction,ctx.world.topology().center_unit(neighbor)),
+                        -1.0,
+                        1.0
+                    ));
+                }
+            }
+
+            if (downhill==cell) {
+                fs.set(cell,ids_.erosion_rate,0.0);
+                continue;
+            }
+
+            const double slope=std::max(
+                0.0,
+                (source_elevation-downhill_elevation)/
+                std::max(1.0,downhill_distance_m)
+            );
+            const double area=ctx.world.topology().area_m2(cell);
+            const double runoff_m_day=ids_.runoff
+                ? fs.get(cell,*ids_.runoff)/std::max(1.0,area)
+                : 0.001;
+            GeologyState& state=states.at(cell);
+            const double erosion_rate=geology.erosion_rate_m_per_year(
+                slope,
+                runoff_m_day,
+                state.regolith_thickness_m
+            );
+            const double erosion_depth=std::min(
+                0.05,
+                erosion_rate*dt_years
+            );
+            const ErosionBudget budget=geology.erode(
+                state,
+                area,
+                erosion_depth
+            );
+            if (budget.transported_mass_kg()>0.0)
+                deposits[downhill]+=budget.transported_mass_kg();
+            fs.set(cell,ids_.erosion_rate,erosion_rate);
+        }
+
+        for (const auto& [cell,mass]:deposits)
+            geology.deposit(states.at(cell),mass);
+        for (const auto& [cell,state]:states)
+            write_geology_state(fs,cell,ids_,state);
+
+        update_geography_surface(ctx.world,ctx.fields,geology);
+    }
+
+private:
+    GeologyFieldIds ids_;
+    bool has_climate_{};
+    bool has_ecology_{};
+};
 
 class MagicSystem final : public ISimSystem {
 public:
@@ -237,14 +495,25 @@ private:
 void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geography.elevation_m","m",FieldSemantics::Intensive,0.0,-11000.0,9000.0});
     r.register_field({"geography.land_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
+    r.register_field({"geology.crust_thickness_m","m",FieldSemantics::Intensive,35'000.0,3'000.0,70'000.0});
+    r.register_field({"geology.crust_density_kg_m3","kg/m3",FieldSemantics::Intensive,2'850.0,2'500.0,3'300.0});
+    r.register_field({"geology.lithosphere_age_ma","Ma",FieldSemantics::Intensive,100.0,0.0,4'500.0});
+    r.register_field({"geology.sediment_mass_kg","kg",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"geology.regolith_thickness_m","m",FieldSemantics::Intensive,0.0,0.0,100.0});
+    r.register_field({"geology.erosion_rate_m_yr","m/yr",FieldSemantics::Intensive,0.0,0.0,0.1});
+}
+
+void GeographyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
+    s.add(std::make_unique<GeologySystem>(r));
 }
 
 void GeographyModule::initialize(WorldState& world, const FieldRegistry& r) {
-    populate_geography(world,r);
+    initialize_geology(world,r);
 }
 
 void GeographyModule::on_spatial_cover_changed(WorldState& world, const FieldRegistry& r) {
-    populate_geography(world,r);
+    const GeologyModel geology(world.seed());
+    update_geography_surface(world,r,geology);
 }
 
 void MagicModule::register_fields(FieldRegistry& r) {
