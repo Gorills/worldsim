@@ -334,6 +334,9 @@ void test_ecology_invariants() {
     const auto water=*sim->fields().find("hydrology.soil_water_m3");
     const auto fertility=*sim->fields().find("ecology.soil_fertility");
     const auto litter=*sim->fields().find("ecology.litter_carbon_kg");
+    const auto grass=*sim->fields().find("ecology.grass_carbon_kg");
+    const auto shrub=*sim->fields().find("ecology.shrub_carbon_kg");
+    const auto tree=*sim->fields().find("ecology.tree_carbon_kg");
     const auto veg=*sim->fields().find("ecology.vegetation_carbon_kg");
     const auto mana=*sim->fields().find("magic.mana_j");
     for (CellId c:sim->world().active_cells()) {
@@ -349,12 +352,171 @@ void test_ecology_invariants() {
             fs.get(c,litter)>=0.0,
             "invalid litter carbon"
         );
-        check(std::isfinite(fs.get(c,veg)) && fs.get(c,veg)>=0.0,"invalid vegetation");
+        const double grass_c=fs.get(c,grass);
+        const double shrub_c=fs.get(c,shrub);
+        const double tree_c=fs.get(c,tree);
+        check(
+            std::isfinite(grass_c) && grass_c>=0.0 &&
+            std::isfinite(shrub_c) && shrub_c>=0.0 &&
+            std::isfinite(tree_c) && tree_c>=0.0,
+            "invalid plant functional type carbon"
+        );
+        check(
+            std::isfinite(fs.get(c,veg)) && fs.get(c,veg)>=0.0,
+            "invalid vegetation"
+        );
+        near(
+            fs.get(c,veg),
+            grass_c+shrub_c+tree_c,
+            1.0e-12,
+            "total vegetation diverged from PFT carbon pools"
+        );
         check(std::isfinite(fs.get(c,mana)) && fs.get(c,mana)>=0.0,"invalid mana");
     }
     for (const auto& [id,c]:sim->world().stores().get<CohortStore>().all()) {
         (void)id; check(std::isfinite(c.count) && c.count>=0.0,"invalid cohort count");
     }
+}
+
+void test_flora_pft_contracts() {
+    SimulationConfig cfg;
+    cfg.base_level=2;
+    cfg.max_level=2;
+    cfg.tick_seconds=3600.0;
+    constexpr std::uint64_t seed=4242;
+
+    auto disable_fauna=[](Simulation& sim) {
+        auto& cohorts=sim.world().stores().get<CohortStore>();
+        for (CellId cell:sim.world().active_cells()) {
+            for (auto& ref:cohorts.in_cell(cell))
+                ref.get().count=0.0;
+        }
+    };
+
+    auto find_land_pair=[](Simulation& sim) {
+        const auto land=*sim.fields().find("geography.land_fraction");
+        const auto fertility=*sim.fields().find("ecology.soil_fertility");
+        const auto& fs=sim.world().stores().get<FieldStore>();
+        for (CellId source:sim.world().active_cells()) {
+            if (
+                fs.get(source,land)<0.75 ||
+                fs.get(source,fertility)<0.15
+            ) {
+                continue;
+            }
+            for (const auto& side:sim.world().active_neighbors4(source)) {
+                if (side.size()!=1) continue;
+                const CellId target=side.front().cell;
+                if (
+                    fs.get(target,land)>=0.75 &&
+                    fs.get(target,fertility)>=0.15
+                ) {
+                    return std::pair{source,target};
+                }
+            }
+        }
+        throw std::runtime_error(
+            "flora fixture found no suitable neighboring land cells"
+        );
+    };
+
+    auto sterile=make_default_simulation(seed,cfg);
+    auto colonizing=make_default_simulation(seed,cfg);
+    disable_fauna(*sterile);
+    disable_fauna(*colonizing);
+
+    const auto grass=*sterile->fields().find("ecology.grass_carbon_kg");
+    const auto shrub=*sterile->fields().find("ecology.shrub_carbon_kg");
+    const auto tree=*sterile->fields().find("ecology.tree_carbon_kg");
+    const auto total=*sterile->fields().find("ecology.vegetation_carbon_kg");
+    const auto land=*sterile->fields().find("geography.land_fraction");
+
+    auto& sterile_fs=sterile->world().stores().get<FieldStore>();
+    auto& colonizing_fs=colonizing->world().stores().get<FieldStore>();
+    for (CellId cell:sterile->world().active_cells()) {
+        for (FieldId field:{grass,shrub,tree,total}) {
+            sterile_fs.set(cell,field,0.0);
+            colonizing_fs.set(cell,field,0.0);
+        }
+    }
+
+    const auto [source,target]=find_land_pair(*colonizing);
+    const double source_effective_area=
+        colonizing->world().topology().area_m2(source)*
+        colonizing_fs.get(source,land);
+    colonizing_fs.set(
+        source,
+        grass,
+        0.50*source_effective_area
+    );
+    colonizing_fs.set(
+        source,
+        total,
+        0.50*source_effective_area
+    );
+
+    sterile->step(24);
+    colonizing->step(24);
+
+    for (CellId cell:sterile->world().active_cells()) {
+        near(
+            sterile_fs.get(cell,grass)+
+            sterile_fs.get(cell,shrub)+
+            sterile_fs.get(cell,tree),
+            0.0,
+            1.0e-15,
+            "sterile plant cover generated biomass without propagules"
+        );
+    }
+    check(
+        colonizing_fs.get(target,grass)>0.0,
+        "neighboring grass source did not establish in empty habitat"
+    );
+
+    auto open=make_default_simulation(seed,cfg);
+    auto wooded=make_default_simulation(seed,cfg);
+    disable_fauna(*open);
+    disable_fauna(*wooded);
+    const auto [competition_cell,unused_neighbor]=find_land_pair(*open);
+    (void)unused_neighbor;
+
+    auto& open_fs=open->world().stores().get<FieldStore>();
+    auto& wooded_fs=wooded->world().stores().get<FieldStore>();
+    const double effective_area=
+        open->world().topology().area_m2(competition_cell)*
+        open_fs.get(competition_cell,land);
+    const double grass_start=0.60*effective_area;
+
+    for (auto* fields:{&open_fs,&wooded_fs}) {
+        fields->set(competition_cell,grass,grass_start);
+        fields->set(competition_cell,shrub,0.0);
+    }
+    open_fs.set(competition_cell,tree,0.0);
+    open_fs.set(competition_cell,total,grass_start);
+    wooded_fs.set(competition_cell,tree,4.0*effective_area);
+    wooded_fs.set(
+        competition_cell,
+        total,
+        grass_start+4.0*effective_area
+    );
+
+    open->step(24);
+    wooded->step(24);
+
+    check(
+        wooded_fs.get(competition_cell,grass)<
+        open_fs.get(competition_cell,grass)-
+            1.0e-5*effective_area,
+        "tree canopy did not suppress grass through succession competition"
+    );
+    near(
+        wooded_fs.get(competition_cell,total),
+        wooded_fs.get(competition_cell,grass)+
+        wooded_fs.get(competition_cell,shrub)+
+        wooded_fs.get(competition_cell,tree),
+        1.0e-12,
+        "fauna/vegetation pipeline broke PFT total after competition"
+    );
 }
 
 void test_living_soil_ecology_contracts() {
@@ -2039,6 +2201,7 @@ int main() {
         test_command_routing_across_lod();
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
+        test_flora_pft_contracts();
         test_living_soil_ecology_contracts();
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();
