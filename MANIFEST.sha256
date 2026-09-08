@@ -16,7 +16,7 @@ ae27a386bf33e571a9c7184212ad6cc837478b71d296db396acbc5240e6d85e1  ./godot/build_
 c458d61a5d223b6296968397df11912b939e26fbe284c8ed7d7abaf94ce9a619  ./godot/CMakeLists.txt
 ff2eb6fcaae1c102afedaa51ddb42c8132b21ada8c9e7271936f37f0555700b1  ./godot/project/bin/worldsim.gdextension
 345ccce99f65effff1e5492a54dad694f2e279330997d1477f5a8293a0e31527  ./godot/project/ci_smoke.gd
-0fb425fb212bab75807a277ad3268c4cac3ba16bf92f4415d411b745d3d1e525  ./godot/project/ci_world_map_view.gd
+f7dab7091162049950bb83603bdd973a2674a07ade874aa7c9c1cbeb4152a2de  ./godot/project/ci_world_map_view.gd
 de5ab0959c96c3120f50a2c6f7b6b4ed0e320634731d02ebfeb28a177ec3646f  ./godot/project/i18n/en.po
 0a443b8bfc1f0ee8bbb1afbc62d5c6f24a778ab99d88c206f23761585ab6d3f6  ./godot/project/i18n/ru.po
 4639270f1e58f1a17e82cb6ff78ce56258109b41372e704efaa3e2472f38005d  ./godot/project/main.tscn
