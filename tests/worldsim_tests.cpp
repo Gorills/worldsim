@@ -1094,6 +1094,16 @@ void test_geology_model_process_contracts() {
         1.0e-11,
         "sediment compaction mass/thickness inverse failed for deep column"
     );
+    const double very_deep_mass=geology.sediment_mass_for_thickness_kg(
+        10'000.0,
+        area_m2
+    );
+    near(
+        geology.sediment_column_thickness_m(very_deep_mass,area_m2),
+        10'000.0,
+        1.0e-10,
+        "sediment compaction inverse lost convergence for deep burial"
+    );
     const double deep_after_same_mass=
         geology.sediment_column_thickness_m(
             deep_mass+shallow_mass,
