@@ -9,6 +9,7 @@ func _process(_delta: float) -> bool:
     if Engine.get_process_frames() < 2:
         return false
 
+    var scene := root.get_node_or_null("WorldMapViewer")
     var map_view := root.get_node_or_null("WorldMapViewer/Margin/VBox/MapPanel/Map") as TextureRect
     if map_view == null:
         push_error("Global map TextureRect is missing")
