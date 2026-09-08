@@ -14,7 +14,7 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-terrain snapshot epochs (versions 2 and 3);
+- rejection of stale authoritative-terrain snapshot epochs (versions 2 through 5);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -24,7 +24,7 @@ This file distinguishes what was actually executed from architectural intent.
 - C ABI field discovery and value copying;
 - module-extension contract and generic snapshot support;
 - post-load spatial-store/active-cover validation through normal snapshot round trips;
-- seed-42 convergent-uplift footprint width/contour complexity regression plus the existing 64-seed tectonic robustness sweep;
+- seed-42 convergent-uplift footprint width/contour complexity regression, 64-seed tectonic robustness/diversity sweep, and 256-seed anti-clustering guard;
 - Godot debug-map response arrays and presentation checks for terrain-driving uplift/divergence colors and explicit plate topology outlines.
 
 `worldsim_sanitizer_smoke` is a bounded scenario intended for ASan/UBSan builds.
@@ -36,7 +36,7 @@ This file distinguishes what was actually executed from architectural intent.
 Reference mismatches are emitted as warnings rather than CTest failures because the current generator has not yet been scientifically calibrated. CI runs the 64-seed baseline and publishes `worldsim-geology-benchmark` for review. Methodology, reference sources, warning semantics, and explicitly unsupported scientific claims are documented in `docs/GEOLOGY_VALIDATION.md`.
 
 
-## Geology plausibility baseline — 2026-09-08
+## Pre-fix geology plausibility baseline — 2026-09-08
 
 Corrected pull-request CI run `34182628679` evaluated 64 consecutive seeds with 4,096 equal-area probes per seed and a level-5 uniform cube-sphere topology cover. Both Core/GCC and Godot 4.7/Linux jobs completed successfully.
 
@@ -59,6 +59,21 @@ The benchmark emitted exactly two reference warnings:
 The corrected boundary-kinematics mix does **not** trigger the broad PB2002 comparison warning. The earlier exploratory 45-degree transform split was rejected before merge because Bird's published classification uses +/-20 degrees from boundary azimuth.
 
 These results establish a pre-fix baseline only. They do not imply that unmeasured processes such as plate-age evolution, physical Euler rates, subduction, crustal thickness, isostasy or erosion are scientifically validated.
+
+### Corrected plate-layout baseline
+
+After plate diversification and the minimum-separation correction, PR #17 CI run `34184463614` repeated the same 64-seed / 4,096-probe / level-5 benchmark. Core/GCC, CTest and the benchmark completed successfully.
+
+Compared with the original pre-fix baseline:
+
+- plate-area CV: 0.0577 -> 0.1924 mean;
+- largest/smallest plate-area ratio: 1.2385 -> 2.1310 mean;
+- plate-center nearest-neighbor spacing CV: 0.0616 -> 0.2358 mean;
+- coarse boundary mix: 39.06% convergent, 38.32% divergent, 22.62% transform;
+- above-sea land fraction: 25.50% mean (17.47%..31.66%);
+- crust-matched uplift macro-relief excess: +551 m mean.
+
+The benchmark reports `INFO no_broad_plausibility_warnings`. The anti-clustering guard changes only conflicting seed placements; relative to the unconstrained diversified layout from #16, the mean largest/smallest area ratio changes from 2.1998 to 2.1310 and the boundary fractions move by less than 0.1 percentage point.
 
 ## Claims deliberately not made
 
