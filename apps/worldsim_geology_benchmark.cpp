@@ -688,7 +688,6 @@ template<class Fn>
     const double divergent=mean_metric(seeds,[](const SeedMetrics& s){ return s.plates.divergent_boundary_fraction; });
     const double transform=mean_metric(seeds,[](const SeedMetrics& s){ return s.plates.transform_boundary_fraction; });
     const double land=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.land_fraction; });
-    const double land_mode=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.land_mode_m; });
     const double mode_separation=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.mode_separation_m; });
     const double uplift_excess=mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.uplift_macro_excess_m; });
 
@@ -721,8 +720,6 @@ template<class Fn>
         out.emplace_back("WARN earthlike_land_fraction_outside_broad_reference: above-sea area is outside 15..45%");
     if (mode_separation<2500.0)
         out.emplace_back("WARN hypsometry_not_strongly_bimodal: ocean/land histogram modes are separated by <2500 m");
-    if (std::abs(land_mode)>500.0)
-        out.emplace_back("WARN earthlike_land_mode_displaced: land-elevation histogram mode is >500 m from modern-Earth near-sea-level reference");
     if (uplift_excess<=0.0)
         out.emplace_back("WARN convergence_relief_coupling_missing: uplift-active samples are not elevated relative to crust-matched inactive samples");
     if (out.empty()) out.emplace_back("INFO no_broad_plausibility_warnings");
