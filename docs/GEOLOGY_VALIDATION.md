@@ -55,9 +55,10 @@ The authoritative simulation surface is no longer regenerated directly from `Ter
 - `geology.lithosphere_age_ma`;
 - extensive `geology.sediment_mass_kg`, which therefore conserves mass under LOD split/merge;
 - `geology.regolith_thickness_m`;
-- diagnostic `geology.erosion_rate_m_yr`.
+- diagnostic `geology.erosion_rate_m_yr`;
+- derived `geology.trench_forcing`, `geology.volcanic_arc_forcing`, `geology.collision_forcing` and `geology.rift_forcing` for process inspection.
 
-The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust and progressively reduces the persistent continental fraction; once breakup crosses into an oceanic regime, divergence renews young thin crust instead of continuing unlimited continental thinning. Oceanic convergence consumes crust. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
+The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust and progressively reduces the persistent continental fraction; once breakup crosses into an oceanic regime, divergence renews young thin crust instead of continuing unlimited continental thinning. Convergent plate pairs receive deterministic, pair-stable subduction polarity: the subducting side forms a compact trench and loses crust, while the overriding side receives a volcanic-arc forcing offset inland from the boundary and modest magmatic crustal addition. High-continental-fraction convergence switches to broad collision forcing instead of creating an artificial subduction trench. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
 
 Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
 
@@ -145,10 +146,10 @@ CI publishes this directory as the `worldsim-geology-benchmark` artifact.
 
 ## What this benchmark cannot validate yet
 
-The v1 model now has enough state to make process-level assertions about crustal thickness/density, lithosphere age, thermal subsidence, reduced isostasy, erosion and sediment mass transport. It still does **not** validate:
+The v1 model now has enough state to make process-level assertions about crustal thickness/density, continental breakup, lithosphere age, thermal subsidence, asymmetric trench/volcanic-arc geometry, reduced isostasy, erosion and sediment mass transport. It still does **not** validate:
 
 - plate velocities in physical angular-rate units or time-evolving plate geometry;
-- explicit subduction polarity, slab geometry, mantle convection or trench migration;
+- slab geometry, mantle convection or time-dependent trench migration beyond the reduced pair-stable subduction polarity;
 - a solved elastic/viscoelastic lithosphere with spatially varying effective elastic thickness;
 - rock-type/mineral phase evolution, metamorphism or explicit crust/mantle chemistry;
 - multi-layer sediment stratigraphy, compaction and marine transport;
