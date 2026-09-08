@@ -6,7 +6,7 @@
 > `SNOW_ALBEDO.md`; the Climate-v2 execution record below remains historical
 > evidence for epoch 18. Fauna carbon accounting introduced epoch 22; the
 > grazing-timestep correction subsequently raises the current combined-world
-> epoch to 23.
+> epoch to 24.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 
