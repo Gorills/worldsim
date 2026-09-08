@@ -86,6 +86,11 @@ public:
         double regolith_thickness_m
     ) const;
 
+    [[nodiscard]] double regolith_production_rate_m_per_year(
+        double regolith_thickness_m,
+        double continental_fraction
+    ) const;
+
     [[nodiscard]] ErosionBudget erode(
         GeologyState& state,
         double cell_area_m2,
