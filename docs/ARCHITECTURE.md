@@ -124,7 +124,7 @@ Production domains should introduce typed command payloads and typed event schem
 
 ## 8. Snapshots
 
-Snapshot version 3 contains:
+Snapshot version 4 contains:
 
 - magic header and format version;
 - field schema hash;
@@ -140,7 +140,7 @@ Primitive values use explicit little-endian encoding and IEEE-754 floats. Native
 
 A snapshot is rejected if the field schema, simulation config, seed, store set, store version, cell cover, or framing is incompatible. After store chunks are loaded, spatial stores validate that their state references the reconstructed active cover; the core field store additionally rejects invalid/non-finite/out-of-bounds values.
 
-Snapshot v3 is also the compatibility epoch for tectonic authoritative geography. Version 2 is rejected because it may contain pre-tectonic geography under the same field schema; silently accepting it would allow later LOD resampling to mix two terrain models. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
+Snapshot v4 is the current compatibility epoch for authoritative geography. Version 2 may contain the old fixed-continent terrain and version 3 may contain the pre-orogenic tectonic terrain; both are rejected because silently accepting either would allow later LOD resampling to mix two terrain functions in one world. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
 
 ## 9. Why magic does not contaminate the core
 

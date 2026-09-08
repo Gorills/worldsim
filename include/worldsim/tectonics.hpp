@@ -26,8 +26,9 @@ struct TectonicSample {
     // one plate may contain both oceanic and continental crust.
     double continental_affinity{};
 
-    // Positive normalized tectonic response fields. They remain available for
-    // diagnostics; uplift also modulates bounded orogenic terrain detail.
+    // Positive normalized tectonic response fields. Convergent uplift is
+    // compact and sphere-native textured; divergence keeps a broader smooth belt.
+    // Uplift also modulates bounded orogenic terrain detail.
     double uplift_forcing{};
     double divergence_forcing{};
 
@@ -47,6 +48,8 @@ public:
     // current crust field no longer uses discrete provinces.
     static constexpr std::uint32_t kCrustProvinceCount=5;
     static constexpr double kBoundaryInfluenceRad=8.0*kPi/180.0;
+    // Broad macro boundary support. Divergence uses the full width; convergent
+    // orogenic uplift uses a continuous seed-native fraction of this maximum.
     static constexpr double kMacroBoundaryInfluenceRad=12.0*kPi/180.0;
 
     explicit TectonicModel(std::uint64_t seed);

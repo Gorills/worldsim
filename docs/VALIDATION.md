@@ -14,7 +14,7 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of pre-tectonic snapshot version 2 after the authoritative terrain epoch change;
+- rejection of stale authoritative-terrain snapshot epochs (versions 2 and 3);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -23,7 +23,8 @@ This file distinguishes what was actually executed from architectural intent.
 - non-negative/finiteness ecology invariants;
 - C ABI field discovery and value copying;
 - module-extension contract and generic snapshot support;
-- post-load spatial-store/active-cover validation through normal snapshot round trips.
+- post-load spatial-store/active-cover validation through normal snapshot round trips;
+- seed-42 convergent-uplift footprint width/contour complexity regression plus the existing 64-seed tectonic robustness sweep.
 
 `worldsim_sanitizer_smoke` is a bounded scenario intended for ASan/UBSan builds.
 

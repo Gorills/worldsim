@@ -98,6 +98,55 @@ double crust_fbm(std::uint64_t seed, Vec3d p) {
     return total/normalization;
 }
 
+double orogeny_fbm(std::uint64_t seed,
+                   std::uint64_t stream,
+                   Vec3d p,
+                   double base_frequency) {
+    constexpr int kOctaves=3;
+    constexpr double kPersistence=0.5;
+
+    double amplitude=1.0;
+    double frequency=base_frequency;
+    double total=0.0;
+    double normalization=0.0;
+    for (int octave=0;octave<kOctaves;++octave) {
+        total+=amplitude*value_noise3(
+            seed,
+            stream+static_cast<std::uint64_t>(octave)*17ULL,
+            p.x*frequency,
+            p.y*frequency,
+            p.z*frequency
+        );
+        normalization+=amplitude;
+        amplitude*=kPersistence;
+        frequency*=2.0;
+    }
+    return total/normalization;
+}
+
+double orogenic_width_factor(std::uint64_t seed, Vec3d p) {
+    const double raw=orogeny_fbm(
+        seed,
+        fnv1a64("tectonics.orogeny.width"),
+        p,
+        3.0
+    );
+    const double noise01=std::clamp(0.5+0.5*raw,0.0,1.0);
+    return 0.50+0.48*noise01;
+}
+
+double orogenic_ridge_modulation(std::uint64_t seed, Vec3d p) {
+    const double raw=orogeny_fbm(
+        seed,
+        fnv1a64("tectonics.orogeny.ridges"),
+        p,
+        5.0
+    );
+    double ridge=std::clamp(1.0-2.0*std::abs(raw),0.0,1.0);
+    ridge*=ridge;
+    return 0.45+0.75*ridge;
+}
+
 double crust_field_bias(std::uint64_t seed) {
     // The lowest-frequency octave spans only a few lattice cells across the
     // sphere, so its spherical mean can drift substantially between seeds.
@@ -277,6 +326,15 @@ TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
     // The compact smoothstep reaches zero with zero slope, so skipping a zero-
     // weight pair is only a performance shortcut, not a hard selection seam.
     // Non-neighbor pair bisectors are suppressed once another plate dominates.
+    // Convergent belts use a narrower, spatially varying envelope and a
+    // sphere-native ridged modulation. Both fields are continuous and are
+    // multiplied by the actual convergent boundary response, so texture can
+    // segment and branch an orogen but cannot create isolated mountains away
+    // from tectonic convergence. Divergence keeps the broader 12-degree belt.
+    const double uplift_width=
+        kMacroBoundaryInfluenceRad*orogenic_width_factor(seed_,p);
+    const double uplift_modulation=orogenic_ridge_modulation(seed_,p);
+
     double uplift_sum=0.0;
     double divergence_sum=0.0;
     for (std::uint32_t a=0;a<kPlateCount;++a) {
@@ -288,11 +346,20 @@ TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
             if (competition_weight<=0.0) continue;
 
             const BoundaryMetrics metrics=boundary_metrics(p,plates_[a],plates_[b]);
-            const double boundary_weight=
+            const double divergence_weight=
                 1.0-smoothstep01(metrics.distance_rad/kMacroBoundaryInfluenceRad);
-            const double influence=competition_weight*boundary_weight;
-            uplift_sum+=std::max(metrics.convergence,0.0)*influence;
-            divergence_sum+=std::max(-metrics.convergence,0.0)*influence;
+            const double uplift_weight=
+                1.0-smoothstep01(metrics.distance_rad/uplift_width);
+
+            uplift_sum+=
+                std::max(metrics.convergence,0.0)*
+                competition_weight*
+                uplift_weight*
+                uplift_modulation;
+            divergence_sum+=
+                std::max(-metrics.convergence,0.0)*
+                competition_weight*
+                divergence_weight;
         }
     }
 
