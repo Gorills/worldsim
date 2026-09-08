@@ -494,20 +494,34 @@ double GeologyModel::hillslope_transport_rate_m_per_year(
     if (!(downhill_slope>0.0) || !(regolith_thickness_m>0.0))
         return 0.0;
 
-    // Reduced soil-creep closure: transport grows linearly with local slope
-    // and saturates with available mobile regolith depth. The coefficient is
-    // an engineering rate scale for this coarse analytical model, not an
-    // Earth-calibrated hillslope diffusivity.
+    // Reduced nonlinear hillslope closure. Low-gradient transport remains
+    // creep-like, while the Roering-style denominator accelerates transport
+    // as slope approaches a critical gradient. WorldSim advances one coarse
+    // downstream hop rather than a stability-limited diffusion PDE, so cap
+    // the singularity at 95% of the critical ratio and bound the resulting
+    // long-term averaged transport rate.
     constexpr double transport_depth_scale_m=1.0;
     constexpr double creep_rate_scale_m_per_year=1.0e-3;
+    constexpr double critical_slope=0.6;
+    constexpr double maximum_critical_ratio=0.95;
+    constexpr double maximum_transport_rate_m_per_year=2.0e-2;
+
     const double mobile_depth_factor=
         -std::expm1(-regolith_thickness_m/transport_depth_scale_m);
+    const double critical_ratio=std::min(
+        downhill_slope/critical_slope,
+        maximum_critical_ratio
+    );
+    const double nonlinear_factor=
+        1.0/(1.0-critical_ratio*critical_ratio);
+
     return std::clamp(
         creep_rate_scale_m_per_year*
         downhill_slope*
-        mobile_depth_factor,
+        mobile_depth_factor*
+        nonlinear_factor,
         0.0,
-        1.0e-3
+        maximum_transport_rate_m_per_year
     );
 }
 

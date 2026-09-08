@@ -206,7 +206,8 @@ void test_determinism_and_snapshot() {
     check(snap.size()>11,"snapshot header is unexpectedly short");
     for (std::uint8_t legacy_version:{
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
-        std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9}
+        std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9},
+        std::uint8_t{10}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -1316,10 +1317,29 @@ void test_geology_model_process_contracts() {
         1.0e-15,
         "bare slope transported nonexistent mobile regolith"
     );
+    const double gentle_hillslope_rate=
+        geology.hillslope_transport_rate_m_per_year(0.10,2.0);
+    const double moderate_hillslope_rate=
+        geology.hillslope_transport_rate_m_per_year(0.20,2.0);
+    const double near_critical_hillslope_rate=
+        geology.hillslope_transport_rate_m_per_year(0.55,2.0);
+    const double supercritical_hillslope_rate=
+        geology.hillslope_transport_rate_m_per_year(1.0,2.0);
+
     check(
-        geology.hillslope_transport_rate_m_per_year(0.20,2.0)>
-        geology.hillslope_transport_rate_m_per_year(0.10,2.0),
-        "hillslope creep does not increase with slope"
+        moderate_hillslope_rate>gentle_hillslope_rate &&
+        moderate_hillslope_rate<2.5*gentle_hillslope_rate,
+        "low-gradient hillslope transport lost creep-like scaling"
+    );
+    check(
+        near_critical_hillslope_rate>20.0*gentle_hillslope_rate,
+        "hillslope transport did not accelerate near critical slope"
+    );
+    check(
+        std::isfinite(supercritical_hillslope_rate) &&
+        supercritical_hillslope_rate>0.0 &&
+        supercritical_hillslope_rate<=2.0e-2,
+        "critical-slope transport regularization is not finite and bounded"
     );
 }
 

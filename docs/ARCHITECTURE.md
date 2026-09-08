@@ -124,7 +124,7 @@ Production domains should introduce typed command payloads and typed event schem
 
 ## 8. Snapshots
 
-Snapshot version 10 contains:
+Snapshot version 11 contains:
 
 - magic header and format version;
 - field schema hash;
@@ -140,7 +140,7 @@ Primitive values use explicit little-endian encoding and IEEE-754 floats. Native
 
 A snapshot is rejected if the field schema, simulation config, seed, store set, store version, cell cover, or framing is incompatible. After store chunks are loaded, spatial stores validate that their state references the reconstructed active cover; the core field store additionally rejects invalid/non-finite/out-of-bounds values.
 
-Snapshot v10 is the current compatibility epoch for authoritative geography and persistent geology. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, and version 9 the separated geomorphology model before regolith production became depth-dependent. Versions 2 through 9 are rejected because silently accepting them could mix incompatible terrain/geology semantics in one world. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
+Snapshot v11 is the current compatibility epoch for authoritative geography and persistent geology. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, and version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration. Versions 2 through 10 are rejected because silently accepting them could mix incompatible terrain/geology semantics in one world. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
 
 ## 9. Why magic does not contaminate the core
 
