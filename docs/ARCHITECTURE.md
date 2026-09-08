@@ -36,7 +36,9 @@ This gives:
 
 The current focus policy is intentionally a policy layer inside `Simulation::target_level()`. The hierarchy/state contracts do not depend on the particular angular thresholds. Refinement uses the nominal angular thresholds while coarsening requires a 4-degree exit margin, preventing focus jitter around a boundary from repeatedly transforming authoritative state. A production project can replace the policy with camera interest, settlement importance, active wars, player subscriptions, server budget, or a combined importance function.
 
-`CubeSphereTopology::neighbors4()` is a same-level topological query, not an adaptive active-cover adjacency query. Before adding cross-cell transport/diffusion/advection/pathing on an adaptive cover, introduce an explicit mixed-level neighbor/flux contract and decide whether the cover requires a balance constraint (for example 2:1) or supports arbitrary level differences.
+`CubeSphereTopology::neighbors4()` remains a same-level topological query. Adaptive systems use `WorldState::resolve_active_cover(region)`, which resolves an arbitrary hierarchy region to the active cell or active descendants that currently represent it and returns deterministic area-normalized weights summing to one. `WorldState::active_neighbors4(cell)` applies that contract to the four same-level neighbor regions of an active source cell. This allows geology transport and ecology dispersal to share one coarse/fine interface rule instead of treating `neighbors4()` as if it returned active leaves.
+
+The current world cover does not require a 2:1 balance constraint: the resolver supports an active coarse ancestor or multiple active descendants across the requested region. This is a deliberate non-conforming AMR-style contract. Established AMR libraries such as p4est explicitly support coarse/fine non-conforming interfaces and commonly add 2:1 balancing as a separate mesh-policy operation rather than conflating it with neighbor identity: https://p4est.github.io/api/p4est-2.8.6/p4est__extended_8h.html. If future transport requires face-length fluxes rather than region-average transfer weights, add that geometry explicitly instead of reinterpreting these area weights.
 
 ## 3. State semantics
 
@@ -124,7 +126,7 @@ Production domains should introduce typed command payloads and typed event schem
 
 ## 8. Snapshots
 
-Snapshot version 13 contains:
+Snapshot version 14 contains:
 
 - magic header and format version;
 - field schema hash;
@@ -140,7 +142,7 @@ Primitive values use explicit little-endian encoding and IEEE-754 floats. Native
 
 A snapshot is rejected if the field schema, simulation config, seed, store set, store version, cell cover, or framing is incompatible. After store chunks are loaded, spatial stores validate that their state references the reconstructed active cover; the core field store additionally rejects invalid/non-finite/out-of-bounds values.
 
-Snapshot v13 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, and version 12 the coast-to-basin geology model before ecology gained persistent living-soil fertility/detritus and regolith-aware water capacity. Versions 2 through 12 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
+Snapshot v14 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, version 12 the coast-to-basin geology model before living-soil ecology, and version 13 the living-soil model before persistent grass/shrub/tree functional-type pools and propagule-limited vegetation dynamics. Versions 2 through 13 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
 
 ## 9. Why magic does not contaminate the core
 
