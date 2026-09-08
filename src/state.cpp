@@ -155,6 +155,76 @@ Cohort& CohortStore::add(Cohort cohort) {
     return it->second;
 }
 
+std::uint64_t CohortStore::transfer_count(
+    std::uint64_t cohort_id,
+    CellId target,
+    double count
+) {
+    if (!target.valid())
+        throw std::invalid_argument("cohort transfer target is invalid");
+    if (!std::isfinite(count) || count<0.0)
+        throw std::invalid_argument("cohort transfer count is invalid");
+
+    auto source_it=cohorts_.find(cohort_id);
+    if (source_it==cohorts_.end())
+        throw std::invalid_argument("cohort transfer source is missing");
+    Cohort& source=source_it->second;
+    if (count>source.count)
+        throw std::invalid_argument(
+            "cohort transfer exceeds source population"
+        );
+    if (count==0.0 || target==source.cell)
+        return source.id;
+
+    Cohort moved=source;
+    moved.cell=target;
+    moved.count=count;
+
+    std::uint64_t destination_id=0;
+    const auto [first,last]=by_cell_.equal_range(target);
+    for (auto it=first;it!=last;++it) {
+        Cohort& existing=cohorts_.at(it->second);
+        if (
+            existing.lineage_id==moved.lineage_id &&
+            existing.species_id==moved.species_id &&
+            existing.functional_group==moved.functional_group
+        ) {
+            const double merged_count=existing.count+count;
+            if (merged_count>0.0) {
+                existing.body_mass_kg=
+                    (
+                        existing.body_mass_kg*existing.count+
+                        moved.body_mass_kg*count
+                    )/merged_count;
+                existing.reserve_kg=
+                    (
+                        existing.reserve_kg*existing.count+
+                        moved.reserve_kg*count
+                    )/merged_count;
+            }
+            existing.count=merged_count;
+            destination_id=existing.id;
+            break;
+        }
+    }
+
+    if (destination_id==0) {
+        moved.id=next_id_++;
+        const auto [it,ok]=cohorts_.emplace(moved.id,moved);
+        if (!ok)
+            throw std::runtime_error(
+                "cohort transfer generated duplicate id"
+            );
+        by_cell_.emplace(target,moved.id);
+        destination_id=it->first;
+    }
+
+    source.count-=count;
+    if (source.count<0.0 && source.count>-1.0e-12)
+        source.count=0.0;
+    return destination_id;
+}
+
 std::vector<std::reference_wrapper<Cohort>> CohortStore::in_cell(CellId cell) {
     std::vector<std::reference_wrapper<Cohort>> out;
     const auto [first,last]=by_cell_.equal_range(cell);
