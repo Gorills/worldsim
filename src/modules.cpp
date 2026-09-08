@@ -96,60 +96,16 @@ void write_geology_state(
     fs.set(cell,ids.regolith_thickness,state.regolith_thickness_m);
 }
 
-// Resolve the composite adaptive cover instead of sampling one arbitrary
-// descendant at a coarse/fine interface. Conservative AMR schemes compare
-// area-weighted fine/coarse contributions at such interfaces; the geology
-// transport below uses the same restriction principle for its cell fluxes.
-std::vector<CellId> active_cells_covering_region(
-    const WorldState& world,
-    CellId region
-) {
-    if (world.active_cells().contains(region)) return {region};
-
-    CellId ancestor=region;
-    while (ancestor.level()>0) {
-        ancestor=ancestor.parent();
-        if (world.active_cells().contains(ancestor)) return {ancestor};
-    }
-
-    std::vector<CellId> out;
-    std::vector<CellId> pending{region};
-    while (!pending.empty()) {
-        const CellId cell=pending.back();
-        pending.pop_back();
-        if (world.active_cells().contains(cell)) {
-            out.push_back(cell);
-            continue;
-        }
-        if (cell.level()>=CellId::kMaxLevel)
-            throw std::runtime_error("adaptive cover has a spatial hole");
-        const auto children=cell.children();
-        pending.insert(pending.end(),children.begin(),children.end());
-    }
-    if (out.empty()) throw std::runtime_error("adaptive cover has a spatial hole");
-    return out;
-}
-
 double region_mean_elevation(
     const WorldState& world,
     const FieldStore& fs,
     FieldId elevation,
     CellId region
 ) {
-    const auto leaves=active_cells_covering_region(world,region);
-    double weighted_sum=0.0;
-    double area_sum=0.0;
-    for (CellId leaf:leaves) {
-        // If a coarser active ancestor represents this region, its intensive
-        // elevation is the best state available at the current simulation LOD.
-        const double area=leaf.level()<region.level()
-            ? world.topology().area_m2(region)
-            : world.topology().area_m2(leaf);
-        weighted_sum+=fs.get(leaf,elevation)*area;
-        area_sum+=area;
-    }
-    if (!(area_sum>0.0)) throw std::runtime_error("zero-area geology region");
-    return weighted_sum/area_sum;
+    double mean=0.0;
+    for (const ActiveCoverPart& part:world.resolve_active_cover(region))
+        mean+=fs.get(part.cell,elevation)*part.weight;
+    return mean;
 }
 
 double land_fraction_from_elevation(double elevation_m) {
@@ -194,23 +150,17 @@ void update_geography_surface(
     for (CellId cell:world.active_cells()) {
         double neighbor_sum=0.0;
         std::size_t neighbor_count=0;
-        for (CellId same_level_neighbor:world.topology().neighbors4(cell)) {
-            const auto leaves=active_cells_covering_region(
-                world,
-                same_level_neighbor
-            );
+        for (const auto& side:world.active_neighbors4(cell)) {
             double weighted_sum=0.0;
-            double area_sum=0.0;
-            for (CellId leaf:leaves) {
-                if (leaf==cell) continue;
-                const double area=leaf.level()<same_level_neighbor.level()
-                    ? world.topology().area_m2(same_level_neighbor)
-                    : world.topology().area_m2(leaf);
-                weighted_sum+=local_elevation.at(leaf)*area;
-                area_sum+=area;
+            double weight_sum=0.0;
+            for (const ActiveCoverPart& part:side) {
+                if (part.cell==cell) continue;
+                weighted_sum+=
+                    local_elevation.at(part.cell)*part.weight;
+                weight_sum+=part.weight;
             }
-            if (area_sum<=0.0) continue;
-            neighbor_sum+=weighted_sum/area_sum;
+            if (!(weight_sum>0.0)) continue;
+            neighbor_sum+=weighted_sum/weight_sum;
             ++neighbor_count;
         }
         const double local=local_elevation.at(cell);
@@ -357,22 +307,22 @@ public:
             }
             if (!downhill_region) continue;
 
-            const auto leaves=active_cells_covering_region(
-                ctx.world,
+            const auto parts=ctx.world.resolve_active_cover(
                 *downhill_region
             );
-            std::vector<std::pair<CellId,double>> target_areas;
-            double target_area_sum=0.0;
-            for (CellId leaf:leaves) {
-                if (leaf==cell) continue;
-                if (!(fs.get(leaf,ids_.elevation)<source_elevation)) continue;
-                const double target_area=leaf.level()<downhill_region->level()
-                    ? ctx.world.topology().area_m2(*downhill_region)
-                    : ctx.world.topology().area_m2(leaf);
-                target_areas.emplace_back(leaf,target_area);
-                target_area_sum+=target_area;
+            std::vector<FlowTarget> downhill_targets;
+            double target_weight_sum=0.0;
+            for (const ActiveCoverPart& part:parts) {
+                if (part.cell==cell) continue;
+                if (!(fs.get(part.cell,ids_.elevation)<source_elevation))
+                    continue;
+                downhill_targets.push_back({
+                    part.cell,
+                    part.weight
+                });
+                target_weight_sum+=part.weight;
             }
-            if (!(target_area_sum>0.0)) continue;
+            if (!(target_weight_sum>0.0)) continue;
 
             FlowRoute route;
             route.slope=std::max(
@@ -380,11 +330,11 @@ public:
                 (source_elevation-downhill_elevation)/
                 std::max(1.0,downhill_distance_m)
             );
-            route.targets.reserve(target_areas.size());
-            for (const auto& [target,target_area]:target_areas)
+            route.targets.reserve(downhill_targets.size());
+            for (const FlowTarget& target:downhill_targets)
                 route.targets.push_back({
-                    target,
-                    target_area/target_area_sum
+                    target.cell,
+                    target.weight/target_weight_sum
                 });
             routes.emplace(cell,std::move(route));
         }
