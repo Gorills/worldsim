@@ -14,7 +14,7 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 12);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 13);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -23,6 +23,8 @@ This file distinguishes what was actually executed from architectural intent.
 - non-negative/finiteness ecology invariants;
 - regolith-aware soil-water storage: thin substrate produces less root-zone storage and more runoff than deep regolith under the same forcing;
 - living-soil coupling: fertility limits NPP, vegetation turnover creates litter, and litter-rich soil feeds back toward higher reduced fertility;
+- adaptive-cover adjacency: coarse/fine neighbor regions resolve to deterministic active leaves with area-normalized weights that close to one;
+- flora v1: PFT carbon sums to aggregate vegetation, sterile worlds remain sterile without propagules, neighbor recruitment colonizes suitable empty habitat, and woody canopy suppresses grass under otherwise matched conditions;
 - C ABI field discovery and value copying;
 - module-extension contract and generic snapshot support;
 - post-load spatial-store/active-cover validation through normal snapshot round trips;

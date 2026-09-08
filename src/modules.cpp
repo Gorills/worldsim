@@ -3,6 +3,7 @@
 #include "worldsim/terrain.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <numeric>
@@ -96,60 +97,16 @@ void write_geology_state(
     fs.set(cell,ids.regolith_thickness,state.regolith_thickness_m);
 }
 
-// Resolve the composite adaptive cover instead of sampling one arbitrary
-// descendant at a coarse/fine interface. Conservative AMR schemes compare
-// area-weighted fine/coarse contributions at such interfaces; the geology
-// transport below uses the same restriction principle for its cell fluxes.
-std::vector<CellId> active_cells_covering_region(
-    const WorldState& world,
-    CellId region
-) {
-    if (world.active_cells().contains(region)) return {region};
-
-    CellId ancestor=region;
-    while (ancestor.level()>0) {
-        ancestor=ancestor.parent();
-        if (world.active_cells().contains(ancestor)) return {ancestor};
-    }
-
-    std::vector<CellId> out;
-    std::vector<CellId> pending{region};
-    while (!pending.empty()) {
-        const CellId cell=pending.back();
-        pending.pop_back();
-        if (world.active_cells().contains(cell)) {
-            out.push_back(cell);
-            continue;
-        }
-        if (cell.level()>=CellId::kMaxLevel)
-            throw std::runtime_error("adaptive cover has a spatial hole");
-        const auto children=cell.children();
-        pending.insert(pending.end(),children.begin(),children.end());
-    }
-    if (out.empty()) throw std::runtime_error("adaptive cover has a spatial hole");
-    return out;
-}
-
 double region_mean_elevation(
     const WorldState& world,
     const FieldStore& fs,
     FieldId elevation,
     CellId region
 ) {
-    const auto leaves=active_cells_covering_region(world,region);
-    double weighted_sum=0.0;
-    double area_sum=0.0;
-    for (CellId leaf:leaves) {
-        // If a coarser active ancestor represents this region, its intensive
-        // elevation is the best state available at the current simulation LOD.
-        const double area=leaf.level()<region.level()
-            ? world.topology().area_m2(region)
-            : world.topology().area_m2(leaf);
-        weighted_sum+=fs.get(leaf,elevation)*area;
-        area_sum+=area;
-    }
-    if (!(area_sum>0.0)) throw std::runtime_error("zero-area geology region");
-    return weighted_sum/area_sum;
+    double mean=0.0;
+    for (const ActiveCoverPart& part:world.resolve_active_cover(region))
+        mean+=fs.get(part.cell,elevation)*part.weight;
+    return mean;
 }
 
 double land_fraction_from_elevation(double elevation_m) {
@@ -194,23 +151,17 @@ void update_geography_surface(
     for (CellId cell:world.active_cells()) {
         double neighbor_sum=0.0;
         std::size_t neighbor_count=0;
-        for (CellId same_level_neighbor:world.topology().neighbors4(cell)) {
-            const auto leaves=active_cells_covering_region(
-                world,
-                same_level_neighbor
-            );
+        for (const auto& side:world.active_neighbors4(cell)) {
             double weighted_sum=0.0;
-            double area_sum=0.0;
-            for (CellId leaf:leaves) {
-                if (leaf==cell) continue;
-                const double area=leaf.level()<same_level_neighbor.level()
-                    ? world.topology().area_m2(same_level_neighbor)
-                    : world.topology().area_m2(leaf);
-                weighted_sum+=local_elevation.at(leaf)*area;
-                area_sum+=area;
+            double weight_sum=0.0;
+            for (const ActiveCoverPart& part:side) {
+                if (part.cell==cell) continue;
+                weighted_sum+=
+                    local_elevation.at(part.cell)*part.weight;
+                weight_sum+=part.weight;
             }
-            if (area_sum<=0.0) continue;
-            neighbor_sum+=weighted_sum/area_sum;
+            if (!(weight_sum>0.0)) continue;
+            neighbor_sum+=weighted_sum/weight_sum;
             ++neighbor_count;
         }
         const double local=local_elevation.at(cell);
@@ -357,22 +308,22 @@ public:
             }
             if (!downhill_region) continue;
 
-            const auto leaves=active_cells_covering_region(
-                ctx.world,
+            const auto parts=ctx.world.resolve_active_cover(
                 *downhill_region
             );
-            std::vector<std::pair<CellId,double>> target_areas;
-            double target_area_sum=0.0;
-            for (CellId leaf:leaves) {
-                if (leaf==cell) continue;
-                if (!(fs.get(leaf,ids_.elevation)<source_elevation)) continue;
-                const double target_area=leaf.level()<downhill_region->level()
-                    ? ctx.world.topology().area_m2(*downhill_region)
-                    : ctx.world.topology().area_m2(leaf);
-                target_areas.emplace_back(leaf,target_area);
-                target_area_sum+=target_area;
+            std::vector<FlowTarget> downhill_targets;
+            double target_weight_sum=0.0;
+            for (const ActiveCoverPart& part:parts) {
+                if (part.cell==cell) continue;
+                if (!(fs.get(part.cell,ids_.elevation)<source_elevation))
+                    continue;
+                downhill_targets.push_back({
+                    part.cell,
+                    part.weight
+                });
+                target_weight_sum+=part.weight;
             }
-            if (!(target_area_sum>0.0)) continue;
+            if (!(target_weight_sum>0.0)) continue;
 
             FlowRoute route;
             route.slope=std::max(
@@ -380,11 +331,11 @@ public:
                 (source_elevation-downhill_elevation)/
                 std::max(1.0,downhill_distance_m)
             );
-            route.targets.reserve(target_areas.size());
-            for (const auto& [target,target_area]:target_areas)
+            route.targets.reserve(downhill_targets.size());
+            for (const FlowTarget& target:downhill_targets)
                 route.targets.push_back({
-                    target,
-                    target_area/target_area_sum
+                    target.cell,
+                    target.weight/target_weight_sum
                 });
             routes.emplace(cell,std::move(route));
         }
@@ -794,6 +745,11 @@ public:
           growth_(require_field(r,"magic.growth_factor")),
           fertility_(require_field(r,"ecology.soil_fertility")),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
+          pft_{
+              require_field(r,"ecology.grass_carbon_kg"),
+              require_field(r,"ecology.shrub_carbon_kg"),
+              require_field(r,"ecology.tree_carbon_kg")
+          },
           carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
           npp_(require_field(r,"ecology.npp_kg_day")) {}
 
@@ -812,10 +768,15 @@ public:
                     "field:magic.growth_factor",
                     "field:ecology.soil_fertility",
                     "field:ecology.litter_carbon_kg",
-                    "field:ecology.vegetation_carbon_kg"
+                    "field:ecology.grass_carbon_kg",
+                    "field:ecology.shrub_carbon_kg",
+                    "field:ecology.tree_carbon_kg"
                 },
                 {
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.grass_carbon_kg",
+                    "field:ecology.shrub_carbon_kg",
+                    "field:ecology.tree_carbon_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.npp_kg_day"
                 }};
@@ -823,156 +784,407 @@ public:
 
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
+
+        // Snapshot PFT state before recruitment. Seed pressure must be based on
+        // the start of the vegetation step so iteration order cannot propagate
+        // a plant through multiple cells in one day.
+        std::map<CellId,std::array<double,3>> before;
+        for (CellId cell:ctx.world.active_cells()) {
+            before[cell]={
+                fs.get(cell,pft_[0]),
+                fs.get(cell,pft_[1]),
+                fs.get(cell,pft_[2])
+            };
+        }
+
+        constexpr std::array<double,3> temp_opt{
+            286.0,294.0,292.0
+        };
+        constexpr std::array<double,3> temp_width{
+            24.0,20.0,16.0
+        };
+        constexpr std::array<double,3> productivity_kg_m2_day{
+            1.10e-3,7.0e-4,5.5e-4
+        };
+        constexpr std::array<double,3> respiration_per_day{
+            5.5e-4,3.5e-4,2.2e-4
+        };
+        constexpr std::array<double,3> turnover_per_day{
+            1.20e-3,5.0e-4,1.8e-4
+        };
+        constexpr std::array<double,3> maximum_density_kg_m2{
+            1.8,3.5,9.0
+        };
+        constexpr std::array<double,3> neighbor_establishment{
+            0.50,0.28,0.16
+        };
+        constexpr double propagule_density_scale_kg_m2=0.05;
+
         for (CellId cell:ctx.world.active_cells()) {
             const double area=ctx.world.topology().area_m2(cell);
             const double land=fs.get(cell,land_);
             const double effective_area=area*land;
-            double carbon=fs.get(cell,carbon_);
             if (effective_area<=1.0) {
+                for (FieldId field:pft_) fs.set(cell,field,0.0);
                 fs.set(cell,carbon_,0.0);
                 fs.set(cell,npp_,0.0);
-                fs.set(cell,litter_,0.0);
                 continue;
             }
 
+            std::array<double,3> local_density{};
+            for (std::size_t i=0;i<pft_.size();++i)
+                local_density[i]=
+                    before.at(cell)[i]/effective_area;
+
+            std::array<double,3> neighbor_density{};
+            for (const auto& side:ctx.world.active_neighbors4(cell)) {
+                std::array<double,3> side_density{};
+                for (const ActiveCoverPart& part:side) {
+                    const double neighbor_area=
+                        ctx.world.topology().area_m2(part.cell)*
+                        fs.get(part.cell,land_);
+                    if (!(neighbor_area>1.0)) continue;
+                    for (std::size_t i=0;i<pft_.size();++i)
+                        side_density[i]+=
+                            before.at(part.cell)[i]/
+                            neighbor_area*
+                            part.weight;
+                }
+                for (std::size_t i=0;i<pft_.size();++i)
+                    neighbor_density[i]+=0.25*side_density[i];
+            }
+
             const double temp=fs.get(cell,temp_);
-            const double tf=std::exp(
-                -std::pow((temp-293.0)/18.0,2.0)
-            );
             const double capacity=
                 soil_water_capacity_depth_m(
                     fs.get(cell,regolith_)
                 )*effective_area;
-            const double wf=std::clamp(
+            const double moisture=std::clamp(
                 fs.get(cell,water_)/
                     std::max(1.0,0.60*capacity),
                 0.0,
                 1.0
             );
-            const double sf=std::clamp(
+            const double solar_factor=std::clamp(
                 fs.get(cell,solar_)/340.0,
                 0.05,
                 1.2
             );
-            const double fertility_factor=
-                0.10+0.90*std::clamp(
-                    fs.get(cell,fertility_),
+            const double fertility=std::clamp(
+                fs.get(cell,fertility_),
+                0.0,
+                1.0
+            );
+            const double magic_growth=fs.get(cell,growth_);
+
+            const std::array<double,3> moisture_factor{
+                0.25+0.75*moisture,
+                std::clamp(
+                    0.25+0.75*std::exp(
+                        -std::pow((moisture-0.55)/0.50,2.0)
+                    ),
+                    0.0,
+                    1.0
+                ),
+                std::pow(moisture,1.35)
+            };
+            const std::array<double,3> fertility_factor{
+                0.35+0.65*fertility,
+                0.25+0.75*fertility,
+                0.10+0.90*fertility
+            };
+
+            const double total_density=
+                local_density[0]+
+                local_density[1]+
+                local_density[2];
+            const double shared_space=std::clamp(
+                1.0-total_density/9.0,
+                0.0,
+                1.0
+            );
+            const std::array<double,3> light_factor{
+                std::exp(
+                    -0.35*local_density[1]-
+                    0.75*local_density[2]
+                ),
+                std::exp(-0.35*local_density[2]),
+                1.0
+            };
+
+            double total_after=0.0;
+            double total_npp_rate=0.0;
+            double litter_addition=0.0;
+
+            for (std::size_t i=0;i<pft_.size();++i) {
+                const double temperature_factor=std::exp(
+                    -std::pow(
+                        (temp-temp_opt[i])/temp_width[i],
+                        2.0
+                    )
+                );
+                const double local_propagules=
+                    1.0-std::exp(
+                        -local_density[i]/
+                        propagule_density_scale_kg_m2
+                    );
+                const double neighbor_propagules=
+                    1.0-std::exp(
+                        -neighbor_density[i]/
+                        propagule_density_scale_kg_m2
+                    );
+                const double establishment=std::clamp(
+                    local_propagules+
+                    neighbor_establishment[i]*neighbor_propagules,
+                    0.0,
+                    1.0
+                );
+                const double own_space=std::clamp(
+                    1.0-
+                    local_density[i]/
+                    maximum_density_kg_m2[i],
                     0.0,
                     1.0
                 );
 
-            const double potential=
-                effective_area*0.00075*
-                tf*wf*sf*fertility_factor*
-                fs.get(cell,growth_);
-            const double carrying_capacity=effective_area*9.0;
-            const double density_factor=std::clamp(
-                1.0-carbon/std::max(1.0,carrying_capacity),
-                0.0,
-                1.0
-            );
-            const double gross=potential*density_factor;
-            const double respiration=
-                carbon*0.00035*
-                std::pow(2.0,(temp-283.0)/10.0);
-            const double npp_rate=gross-respiration;
+                const double gross_rate=
+                    effective_area*
+                    productivity_kg_m2_day[i]*
+                    temperature_factor*
+                    moisture_factor[i]*
+                    fertility_factor[i]*
+                    solar_factor*
+                    magic_growth*
+                    establishment*
+                    shared_space*
+                    own_space*
+                    light_factor[i];
 
-            constexpr double turnover_per_day=6.0e-4;
-            const double turnover=carbon*(
-                1.0-std::exp(-turnover_per_day*ctx.dt_days)
-            );
-            carbon=std::clamp(
-                carbon+npp_rate*ctx.dt_days-turnover,
-                0.0,
-                carrying_capacity
-            );
+                const double temperature_respiration=std::clamp(
+                    std::pow(2.0,(temp-283.0)/10.0),
+                    0.2,
+                    4.0
+                );
+                const double respiration_rate=
+                    before.at(cell)[i]*
+                    respiration_per_day[i]*
+                    temperature_respiration;
+                const double npp_rate=
+                    gross_rate-respiration_rate;
 
-            fs.add(cell,litter_,turnover);
-            fs.set(cell,carbon_,carbon);
-            fs.set(cell,npp_,npp_rate);
+                const double turnover=
+                    before.at(cell)[i]*
+                    (
+                        1.0-
+                        std::exp(
+                            -turnover_per_day[i]*ctx.dt_days
+                        )
+                    );
+                const double unconstrained=
+                    before.at(cell)[i]+
+                    npp_rate*ctx.dt_days-
+                    turnover;
+                const double maximum_carbon=
+                    effective_area*maximum_density_kg_m2[i];
+                const double updated=std::clamp(
+                    unconstrained,
+                    0.0,
+                    maximum_carbon
+                );
+                const double crowding_loss=std::max(
+                    0.0,
+                    unconstrained-updated
+                );
+
+                fs.set(cell,pft_[i],updated);
+                total_after+=updated;
+                total_npp_rate+=npp_rate;
+                litter_addition+=turnover+crowding_loss;
+            }
+
+            fs.add(cell,litter_,litter_addition);
+            fs.set(cell,carbon_,total_after);
+            fs.set(cell,npp_,total_npp_rate);
         }
     }
 
 private:
     FieldId temp_,solar_,land_,regolith_,water_,growth_;
-    FieldId fertility_,litter_,carbon_,npp_;
+    FieldId fertility_,litter_;
+    std::array<FieldId,3> pft_;
+    FieldId carbon_,npp_;
 };
 
 class FaunaSystem final : public ISimSystem {
 public:
     explicit FaunaSystem(const FieldRegistry& r)
-        : carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+        : pft_{
+              require_field(r,"ecology.grass_carbon_kg"),
+              require_field(r,"ecology.shrub_carbon_kg"),
+              require_field(r,"ecology.tree_carbon_kg")
+          },
+          carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
           litter_(require_field(r,"ecology.litter_carbon_kg")) {}
+
     std::string_view id() const override { return "ecology.fauna"; }
     Tick cadence_ticks() const override { return 24; }
-    std::vector<std::string> after() const override { return {"ecology.vegetation"}; }
+    std::vector<std::string> after() const override {
+        return {"ecology.vegetation"};
+    }
     SystemAccess access() const override {
         return {{
+                    "field:ecology.grass_carbon_kg",
+                    "field:ecology.shrub_carbon_kg",
+                    "field:ecology.tree_carbon_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
                     "store:ecology.cohorts"
                 },
                 {
+                    "field:ecology.grass_carbon_kg",
+                    "field:ecology.shrub_carbon_kg",
+                    "field:ecology.tree_carbon_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
                     "store:ecology.cohorts"
                 }};
     }
+
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
         auto& cs=ctx.world.stores().get<CohortStore>();
+        constexpr std::array<double,3> forage_preference{
+            1.0,0.55,0.12
+        };
+
         for (CellId cell:ctx.world.active_cells()) {
             auto cohorts=cs.in_cell(cell);
-            std::vector<Cohort*> herbivores, carnivores;
+            std::vector<Cohort*> herbivores,carnivores;
             for (auto& ref:cohorts) {
-                Cohort& c=ref.get();
-                if (c.functional_group==1) herbivores.push_back(&c);
-                else if (c.functional_group==2) carnivores.push_back(&c);
+                Cohort& cohort=ref.get();
+                if (cohort.functional_group==1)
+                    herbivores.push_back(&cohort);
+                else if (cohort.functional_group==2)
+                    carnivores.push_back(&cohort);
             }
-            double vegetation=fs.get(cell,carbon_);
+
+            std::array<double,3> vegetation{
+                fs.get(cell,pft_[0]),
+                fs.get(cell,pft_[1]),
+                fs.get(cell,pft_[2])
+            };
+            double weighted_forage=0.0;
+            for (std::size_t i=0;i<pft_.size();++i)
+                weighted_forage+=
+                    vegetation[i]*forage_preference[i];
+
             double total_demand=0.0;
-            for (const Cohort* h:herbivores) total_demand+=h->count*h->body_mass_kg*0.018*ctx.dt_days;
+            for (const Cohort* herbivore:herbivores)
+                total_demand+=
+                    herbivore->count*
+                    herbivore->body_mass_kg*
+                    0.018*
+                    ctx.dt_days;
+
             const double consumed=std::min(
                 total_demand,
-                vegetation*0.025
+                weighted_forage*0.025
             );
-            vegetation-=consumed;
-            // A reduced fraction of grazed plant carbon returns immediately
-            // as fecal/unassimilated detritus instead of disappearing from the
-            // terrestrial organic-matter loop.
-            fs.add(cell,litter_,0.35*consumed);
-            const double food_ratio=total_demand>0.0 ? std::clamp(consumed/total_demand,0.0,1.0) : 1.0;
-            for (Cohort* h:herbivores) {
-                const double rate=0.0045*food_ratio-0.006*(1.0-food_ratio);
-                h->count=std::max(0.0,h->count*std::exp(rate*ctx.dt_days));
+            if (weighted_forage>0.0 && consumed>0.0) {
+                for (std::size_t i=0;i<pft_.size();++i) {
+                    const double share=
+                        vegetation[i]*
+                        forage_preference[i]/
+                        weighted_forage;
+                    vegetation[i]=std::max(
+                        0.0,
+                        vegetation[i]-consumed*share
+                    );
+                }
             }
+
+            // A reduced fraction of grazed plant carbon returns immediately
+            // as fecal/unassimilated detritus.
+            fs.add(cell,litter_,0.35*consumed);
+            const double food_ratio=total_demand>0.0
+                ? std::clamp(consumed/total_demand,0.0,1.0)
+                : 1.0;
+            for (Cohort* herbivore:herbivores) {
+                const double rate=
+                    0.0045*food_ratio-
+                    0.006*(1.0-food_ratio);
+                herbivore->count=std::max(
+                    0.0,
+                    herbivore->count*
+                    std::exp(rate*ctx.dt_days)
+                );
+            }
+
             double prey_biomass=0.0;
-            for (const Cohort* h:herbivores) prey_biomass+=h->count*h->body_mass_kg;
+            for (const Cohort* herbivore:herbivores)
+                prey_biomass+=
+                    herbivore->count*
+                    herbivore->body_mass_kg;
             double pred_demand=0.0;
-            for (const Cohort* c:carnivores) pred_demand+=c->count*c->body_mass_kg*0.025*ctx.dt_days;
+            for (const Cohort* carnivore:carnivores)
+                pred_demand+=
+                    carnivore->count*
+                    carnivore->body_mass_kg*
+                    0.025*
+                    ctx.dt_days;
             const double killed=std::min(
                 pred_demand,
                 prey_biomass*0.003
             );
             if (prey_biomass>0.0 && killed>0.0) {
-                // Cohort body mass is wet mass rather than an explicit carbon
-                // pool. Return a conservative-order estimate of carcass carbon
-                // to litter without claiming a closed whole-animal C budget.
                 fs.add(cell,litter_,0.12*killed);
-                const double survival=std::clamp(1.0-killed/prey_biomass,0.0,1.0);
-                for (Cohort* h:herbivores) h->count*=survival;
+                const double survival=std::clamp(
+                    1.0-killed/prey_biomass,
+                    0.0,
+                    1.0
+                );
+                for (Cohort* herbivore:herbivores)
+                    herbivore->count*=survival;
             }
-            const double pred_food=pred_demand>0.0 ? std::clamp(killed/pred_demand,0.0,1.0) : 1.0;
-            for (Cohort* c:carnivores) {
-                const double before=c->count;
-                const double rate=0.0035*pred_food-0.007*(1.0-pred_food);
-                c->count=std::max(0.0,c->count*std::exp(rate*ctx.dt_days));
-                if (before>=1.0 && c->count<1.0) ctx.world.emit({ctx.world.tick(),"cohort.near_extinction",cell,c->id,c->count});
+
+            const double pred_food=pred_demand>0.0
+                ? std::clamp(killed/pred_demand,0.0,1.0)
+                : 1.0;
+            for (Cohort* carnivore:carnivores) {
+                const double before=carnivore->count;
+                const double rate=
+                    0.0035*pred_food-
+                    0.007*(1.0-pred_food);
+                carnivore->count=std::max(
+                    0.0,
+                    carnivore->count*
+                    std::exp(rate*ctx.dt_days)
+                );
+                if (
+                    before>=1.0 &&
+                    carnivore->count<1.0
+                ) {
+                    ctx.world.emit({
+                        ctx.world.tick(),
+                        "cohort.near_extinction",
+                        cell,
+                        carnivore->id,
+                        carnivore->count
+                    });
+                }
             }
-            fs.set(cell,carbon_,vegetation);
+
+            double total_vegetation=0.0;
+            for (std::size_t i=0;i<pft_.size();++i) {
+                fs.set(cell,pft_[i],vegetation[i]);
+                total_vegetation+=vegetation[i];
+            }
+            fs.set(cell,carbon_,total_vegetation);
         }
     }
+
 private:
+    std::array<FieldId,3> pft_;
     FieldId carbon_,litter_;
 };
 
@@ -1051,6 +1263,9 @@ void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"hydrology.runoff_m3_day","m3/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_fertility","1",FieldSemantics::Intensive,0.25,0.0,1.0});
     r.register_field({"ecology.litter_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.grass_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.shrub_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.tree_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.vegetation_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.npp_kg_day","kgC/day",FieldSemantics::Extensive,0.0,-1.0e30,1.0e30});
 }
@@ -1070,6 +1285,11 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
     const auto water=require_field(r,"hydrology.soil_water_m3");
     const auto fertility=require_field(r,"ecology.soil_fertility");
     const auto litter=require_field(r,"ecology.litter_carbon_kg");
+    const std::array<FieldId,3> pft{
+        require_field(r,"ecology.grass_carbon_kg"),
+        require_field(r,"ecology.shrub_carbon_kg"),
+        require_field(r,"ecology.tree_carbon_kg")
+    };
     const auto carbon=require_field(r,"ecology.vegetation_carbon_kg");
 
     for (CellId c:world.active_cells()) {
@@ -1098,10 +1318,32 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
             effective*4.0*suitability*
             (0.25+0.75*soil_fertility);
 
+        const std::array<double,3> pft_score{
+            std::exp(
+                -std::pow((fs.get(c,temp)-286.0)/24.0,2.0)
+            )*(0.80-0.20*soil_fertility),
+            std::exp(
+                -std::pow((fs.get(c,temp)-294.0)/20.0,2.0)
+            )*(0.45+0.25*soil_fertility),
+            std::exp(
+                -std::pow((fs.get(c,temp)-292.0)/16.0,2.0)
+            )*(0.10+0.90*soil_fertility)
+        };
+        const double pft_score_sum=
+            pft_score[0]+pft_score[1]+pft_score[2];
+
         fs.set(c,water,initial_water);
         fs.set(c,fertility,soil_fertility);
-        fs.set(c,carbon,initial_carbon);
-        fs.set(c,litter,0.08*initial_carbon);
+        double pft_total=0.0;
+        for (std::size_t i=0;i<pft.size();++i) {
+            const double pool=pft_score_sum>0.0
+                ? initial_carbon*pft_score[i]/pft_score_sum
+                : 0.0;
+            fs.set(c,pft[i],pool);
+            pft_total+=pool;
+        }
+        fs.set(c,carbon,pft_total);
+        fs.set(c,litter,0.08*pft_total);
 
         if (lf>0.2 && suitability>0.12 && soil_fertility>0.08) {
             const double km2=effective/1.0e6;
