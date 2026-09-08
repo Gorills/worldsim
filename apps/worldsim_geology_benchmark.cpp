@@ -88,6 +88,9 @@ struct HypsometryMetrics {
 struct CouplingMetrics {
     double uplift_active_fraction{};
     double divergence_active_fraction{};
+    double trench_active_fraction{};
+    double volcanic_arc_active_fraction{};
+    double collision_active_fraction{};
     double uplift_macro_excess_m{};
     double oceanic_divergence_macro_excess_m{};
     double continental_divergence_macro_excess_m{};
@@ -117,6 +120,9 @@ struct ProbeSample {
     double crust_affinity{};
     double uplift{};
     double divergence{};
+    double trench{};
+    double volcanic_arc{};
+    double collision{};
 };
 
 struct RunningMoments {
@@ -339,6 +345,8 @@ struct GroupMean {
         const Vec3d direction=fibonacci_direction(i,count);
         const TectonicSample tectonic=tectonics.sample_direction(direction);
         const GeologyState state=geology.initial_state(direction,probe_area_m2);
+        const worldsim::BoundaryFeatureSample features=
+            geology.boundary_features(state,direction);
         const double elevation=geology.surface_elevation_m(
             state,
             direction,
@@ -352,7 +360,10 @@ struct GroupMean {
             land_fraction,
             tectonic.continental_affinity,
             tectonic.uplift_forcing,
-            tectonic.divergence_forcing
+            tectonic.divergence_forcing,
+            features.trench_forcing,
+            features.volcanic_arc_forcing,
+            features.collision_forcing
         });
     }
     return out;
@@ -641,15 +652,26 @@ struct GroupMean {
 [[nodiscard]] CouplingMetrics coupling_metrics(const std::vector<ProbeSample>& probes) {
     std::size_t uplift_active=0;
     std::size_t divergence_active=0;
+    std::size_t trench_active=0;
+    std::size_t volcanic_arc_active=0;
+    std::size_t collision_active=0;
     for (const ProbeSample& sample:probes) {
         if (sample.uplift>=0.05) ++uplift_active;
         if (sample.divergence>=0.05) ++divergence_active;
+        if (sample.trench>=0.02) ++trench_active;
+        if (sample.volcanic_arc>=0.02) ++volcanic_arc_active;
+        if (sample.collision>=0.02) ++collision_active;
     }
 
     CouplingMetrics result;
     const double n=static_cast<double>(probes.size());
     result.uplift_active_fraction=static_cast<double>(uplift_active)/n;
     result.divergence_active_fraction=static_cast<double>(divergence_active)/n;
+    result.trench_active_fraction=static_cast<double>(trench_active)/n;
+    result.volcanic_arc_active_fraction=
+        static_cast<double>(volcanic_arc_active)/n;
+    result.collision_active_fraction=
+        static_cast<double>(collision_active)/n;
     result.uplift_macro_excess_m=matched_uplift_excess(probes);
     result.oceanic_divergence_macro_excess_m=divergence_excess(probes,0.0,0.30);
     result.continental_divergence_macro_excess_m=divergence_excess(probes,0.70,1.01);
@@ -705,6 +727,14 @@ template<class Fn>
     );
     const double mode_separation=mean_metric(seeds,[](const SeedMetrics& s){ return s.hypsometry.mode_separation_m; });
     const double uplift_excess=mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.uplift_macro_excess_m; });
+    const auto trench_range=minmax_metric(
+        seeds,
+        [](const SeedMetrics& s){ return s.coupling.trench_active_fraction; }
+    );
+    const auto arc_range=minmax_metric(
+        seeds,
+        [](const SeedMetrics& s){ return s.coupling.volcanic_arc_active_fraction; }
+    );
 
     // These are deliberately broad diagnostic warnings, not claims that Earth is
     // the only valid target. PB2002 reports a power-law plate-area spectrum over
@@ -739,6 +769,10 @@ template<class Fn>
         out.emplace_back("WARN hypsometry_not_strongly_bimodal: ocean/land histogram modes are separated by <2500 m");
     if (uplift_excess<=0.0)
         out.emplace_back("WARN convergence_relief_coupling_missing: uplift-active samples are not elevated relative to crust-matched inactive samples");
+    if (trench_range.first<=0.0)
+        out.emplace_back("WARN subduction_trench_missing: at least one seed has no resolved trench-active probes");
+    if (arc_range.first<=0.0)
+        out.emplace_back("WARN volcanic_arc_missing: at least one seed has no resolved overriding-arc probes");
     if (out.empty()) out.emplace_back("INFO no_broad_plausibility_warnings");
     return out;
 }
@@ -787,6 +821,9 @@ void write_seed_json(std::ostream& out, const SeedMetrics& s, bool trailing_comm
     out << "      \"coupling\": {\n";
     out << "        \"uplift_active_fraction\": " << s.coupling.uplift_active_fraction << ",\n";
     out << "        \"divergence_active_fraction\": " << s.coupling.divergence_active_fraction << ",\n";
+    out << "        \"trench_active_fraction\": " << s.coupling.trench_active_fraction << ",\n";
+    out << "        \"volcanic_arc_active_fraction\": " << s.coupling.volcanic_arc_active_fraction << ",\n";
+    out << "        \"collision_active_fraction\": " << s.coupling.collision_active_fraction << ",\n";
     out << "        \"uplift_macro_excess_m\": " << s.coupling.uplift_macro_excess_m << ",\n";
     out << "        \"oceanic_divergence_macro_excess_m\": " << s.coupling.oceanic_divergence_macro_excess_m << ",\n";
     out << "        \"continental_divergence_macro_excess_m\": " << s.coupling.continental_divergence_macro_excess_m << "\n";
@@ -848,6 +885,9 @@ void write_json(const std::filesystem::path& path,
     out << "    \"high_affinity_component_count_mean\": " << mean_metric(seeds,[](const SeedMetrics& s){ return static_cast<double>(s.crust.high_affinity_component_count); }) << ",\n";
     out << "    \"high_affinity_component_count_min\": " << components_range.first << ",\n";
     out << "    \"high_affinity_component_count_max\": " << components_range.second << ",\n";
+    out << "    \"trench_active_fraction_mean\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.trench_active_fraction; }) << ",\n";
+    out << "    \"volcanic_arc_active_fraction_mean\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.volcanic_arc_active_fraction; }) << ",\n";
+    out << "    \"collision_active_fraction_mean\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.collision_active_fraction; }) << ",\n";
     out << "    \"uplift_macro_excess_mean_m\": " << mean_metric(seeds,[](const SeedMetrics& s){ return s.coupling.uplift_macro_excess_m; }) << "\n";
     out << "  },\n";
     out << "  \"findings\": [\n";
