@@ -45,6 +45,10 @@ if(WORLDSIM_BUILD_CLI)
   add_executable(worldsim_cli apps/worldsim_cli.cpp)
   target_link_libraries(worldsim_cli PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_cli)
+
+  add_executable(worldsim_visual_dump apps/worldsim_visual_dump.cpp)
+  target_link_libraries(worldsim_visual_dump PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_visual_dump)
 endif()
 
 if(WORLDSIM_BUILD_TESTS)
@@ -57,6 +61,16 @@ if(WORLDSIM_BUILD_TESTS)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_sanitizer_smoke)
   add_test(NAME worldsim_sanitizer_smoke COMMAND worldsim_sanitizer_smoke)
+  if(TARGET worldsim_visual_dump)
+    add_test(
+      NAME worldsim_visual_dump_smoke
+      COMMAND worldsim_visual_dump
+        --seed 42
+        --width 64
+        --height 32
+        --output ${CMAKE_BINARY_DIR}/visual-smoke
+    )
+  endif()
 endif()
 
 if(WORLDSIM_BUILD_GODOT)
