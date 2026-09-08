@@ -10,7 +10,7 @@ The benchmark follows established global-geology observables rather than compari
 
 ### Plate-area spectrum and boundary kinematics
 
-Bird's PB2002 present-day plate model contains 52 plates and reports a cumulative plate-number/area power-law regime for plate areas from 0.002 to 1 steradian. It also classifies digitized boundaries by tectonic regime and relative motion.
+Bird's PB2002 present-day plate model contains 52 plates and reports a cumulative plate-number/area power-law regime for plate areas from 0.002 to 1 steradian. It also classifies digitized boundaries by tectonic regime and relative motion. PB2002 treats a step as strike-slip when relative velocity lies within +/-20 degrees of the boundary azimuth; WorldSim's coarse transform diagnostic uses the same angular rule.
 
 Reference:
 
@@ -24,6 +24,8 @@ WorldSim does not attempt to reproduce 52 Earth plates. The benchmark instead re
 - nearest-neighbor center-spacing variation;
 - resolved plate adjacency degree;
 - coarse convergent/divergent/transform boundary-length fractions.
+
+PB2002 Table 3 totals imply coarse present-day length fractions of about 35.2% convergent (CCB + OCB + SUB), 36.3% divergent (CRB + OSR), and 28.3% transform (CTF + OTF). WorldSim emits a reference warning only when an aggregate class differs by more than 15 percentage points; this is deliberately much looser than an Earth-calibration criterion.
 
 The current warning `plate_geometry_too_regular` is deliberately conservative: it fires when the mean largest/smallest area ratio is below 2 or center-spacing CV is below 0.10. Those numbers are **diagnostic floors**, not Earth calibration targets. PB2002's published area spectrum spans orders of magnitude; a nearly equal-area 16-plate partition cannot express that type of hierarchy.
 
@@ -63,7 +65,7 @@ The benchmark therefore records, using equal-area spherical probes:
 - mode separation;
 - correlation between authoritative terrain and tectonic macro relief.
 
-The broad 15..45% land warning and 2.5 km mode-separation warning are sanity ranges only. They are not intended to force every generated rocky planet to reproduce modern Earth.
+The broad 15..45% land warning and 2.5 km mode-separation warning are sanity ranges only. A separate modern-Earth reference warning fires when the coarse land-elevation mode is more than 500 m from sea level; modern-Earth literature places the continental/land hypsometric mode at or near sea level. These warnings are not intended to force every generated rocky planet to reproduce modern Earth.
 
 ### Spatial coupling
 
