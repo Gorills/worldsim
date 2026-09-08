@@ -88,7 +88,7 @@ This is a reduced population redistribution model, not a trajectory-level moveme
 
 ## Executable validation
 
-`worldsim_tests` now checks:
+The core `worldsim_tests` suite continues to check living-soil, adaptive-cover and Flora v1 contracts:
 
 - soil water storage differs between bare/thin regolith and deep regolith under the same forcing;
 - low-fertility and high-fertility copies of the same world produce different vegetation NPP through the production scheduler;
@@ -99,13 +99,18 @@ This is a reduced population redistribution model, not a trajectory-level moveme
 - a globally sterile plant cover remains sterile without propagules;
 - neighboring grass establishes into an empty suitable cell;
 - woody canopy suppresses grass relative to an otherwise identical open cell;
-- indexed cohort transfer preserves total count, keeps source/target spatial lookup coherent, and merges repeated transfers into an existing same-lineage destination cohort;
-- herbivores partially redistribute from low-forage habitat toward a neighboring high-forage cell;
-- carnivores partially redistribute toward neighboring prey biomass;
-- migrants do not take a second spatial step during the same fauna tick;
 - fertility remains finite and in `[0,1]`, while litter, vegetation, water and cohort counts remain finite and non-negative;
 - extensive litter carbon participates in the existing LOD split/sum semantics through the field store;
-- snapshot determinism and continuation include the new ecology state through the field schema.
+- snapshot determinism and continuation include ecology state through the field schema.
+
+The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
+
+- indexed cohort transfer preserves total count, keeps source/target spatial lookup coherent, and merges repeated transfers into an existing same-lineage destination cohort;
+- herbivores partially redistribute from low-forage habitat toward a neighboring high-forage cell;
+- carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
+- migrants do not take a second spatial step during the same fauna tick;
+- coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
+- snapshot epoch 15 is authoritative for Fauna v2, version 14 is rejected, and the current snapshot round-trips exactly.
 
 ## Explicitly unsupported ecology claims
 
