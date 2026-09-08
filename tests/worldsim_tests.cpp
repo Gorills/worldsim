@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <stdexcept>
 
 using namespace worldsim;
@@ -205,7 +206,7 @@ void test_determinism_and_snapshot() {
     check(snap.size()>11,"snapshot header is unexpectedly short");
     for (std::uint8_t legacy_version:{
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
-        std::uint8_t{6},std::uint8_t{7}
+        std::uint8_t{6},std::uint8_t{7},std::uint8_t{8}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
