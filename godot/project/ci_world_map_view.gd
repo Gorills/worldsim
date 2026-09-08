@@ -52,6 +52,10 @@ func _process(_delta: float) -> bool:
         push_error("Plate layer did not render a distinct partition map")
         quit(6)
         return true
+    if !_has_dark_plate_boundary(plates_image):
+        push_error("Plate layer did not render explicit topology boundaries")
+        quit(10)
+        return true
 
     var plates_data := plates_image.get_data()
     forcing_button.emit_signal("pressed")
@@ -59,6 +63,18 @@ func _process(_delta: float) -> bool:
     if forcing_image.get_data() == plates_data or !_has_variation(forcing_image):
         push_error("Tectonic forcing layer did not render a distinct field")
         quit(7)
+        return true
+
+    var neutral: Color = scene.call("_forcing_color", 0.0, 0.0)
+    var convergent: Color = scene.call("_forcing_color", 1.0, 0.0)
+    var divergent: Color = scene.call("_forcing_color", 0.0, 1.0)
+    if (
+        neutral.r < 0.20 or
+        convergent.r <= convergent.b or
+        divergent.b <= divergent.r
+    ):
+        push_error("Tectonic response palette is not neutral/red/blue centered")
+        quit(11)
         return true
 
     var forcing_data := forcing_image.get_data()
@@ -86,6 +102,14 @@ func _process(_delta: float) -> bool:
     ])
     quit(0)
     return true
+
+func _has_dark_plate_boundary(image: Image) -> bool:
+    for y in range(image.get_height()):
+        for x in range(image.get_width()):
+            var color := image.get_pixel(x, y)
+            if color.r < 0.15 and color.g < 0.15 and color.b < 0.15:
+                return true
+    return false
 
 func _has_variation(image: Image) -> bool:
     var first := image.get_pixel(0, 0)
