@@ -66,9 +66,11 @@ Oceanic age-depth behavior follows the broad empirical form documented by Parson
 
 - Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
 
-Erosion is slope/runoff driven using a bounded stream-power-like law. The geology pass first builds a strictly downhill routing graph from the current surface, accumulates contributing land area and runoff in descending-elevation order, and uses that accumulated discharge rather than only local rainfall/runoff to drive incision. Eroded sediment and bedrock are converted to transported mass and deposited along the same downstream routing weights; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass. Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign.
+Erosion is slope/runoff driven using a bounded stream-power-like law. The geology pass first builds a strictly downhill routing graph from the current surface, accumulates contributing land area and runoff in descending-elevation order, and uses that accumulated discharge rather than only local rainfall/runoff to drive incision. Eroded sediment and bedrock are converted to transported mass and deposited along the same downstream routing weights; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass. Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign. Sediment geometry no longer assumes one depth-independent bulk density: WorldSim uses a single generic shaley-sand/silt equilibrium compaction profile, `phi(z)=0.56 exp(-0.39e-3 z)`, and integrates the remaining solid fraction to convert conserved sediment mass to column thickness. The constants are the Sclater-Christie shaley-sand/silt values; the model intentionally collapses lithology to one generic mixture because no sediment-composition state exists yet. This is an equilibrium burial closure only: pore pressure, permeability, cementation and irreversible maximum-burial history are not modeled.
 
 - Whipple, K. X. & Tucker, G. E. (1999), *Dynamics of the stream-power river incision model*. https://doi.org/10.1029/1999JB900120
+- Athy, L. F. (1930), *Density, Porosity, and Compaction of Sedimentary Rocks*. https://doi.org/10.1306/3D93289E-16B1-11D7-8645000102C1865D
+- Sclater, J. G. & Christie, P. A. F. (1980), *Continental stretching: An explanation of the Post-Mid-Cretaceous subsidence of the central North Sea Basin*. https://doi.org/10.1029/JB085iB07p03711
 
 Cross-cell transport does not treat a same-level cube-sphere neighbor as if it were necessarily an active simulation leaf. At a coarse/fine interface WorldSim restricts the active descendants by area to compare neighbor elevation and distributes transported extensive sediment by area. This follows the conservative coarse/fine synchronization principle used by established AMR schemes rather than selecting an arbitrary refined child.
 
@@ -154,7 +156,7 @@ The v1 model now has enough state to make process-level assertions about crustal
 - slab geometry, mantle convection or time-dependent trench migration beyond the reduced pair-stable subduction polarity;
 - a solved elastic/viscoelastic lithosphere with spatially varying effective elastic thickness;
 - rock-type/mineral phase evolution, metamorphism or explicit crust/mantle chemistry;
-- multi-layer sediment stratigraphy, compaction and marine transport;
+- multi-layer sediment stratigraphy, disequilibrium/pressure-dependent compaction, cementation and marine transport;
 - glacial, aeolian, coastal and groundwater geomorphology;
 - supercontinent-cycle plate reconstruction.
 
