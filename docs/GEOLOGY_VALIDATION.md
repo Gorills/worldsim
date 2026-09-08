@@ -1,8 +1,8 @@
 # Geology plausibility benchmark
 
-`worldsim_geology_benchmark` measures the current static tectonic/terrain generator against broad geological observables without changing authoritative generation behavior.
+`worldsim_geology_benchmark` measures the tectonic generator and the initialized stateful geology surface against broad geological observables without mutating simulation history.
 
-It is a **plausibility benchmark**, not a claim that WorldSim implements physical plate evolution. Scientific reference mismatches are reported as warnings in the generated JSON/stdout; they do not fail CTest. Kernel invariants and executable failures remain normal test failures.
+It is a **plausibility benchmark**, not a claim that WorldSim implements full physical plate evolution. WorldSim now carries persistent crust thickness/density, lithosphere age, sediment mass and regolith state, and evolves those fields through a deliberately reduced long-term process model. Scientific reference mismatches are reported as warnings in the generated JSON/stdout; they do not fail CTest. Kernel invariants and executable failures remain normal test failures.
 
 ## Why these observables
 
@@ -41,12 +41,41 @@ High-affinity crust is sampled on a same-level cube-sphere cover and thresholded
 - high/low-affinity transition-edge fraction;
 - macro-relief contrast between high- and low-affinity crust.
 
-These are generator diagnostics. `continental_affinity` is not yet a physical crust-thickness/composition model, so the benchmark does not equate its threshold directly with measured continental crust.
+These remain generator diagnostics. `continental_affinity` is the smooth tectonic control used to initialize persistent crust thickness and density; it is not itself a rock-composition measurement, so the benchmark does not equate its threshold directly with measured continental crust.
 
 For context, modern-Earth literature describes a strong continental/oceanic lithosphere distinction and bimodal hypsometry:
 
 - Cawood et al. (2022), *Secular Evolution of Continents and the Earth System*. https://doi.org/10.1029/2022RG000789
 - Forte et al. (2022), *Earth's Isostatic and Dynamic Topography—A Critical Perspective*. https://doi.org/10.1029/2021GC009740
+
+### Stateful geological evolution
+
+The authoritative simulation surface is no longer regenerated directly from `TerrainGenerator(seed)` after build. Geography stores persistent geological state in the normal adaptive field store:
+
+- `geology.crust_thickness_m` and `geology.crust_density_kg_m3`;
+- evolving `geology.continental_fraction`, so long-lived rifting can complete breakup instead of thinning an immutable continental label forever;
+- `geology.lithosphere_age_ma`;
+- extensive `geology.sediment_mass_kg`, which therefore conserves mass under LOD split/merge;
+- `geology.regolith_thickness_m`;
+- diagnostic `geology.erosion_rate_m_yr`, `geology.drainage_area_m2` and `geology.drainage_discharge_m3_day`;
+- derived `geology.trench_forcing`, `geology.volcanic_arc_forcing`, `geology.collision_forcing` and `geology.rift_forcing` for process inspection.
+
+The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust and progressively reduces the persistent continental fraction; once breakup crosses into an oceanic regime, divergence renews young thin crust instead of continuing unlimited continental thinning. Convergent boundary segments classify crust on both sides of the nearest plate boundary. Mixed ocean-continent segments preferentially subduct the more oceanic side, producing a compact trench there and an inland-offset volcanic arc on the overriding continental side; similar-crust pairs use deterministic pair-stable polarity as a fallback. Broad collision forcing is enabled only when both sides of the segment are continental, preventing an ocean-continent margin from being misclassified from the continental side alone. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
+
+Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
+
+- Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
+
+Erosion is slope/runoff driven using a bounded stream-power-like law. The geology pass first builds a strictly downhill routing graph from the current surface, accumulates contributing land area and runoff in descending-elevation order, and uses that accumulated discharge rather than only local rainfall/runoff to drive incision. Eroded sediment and bedrock are converted to transported mass and deposited along the same downstream routing weights; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass. Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign.
+
+- Whipple, K. X. & Tucker, G. E. (1999), *Dynamics of the stream-power river incision model*. https://doi.org/10.1029/1999JB900120
+
+Cross-cell transport does not treat a same-level cube-sphere neighbor as if it were necessarily an active simulation leaf. At a coarse/fine interface WorldSim restricts the active descendants by area to compare neighbor elevation and distributes transported extensive sediment by area. This follows the conservative coarse/fine synchronization principle used by established AMR schemes rather than selecting an arbitrary refined child.
+
+- Berger, M. J. & Colella, P. (1989), *Local adaptive mesh refinement for shock hydrodynamics*. https://doi.org/10.1016/0021-9991(89)90035-1
+- AMReX documentation, *Using FluxRegisters*: coarse/fine conservation compares area- and time-weighted fluxes and corrects mismatches at refinement interfaces. https://amrex-codes.github.io/amrex/docs_html/AmrCore.html
+
+The model is intentionally a reduced geological closure, not a 3-D mantle or thermo-mechanical lithosphere solver. Elastic-plate flexure remains the physical interpretation of the bounded spatial load response rather than a claim of detailed rheology.
 
 ### Hypsometry
 
@@ -67,7 +96,7 @@ The benchmark therefore records, using equal-area spherical probes:
 - mode separation;
 - correlation between authoritative terrain and tectonic macro relief.
 
-The broad 15..45% land warning and 2.5 km mode-separation warning are sanity ranges only. The benchmark records coarse ocean and land histogram modes for inspection, but it does not gate the absolute land-mode elevation. ETOPO1's published hypsographic summary places the continental grouping several hundred meters above sea level and reports an average land height near 800 m, so a universal +/-500 m land-mode threshold is not supported by that reference. These warnings are not intended to force every generated rocky planet to reproduce modern Earth.
+The broad 15..45% land warning (checked both on the aggregate mean and for per-seed outliers) and 2.5 km mode-separation warning are sanity ranges only. The benchmark records coarse ocean and land histogram modes for inspection, but it does not gate the absolute land-mode elevation. ETOPO1's published hypsographic summary places the continental grouping several hundred meters above sea level and reports an average land height near 800 m, so a universal +/-500 m land-mode threshold is not supported by that reference. These warnings are not intended to force every generated rocky planet to reproduce modern Earth.
 
 ### Spatial coupling
 
@@ -119,15 +148,14 @@ CI publishes this directory as the `worldsim-geology-benchmark` artifact.
 
 ## What this benchmark cannot validate yet
 
-The current analytical model does not contain enough state to validate:
+The v1 model now has enough state to make process-level assertions about crustal thickness/density, continental breakup, lithosphere age, thermal subsidence, asymmetric trench/volcanic-arc geometry, reduced isostasy, erosion and sediment mass transport. It still does **not** validate:
 
-- plate velocities in physical angular-rate units;
-- time evolution of plate geometry;
-- oceanic crust production, age and thermal subsidence;
-- subduction polarity, slab consumption or trench geometry;
-- crustal thickness, density, isostatic balance or compositional evolution;
-- transform-fault localization;
-- sedimentation, erosion or orogenic age;
-- supercontinent cycles.
+- plate velocities in physical angular-rate units or time-evolving plate geometry;
+- slab geometry, mantle convection or time-dependent trench migration beyond the reduced pair-stable subduction polarity;
+- a solved elastic/viscoelastic lithosphere with spatially varying effective elastic thickness;
+- rock-type/mineral phase evolution, metamorphism or explicit crust/mantle chemistry;
+- multi-layer sediment stratigraphy, compaction and marine transport;
+- glacial, aeolian, coastal and groundwater geomorphology;
+- supercontinent-cycle plate reconstruction.
 
-Those require additional model state before a scientific validation claim is meaningful. The benchmark should gain new observables only when the generator gains the corresponding physical contract.
+Those are fidelity extensions rather than missing closure in the current terrain-causality loop. New benchmark gates should be added only when the model gains a corresponding explicit physical contract.

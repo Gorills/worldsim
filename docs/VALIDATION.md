@@ -14,7 +14,7 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-terrain snapshot epochs (versions 2 through 5);
+- rejection of stale authoritative geography/geology snapshot epochs (versions 2 through 6);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -31,7 +31,7 @@ This file distinguishes what was actually executed from architectural intent.
 
 ## Geology plausibility benchmark
 
-`worldsim_geology_benchmark` is a non-authoritative diagnostic executable that measures the static tectonic/terrain generator across multiple seeds. It records plate-area/spacing diversity, resolved boundary kinematic mix, crust connectivity, hypsometry, and tectonic/topographic coupling using sphere-native sampling.
+`worldsim_geology_benchmark` is a non-authoritative diagnostic executable that measures the tectonic generator and initialized stateful geology surface across multiple seeds. It records plate-area/spacing diversity, resolved boundary kinematic mix, crust connectivity, hypsometry, geological boundary features, and tectonic/topographic coupling using sphere-native sampling.
 
 Reference mismatches are emitted as warnings rather than CTest failures because the current generator has not yet been scientifically calibrated. CI runs the 64-seed baseline and publishes `worldsim-geology-benchmark` for review. Methodology, reference sources, warning semantics, and explicitly unsupported scientific claims are documented in `docs/GEOLOGY_VALIDATION.md`.
 

@@ -14,6 +14,7 @@ add_library(worldsim
     src/spatial.cpp
     src/tectonics.cpp
     src/terrain.cpp
+    src/geology.cpp
     src/fields.cpp
     src/state.cpp
     src/simulation.cpp
