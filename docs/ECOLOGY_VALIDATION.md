@@ -161,8 +161,9 @@ carbon contracts:
   time, so a controlled half-day pass removes half the forage of a one-day pass;
 - starvation cannot create population and over-capacity cohorts decline even
   when standing forage is abundant; and
-- the current epoch-23 snapshot includes the fauna-respiration ledger, rejects
-  version 22 after the grazing-timestep semantic change, and round-trips exactly.
+- the current epoch-24 snapshot includes the fauna-respiration ledger, rejects
+  version 23 after the magic forcing timebase semantic change, and round-trips
+  exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
