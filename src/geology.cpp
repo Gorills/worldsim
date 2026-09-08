@@ -40,8 +40,13 @@ GeologyState GeologyModel::initial_state(Vec3d direction, double cell_area_m2) c
         0,
         pair_key
     );
-    const double ocean_age=(4.0+156.0*(0.25+0.75*age_noise))*
-        (1.0-0.94*tectonic.divergence_forcing);
+    // A present-day-like ocean floor cannot be initialized from a uniform
+    // 0..160 Ma age distribution: continuous creation and subduction skew the
+    // surviving area toward younger lithosphere. Preserve the empirical upper
+    // range while biasing deterministic initial ages young.
+    const double ocean_age=(
+        2.0+148.0*std::pow(age_noise,1.6)
+    )*(1.0-0.95*tectonic.divergence_forcing);
     const double continental_age=500.0+2'500.0*age_noise;
     const double age=lerp(
         std::max(0.5,ocean_age),
@@ -158,7 +163,7 @@ double GeologyModel::surface_elevation_m(
     const double continental_weight=smoothstep01((affinity-0.20)/0.60);
 
     const double isostatic_continent=
-        -4'550.0+
+        -4'300.0+
         state.crust_thickness_m*
         (kMantleDensityKgM3-state.crust_density_kg_m3)/
         kMantleDensityKgM3;
@@ -168,8 +173,14 @@ double GeologyModel::surface_elevation_m(
     const double area=std::max(1.0,cell_area_m2);
     const double sediment_thickness=
         state.sediment_mass_kg/(area*kSedimentDensityKgM3);
-    elevation-=0.65*sediment_thickness*
-        kSedimentDensityKgM3/kMantleDensityKgM3;
+    // Sediment adds geometric thickness while its load is partly compensated
+    // isostatically. Accounting for only the load would make deposition lower
+    // the surface, the opposite of basin infill.
+    constexpr double sediment_load_compensation=0.65;
+    elevation+=sediment_thickness*(
+        1.0-sediment_load_compensation*
+        kSedimentDensityKgM3/kMantleDensityKgM3
+    );
 
     // Convergent oceanic margins form trenches while continental overriding
     // crust and continent-continent collisions remain positive. Continental
