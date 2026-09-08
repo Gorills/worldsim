@@ -1182,21 +1182,6 @@ void test_geology_model_process_contracts() {
     check(volcanic_arc.crust_thickness_m>volcanic_arc_before,
           "overriding volcanic arc did not accrete crust");
 
-    const double bare_production=
-        geology.regolith_production_rate_m_per_year(0.0,1.0);
-    const double covered_production=
-        geology.regolith_production_rate_m_per_year(2.0,1.0);
-    check(
-        bare_production>covered_production*5.0,
-        "regolith production did not decline beneath an existing mantle"
-    );
-    near(
-        geology.regolith_production_rate_m_per_year(0.0,0.0),
-        0.0,
-        1.0e-15,
-        "oceanic column produced continental regolith"
-    );
-
     Vec3d weathering_direction{};
     bool found_weathering_interior=false;
     for (const TectonicPlate& plate:tectonics.plates()) {
@@ -1234,6 +1219,21 @@ void test_geology_model_process_contracts() {
         thin_cover.regolith_thickness_m-0.10>
         4.0*(thick_cover.regolith_thickness_m-3.0),
         "weathering advanced thin and thick regolith at nearly the same rate"
+    );
+
+    GeologyState oceanic_cover=continent;
+    oceanic_cover.continental_fraction=0.0;
+    oceanic_cover.regolith_thickness_m=0.5;
+    geology.advance_tectonics(
+        oceanic_cover,
+        weathering_direction,
+        100'000.0
+    );
+    near(
+        oceanic_cover.regolith_thickness_m,
+        0.5,
+        1.0e-15,
+        "zero-continental column produced regolith"
     );
 
     GeologyState one_step=continent;
