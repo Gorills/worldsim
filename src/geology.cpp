@@ -15,6 +15,26 @@ double lerp(double a, double b, double t) {
     return a+(b-a)*t;
 }
 
+constexpr double kMaximumRegolithProductionMPerYear=1.0e-4;
+constexpr double kRegolithProductionDecayDepthM=1.0;
+
+double regolith_production_rate_m_per_year(
+    double regolith_thickness_m,
+    double continental_fraction
+) {
+    const double continental=std::clamp(
+        continental_fraction,
+        0.0,
+        1.0
+    );
+    if (!(continental>0.0)) return 0.0;
+
+    const double depth=std::max(0.0,regolith_thickness_m);
+    return kMaximumRegolithProductionMPerYear*
+        continental*
+        std::exp(-depth/kRegolithProductionDecayDepthM);
+}
+
 } // namespace
 
 GeologyState GeologyModel::initial_state(Vec3d direction, double cell_area_m2) const {
@@ -171,13 +191,30 @@ void GeologyModel::advance_tectonics(
         density_relax
     );
 
-    // Weathering continuously rebuilds a finite mobile regolith mantle.
+    // Bedrock-to-mobile-mantle production is fastest where bedrock is
+    // exposed and decreases exponentially beneath an existing regolith cover.
+    // Integrate dH/dt = W0*C*exp(-H/H*) analytically so long geology steps do
+    // not overproduce regolith relative to many shorter steps.
     state.regolith_thickness_m=std::clamp(
-        state.regolith_thickness_m+
-            0.45*state.continental_fraction*dt_ma,
+        state.regolith_thickness_m,
         0.0,
         30.0
     );
+    const double production_rate=regolith_production_rate_m_per_year(
+        state.regolith_thickness_m,
+        state.continental_fraction
+    );
+    if (production_rate>0.0) {
+        state.regolith_thickness_m=std::clamp(
+            state.regolith_thickness_m+
+                kRegolithProductionDecayDepthM*std::log1p(
+                    production_rate*dt_years/
+                    kRegolithProductionDecayDepthM
+                ),
+            0.0,
+            30.0
+        );
+    }
 }
 
 double GeologyModel::ocean_floor_elevation_m(double age_ma) const {
