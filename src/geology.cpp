@@ -130,21 +130,23 @@ void GeologyModel::advance_tectonics(
         );
     }
 
-    if (tectonic.uplift_forcing>0.0) {
-        const double continental_share=smoothstep01(
-            (state.continental_fraction-0.30)/0.35
+    if (tectonic.uplift_forcing>0.0 || tectonic.convergence>0.0) {
+        const BoundaryFeatureSample features=boundary_features(
+            state,
+            direction
         );
-        const double oceanic_share=1.0-continental_share;
-        // Continental convergence/collision stores shortening as crustal
-        // thickening. Oceanic convergence consumes crust into the mantle
-        // reservoir; transitional margins smoothly share both responses.
-        state.crust_thickness_m+=750.0*
-            tectonic.uplift_forcing*
-            continental_share*
+        // Continent-continent convergence stores shortening on both sides.
+        state.crust_thickness_m+=900.0*
+            features.collision_forcing*
             dt_ma;
-        state.crust_thickness_m-=420.0*
-            tectonic.uplift_forcing*
-            oceanic_share*
+        // Subduction is deliberately asymmetric: only the selected
+        // subducting side consumes crust, while the overriding side receives
+        // modest magmatic crustal addition beneath the volcanic arc.
+        state.crust_thickness_m-=520.0*
+            features.trench_forcing*
+            dt_ma;
+        state.crust_thickness_m+=180.0*
+            features.volcanic_arc_forcing*
             dt_ma;
     }
 
@@ -182,6 +184,78 @@ double GeologyModel::ocean_floor_elevation_m(double age_ma) const {
     return -(6'400.0-3'200.0*std::exp(-age/62.8));
 }
 
+BoundaryFeatureSample GeologyModel::boundary_features(
+    const GeologyState& state,
+    Vec3d direction
+) const {
+    const TectonicSample tectonic=tectonics_.sample_direction(direction);
+    const double continental_fraction=std::clamp(
+        state.continental_fraction,
+        0.0,
+        1.0
+    );
+    const double collision_weight=smoothstep01(
+        (continental_fraction-0.60)/0.30
+    );
+    const double subduction_weight=1.0-collision_weight;
+    const double convergence=std::max(0.0,tectonic.convergence);
+
+    const std::uint32_t lo=std::min(
+        tectonic.plate_id,
+        tectonic.neighbor_plate_id
+    );
+    const std::uint32_t hi=std::max(
+        tectonic.plate_id,
+        tectonic.neighbor_plate_id
+    );
+    const std::uint64_t pair_key=
+        (static_cast<std::uint64_t>(lo)<<32U) |
+        static_cast<std::uint64_t>(hi);
+    const bool lower_plate_subducts=deterministic_unit(
+        seed_,
+        fnv1a64("geology.subduction.polarity"),
+        0,
+        pair_key
+    )<0.5;
+    const std::uint32_t subducting_plate=
+        lower_plate_subducts ? lo : hi;
+    const bool owner_subducts=tectonic.plate_id==subducting_plate;
+
+    constexpr double trench_width_rad=1.2*kPi/180.0;
+    constexpr double arc_offset_rad=3.0*kPi/180.0;
+    constexpr double arc_width_rad=1.3*kPi/180.0;
+    const double trench_profile=std::exp(-std::pow(
+        tectonic.boundary_distance_rad/trench_width_rad,
+        2.0
+    ));
+    const double arc_profile=std::exp(-std::pow(
+        (tectonic.boundary_distance_rad-arc_offset_rad)/arc_width_rad,
+        2.0
+    ));
+
+    const double trench=owner_subducts
+        ? convergence*subduction_weight*trench_profile
+        : 0.0;
+    const double volcanic_arc=!owner_subducts
+        ? convergence*subduction_weight*arc_profile
+        : 0.0;
+
+    return {
+        std::clamp(trench,0.0,1.0),
+        std::clamp(volcanic_arc,0.0,1.0),
+        std::clamp(
+            tectonic.uplift_forcing*collision_weight,
+            0.0,
+            1.0
+        ),
+        std::clamp(
+            tectonic.divergence_forcing*continental_fraction,
+            0.0,
+            1.0
+        )
+    };
+}
+
 double GeologyModel::surface_elevation_m(
     const GeologyState& state,
     Vec3d direction,
@@ -217,18 +291,22 @@ double GeologyModel::surface_elevation_m(
         kSedimentDensityKgM3/kMantleDensityKgM3
     );
 
-    // Convergent oceanic margins form trenches while continental overriding
-    // crust and continent-continent collisions remain positive. Continental
-    // divergence retains the rift depression not captured by thermal age.
-    elevation+=900.0*
+    // Convergent boundaries are asymmetric: the selected subducting side
+    // forms a trench, while the overriding side receives an inland-offset
+    // volcanic arc. High-continental-fraction convergence instead becomes
+    // broad collisional uplift on both sides.
+    const BoundaryFeatureSample features=boundary_features(state,direction);
+    elevation+=650.0*
         tectonic.uplift_forcing*
         continental_fraction;
-    elevation-=1'600.0*
-        tectonic.uplift_forcing*
-        (1.0-continental_fraction);
-    elevation-=800.0*
-        tectonic.divergence_forcing*
-        continental_fraction;
+    elevation+=1'500.0*features.collision_forcing;
+    elevation-=2'500.0*
+        features.trench_forcing*
+        (1.0-0.4*continental_fraction);
+    elevation+=(
+        1'800.0+1'800.0*continental_fraction
+    )*features.volcanic_arc_forcing;
+    elevation-=800.0*features.rift_forcing;
 
     // Preserve bounded sphere-native meso/local roughness while replacing the
     // old tectonic macro height with the stateful geological equilibrium.
