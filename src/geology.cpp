@@ -18,6 +18,23 @@ double lerp(double a, double b, double t) {
 constexpr double kMaximumRegolithProductionMPerYear=1.0e-4;
 constexpr double kRegolithProductionDecayDepthM=1.0;
 
+double regolith_production_rate_m_per_year(
+    double regolith_thickness_m,
+    double continental_fraction
+) {
+    const double continental=std::clamp(
+        continental_fraction,
+        0.0,
+        1.0
+    );
+    if (!(continental>0.0)) return 0.0;
+
+    const double depth=std::max(0.0,regolith_thickness_m);
+    return kMaximumRegolithProductionMPerYear*
+        continental*
+        std::exp(-depth/kRegolithProductionDecayDepthM);
+}
+
 } // namespace
 
 GeologyState GeologyModel::initial_state(Vec3d direction, double cell_area_m2) const {
@@ -492,23 +509,6 @@ double GeologyModel::hillslope_transport_rate_m_per_year(
         0.0,
         1.0e-3
     );
-}
-
-double GeologyModel::regolith_production_rate_m_per_year(
-    double regolith_thickness_m,
-    double continental_fraction
-) const {
-    const double continental=std::clamp(
-        continental_fraction,
-        0.0,
-        1.0
-    );
-    if (!(continental>0.0)) return 0.0;
-
-    const double depth=std::max(0.0,regolith_thickness_m);
-    return kMaximumRegolithProductionMPerYear*
-        continental*
-        std::exp(-depth/kRegolithProductionDecayDepthM);
 }
 
 ErosionBudget GeologyModel::erode(
