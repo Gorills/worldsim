@@ -1,4 +1,5 @@
 #include "worldsim/c_api.h"
+#include "worldsim/geology.hpp"
 #include "worldsim/modules.hpp"
 #include "worldsim/simulation.hpp"
 #include "worldsim/terrain.hpp"
@@ -186,7 +187,7 @@ void test_determinism_and_snapshot() {
     // under the same field schema, so reject them rather than mixing terrain
     // models after a later LOD cover resample.
     check(snap.size()>11,"snapshot header is unexpectedly short");
-    for (std::uint8_t legacy_version:{std::uint8_t{2},std::uint8_t{3},std::uint8_t{4}}) {
+    for (std::uint8_t legacy_version:{std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5}}) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
         bool rejected_legacy_snapshot=false;
@@ -966,32 +967,167 @@ void test_sphere_native_terrain_continuity() {
          "projected terrain land mask diverged from authoritative sphere sampling");
 }
 
-void test_geography_refinement_samples_new_detail() {
+void test_geology_model_process_contracts() {
+    const GeologyModel geology(42);
+    const TectonicModel& tectonics=geology.tectonics();
+
+    Vec3d most_oceanic{1,0,0};
+    Vec3d most_continental{1,0,0};
+    Vec3d collision_direction{1,0,0};
+    Vec3d rift_direction{1,0,0};
+    Vec3d subduction_direction{1,0,0};
+    double min_affinity=2.0;
+    double max_affinity=-1.0;
+    double collision_score=-1.0;
+    double rift_score=-1.0;
+    double subduction_score=-1.0;
+
+    constexpr int sample_count=4096;
+    constexpr double golden_angle_rad=2.3999632297286533222;
+    for (int i=0;i<sample_count;++i) {
+        const double z=1.0-2.0*(static_cast<double>(i)+0.5)/
+            static_cast<double>(sample_count);
+        const double phi=0.271+static_cast<double>(i)*golden_angle_rad;
+        const double radial=std::sqrt(std::max(0.0,1.0-z*z));
+        const Vec3d direction{radial*std::cos(phi),radial*std::sin(phi),z};
+        const TectonicSample sample=tectonics.sample_direction(direction);
+        if (sample.continental_affinity<min_affinity) {
+            min_affinity=sample.continental_affinity;
+            most_oceanic=direction;
+        }
+        if (sample.continental_affinity>max_affinity) {
+            max_affinity=sample.continental_affinity;
+            most_continental=direction;
+        }
+        const double collision=sample.uplift_forcing*sample.continental_affinity;
+        if (collision>collision_score) {
+            collision_score=collision;
+            collision_direction=direction;
+        }
+        const double rift=sample.divergence_forcing*sample.continental_affinity;
+        if (rift>rift_score) {
+            rift_score=rift;
+            rift_direction=direction;
+        }
+        const double subduction=sample.uplift_forcing*(1.0-sample.continental_affinity);
+        if (subduction>subduction_score) {
+            subduction_score=subduction;
+            subduction_direction=direction;
+        }
+    }
+
+    constexpr double area_m2=1.0e10;
+    const GeologyState ocean=geology.initial_state(most_oceanic,area_m2);
+    const GeologyState continent=geology.initial_state(most_continental,area_m2);
+    check(continent.crust_thickness_m>ocean.crust_thickness_m+15'000.0,
+          "continental/oceanic crust thickness contrast collapsed");
+    check(continent.crust_density_kg_m3<ocean.crust_density_kg_m3,
+          "continental crust is not more buoyant than oceanic crust");
+
+    GeologyState young_ocean=ocean;
+    GeologyState old_ocean=ocean;
+    young_ocean.lithosphere_age_ma=1.0;
+    old_ocean.lithosphere_age_ma=120.0;
+    const double young_elevation=geology.surface_elevation_m(
+        young_ocean,most_oceanic,area_m2
+    );
+    const double old_elevation=geology.surface_elevation_m(
+        old_ocean,most_oceanic,area_m2
+    );
+    check(old_elevation<young_elevation-1'000.0,
+          "oceanic thermal subsidence lost age dependence");
+
+    check(collision_score>0.05 && rift_score>0.03 && subduction_score>0.03,
+          "geology process probes did not resolve required boundary regimes");
+
+    GeologyState collision=geology.initial_state(collision_direction,area_m2);
+    const double collision_before=collision.crust_thickness_m;
+    geology.advance_tectonics(collision,collision_direction,5.0e6);
+    check(collision.crust_thickness_m>collision_before,
+          "continental convergence did not thicken crust");
+
+    GeologyState rift=geology.initial_state(rift_direction,area_m2);
+    const double rift_before=rift.crust_thickness_m;
+    geology.advance_tectonics(rift,rift_direction,5.0e6);
+    check(rift.crust_thickness_m<rift_before,
+          "continental divergence did not thin crust");
+
+    GeologyState subduction=geology.initial_state(subduction_direction,area_m2);
+    const double subduction_before=subduction.crust_thickness_m;
+    geology.advance_tectonics(subduction,subduction_direction,5.0e6);
+    check(subduction.crust_thickness_m<subduction_before,
+          "oceanic convergence did not consume crust");
+
+    GeologyState source=continent;
+    GeologyState sink=ocean;
+    source.sediment_mass_kg=2.0e13;
+    sink.sediment_mass_kg=3.0e13;
+    const double solid_before=
+        source.crust_thickness_m*area_m2*source.crust_density_kg_m3+
+        source.sediment_mass_kg+
+        sink.crust_thickness_m*area_m2*sink.crust_density_kg_m3+
+        sink.sediment_mass_kg;
+    const ErosionBudget budget=geology.erode(source,area_m2,2.0);
+    geology.deposit(sink,budget.transported_mass_kg());
+    const double solid_after=
+        source.crust_thickness_m*area_m2*source.crust_density_kg_m3+
+        source.sediment_mass_kg+
+        sink.crust_thickness_m*area_m2*sink.crust_density_kg_m3+
+        sink.sediment_mass_kg;
+    near(solid_after,solid_before,1.0e-13,
+         "erosion/deposition transport did not conserve solid mass");
+    check(geology.erosion_rate_m_per_year(0.10,0.003,2.0)>
+          geology.erosion_rate_m_per_year(0.01,0.003,2.0),
+          "stream-power erosion does not increase with slope");
+    near(geology.erosion_rate_m_per_year(0.0,0.003,2.0),0.0,1.0e-15,
+         "flat terrain erodes under slope-driven erosion law");
+}
+
+void test_geography_refinement_preserves_geology_state() {
     SimulationConfig cfg;
     cfg.base_level=4;
     cfg.max_level=5;
     cfg.tick_seconds=3600.0;
     auto sim=make_terrain_simulation(42,cfg);
-    const TerrainGenerator terrain(42);
     const Vec3d focus=TerrainGenerator::projected_to_direction(0.0,0.0);
     const CellId parent=sim->world().topology().from_direction(focus,cfg.base_level);
     const auto children=parent.children();
+
+    const auto crust=*sim->fields().find("geology.crust_thickness_m");
+    const auto age=*sim->fields().find("geology.lithosphere_age_ma");
+    const auto sediment=*sim->fields().find("geology.sediment_mass_kg");
     const auto elevation=*sim->fields().find("geography.elevation_m");
+    auto& before_fields=sim->world().stores().get<FieldStore>();
+
+    constexpr double sentinel_crust=47'321.0;
+    constexpr double sentinel_age=987.6;
+    constexpr double sentinel_sediment=1.23456789e18;
+    before_fields.set(parent,crust,sentinel_crust);
+    before_fields.set(parent,age,sentinel_age);
+    before_fields.set(parent,sediment,sentinel_sediment);
 
     sim->set_focus(focus);
     sim->step(1);
 
     const auto& fields=sim->world().stores().get<FieldStore>();
-    bool differs_from_parent_copy=false;
-    const double old_parent_value=terrain.sample_direction(sim->world().topology().center_unit(parent)).elevation_m;
+    double sediment_sum=0.0;
+    double min_elevation=std::numeric_limits<double>::infinity();
+    double max_elevation=-std::numeric_limits<double>::infinity();
     for (CellId child:children) {
-        check(sim->world().active_cells().contains(child),"focused geography parent was not refined");
-        const double expected=terrain.sample_direction(sim->world().topology().center_unit(child)).elevation_m;
-        near(fields.get(child,elevation),expected,1e-14,
-             "refined geography did not resample authoritative terrain");
-        if (std::abs(expected-old_parent_value)>1e-6) differs_from_parent_copy=true;
+        check(sim->world().active_cells().contains(child),
+              "focused geography parent was not refined");
+        near(fields.get(child,crust),sentinel_crust,1e-14,
+             "LOD refinement regenerated persistent crust state");
+        near(fields.get(child,age),sentinel_age,1e-14,
+             "LOD refinement regenerated lithosphere age");
+        sediment_sum+=fields.get(child,sediment);
+        min_elevation=std::min(min_elevation,fields.get(child,elevation));
+        max_elevation=std::max(max_elevation,fields.get(child,elevation));
     }
-    check(differs_from_parent_copy,"terrain regression test did not observe subcell detail");
+    near(sediment_sum,sentinel_sediment,1e-12,
+         "LOD refinement did not conserve sediment mass");
+    check(max_elevation-min_elevation>1.0e-6,
+          "derived geography lost subcell spatial detail");
 }
 
 void test_module_extension_contract() {
@@ -1037,7 +1173,8 @@ int main() {
         test_authoritative_terrain_tracks_tectonic_macro_relief();
         test_authoritative_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
-        test_geography_refinement_samples_new_detail();
+        test_geology_model_process_contracts();
+        test_geography_refinement_preserves_geology_state();
         test_c_api();
         test_module_extension_contract();
         std::cout << "worldsim_tests: OK\n";
