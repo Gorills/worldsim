@@ -520,6 +520,182 @@ void test_flora_pft_contracts() {
     );
 }
 
+void test_fauna_migration_contracts() {
+    SimulationConfig cfg;
+    cfg.base_level=2;
+    cfg.max_level=2;
+    cfg.tick_seconds=3600.0;
+    constexpr std::uint64_t seed=5151;
+
+    auto find_land_pair=[](Simulation& sim) {
+        const auto land=*sim.fields().find("geography.land_fraction");
+        const auto& fs=sim.world().stores().get<FieldStore>();
+        for (CellId source:sim.world().active_cells()) {
+            if (fs.get(source,land)<0.80) continue;
+            for (const auto& side:sim.world().active_neighbors4(source)) {
+                if (side.size()!=1) continue;
+                const CellId target=side.front().cell;
+                if (fs.get(target,land)>=0.80)
+                    return std::pair{source,target};
+            }
+        }
+        throw std::runtime_error(
+            "fauna migration fixture found no neighboring land cells"
+        );
+    };
+
+    auto clear_fauna=[](Simulation& sim) {
+        auto& cs=sim.world().stores().get<CohortStore>();
+        for (CellId cell:sim.world().active_cells()) {
+            for (auto& ref:cs.in_cell(cell))
+                ref.get().count=0.0;
+        }
+    };
+
+    auto clear_plants=[](Simulation& sim) {
+        auto& fs=sim.world().stores().get<FieldStore>();
+        const std::array<FieldId,4> fields{
+            *sim.fields().find("ecology.grass_carbon_kg"),
+            *sim.fields().find("ecology.shrub_carbon_kg"),
+            *sim.fields().find("ecology.tree_carbon_kg"),
+            *sim.fields().find("ecology.vegetation_carbon_kg")
+        };
+        for (CellId cell:sim.world().active_cells())
+            for (FieldId field:fields)
+                fs.set(cell,field,0.0);
+    };
+
+    // Herbivores should redistribute toward a neighboring forage source.
+    auto herbivore_world=make_default_simulation(seed,cfg);
+    clear_fauna(*herbivore_world);
+    clear_plants(*herbivore_world);
+    auto& herb_fs=
+        herbivore_world->world().stores().get<FieldStore>();
+    auto& herb_cs=
+        herbivore_world->world().stores().get<CohortStore>();
+    const auto [herb_source,herb_target]=
+        find_land_pair(*herbivore_world);
+    const auto grass=*herbivore_world->fields().find(
+        "ecology.grass_carbon_kg"
+    );
+    const auto vegetation=*herbivore_world->fields().find(
+        "ecology.vegetation_carbon_kg"
+    );
+    const auto land=*herbivore_world->fields().find(
+        "geography.land_fraction"
+    );
+    const double target_effective_area=
+        herbivore_world->world().topology().area_m2(herb_target)*
+        herb_fs.get(herb_target,land);
+    herb_fs.set(
+        herb_target,
+        grass,
+        1.0*target_effective_area
+    );
+    herb_fs.set(
+        herb_target,
+        vegetation,
+        1.0*target_effective_area
+    );
+
+    Cohort& herbivore=herb_cs.add({
+        0,0,herb_source,9101,1,100.0,35.0,2.0
+    });
+    const std::uint64_t herb_lineage=herbivore.lineage_id;
+    herbivore_world->step(24);
+
+    double herb_source_count=0.0;
+    double herb_target_count=0.0;
+    std::size_t herb_occupied_cells=0;
+    for (CellId cell:herbivore_world->world().active_cells()) {
+        double lineage_count=0.0;
+        for (const auto& ref:herb_cs.in_cell(cell)) {
+            const Cohort& cohort=ref.get();
+            if (cohort.lineage_id==herb_lineage)
+                lineage_count+=cohort.count;
+        }
+        if (lineage_count>0.0) {
+            ++herb_occupied_cells;
+            if (cell==herb_source)
+                herb_source_count=lineage_count;
+            if (cell==herb_target)
+                herb_target_count=lineage_count;
+        }
+    }
+    check(
+        herb_source_count>0.0 &&
+        herb_target_count>0.0 &&
+        herb_target_count<herb_source_count,
+        "herbivore did not partially redistribute toward better forage"
+    );
+    check(
+        herb_occupied_cells==2,
+        "new herbivore arrival moved again within the same fauna tick"
+    );
+
+    // Carnivores should select a neighboring cell containing prey.
+    auto carnivore_world=make_default_simulation(seed,cfg);
+    clear_fauna(*carnivore_world);
+    clear_plants(*carnivore_world);
+    auto& carn_fs=
+        carnivore_world->world().stores().get<FieldStore>();
+    auto& carn_cs=
+        carnivore_world->world().stores().get<CohortStore>();
+    const auto [carn_source,carn_target]=
+        find_land_pair(*carnivore_world);
+    const double carn_target_effective_area=
+        carnivore_world->world().topology().area_m2(carn_target)*
+        carn_fs.get(carn_target,land);
+    carn_fs.set(
+        carn_target,
+        grass,
+        1.0*carn_target_effective_area
+    );
+    carn_fs.set(
+        carn_target,
+        vegetation,
+        1.0*carn_target_effective_area
+    );
+
+    carn_cs.add({
+        0,0,carn_target,9201,1,1000.0,35.0,2.0
+    });
+    Cohort& carnivore=carn_cs.add({
+        0,0,carn_source,9202,2,50.0,70.0,4.0
+    });
+    const std::uint64_t carn_lineage=carnivore.lineage_id;
+    carnivore_world->step(24);
+
+    double carn_source_count=0.0;
+    double carn_target_count=0.0;
+    std::size_t carn_occupied_cells=0;
+    for (CellId cell:carnivore_world->world().active_cells()) {
+        double lineage_count=0.0;
+        for (const auto& ref:carn_cs.in_cell(cell)) {
+            const Cohort& cohort=ref.get();
+            if (cohort.lineage_id==carn_lineage)
+                lineage_count+=cohort.count;
+        }
+        if (lineage_count>0.0) {
+            ++carn_occupied_cells;
+            if (cell==carn_source)
+                carn_source_count=lineage_count;
+            if (cell==carn_target)
+                carn_target_count=lineage_count;
+        }
+    }
+    check(
+        carn_source_count>0.0 &&
+        carn_target_count>0.0 &&
+        carn_target_count<carn_source_count,
+        "carnivore did not partially redistribute toward prey"
+    );
+    check(
+        carn_occupied_cells==2,
+        "new carnivore arrival moved again within the same fauna tick"
+    );
+}
+
 void test_living_soil_ecology_contracts() {
     constexpr std::uint64_t seed=4242;
 
@@ -2254,6 +2430,7 @@ int main() {
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
         test_flora_pft_contracts();
+        test_fauna_migration_contracts();
         test_living_soil_ecology_contracts();
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();
