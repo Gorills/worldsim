@@ -24,7 +24,8 @@ This file distinguishes what was actually executed from architectural intent.
 - C ABI field discovery and value copying;
 - module-extension contract and generic snapshot support;
 - post-load spatial-store/active-cover validation through normal snapshot round trips;
-- seed-42 convergent-uplift footprint width/contour complexity regression plus the existing 64-seed tectonic robustness sweep.
+- seed-42 convergent-uplift footprint width/contour complexity regression plus the existing 64-seed tectonic robustness sweep;
+- Godot debug-map response arrays and presentation checks for terrain-driving uplift/divergence colors and explicit plate topology outlines.
 
 `worldsim_sanitizer_smoke` is a bounded scenario intended for ASan/UBSan builds.
 

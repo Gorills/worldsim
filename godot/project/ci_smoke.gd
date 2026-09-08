@@ -88,6 +88,8 @@ func _initialize() -> void:
         tectonics.is_empty() or
         !tectonics.has("plate_id") or
         !tectonics.has("forcing") or
+        !tectonics.has("uplift_forcing") or
+        !tectonics.has("divergence_forcing") or
         !tectonics.has("crust_affinity") or
         !tectonics.has("macro_elevation_m")
     ):
@@ -100,11 +102,15 @@ func _initialize() -> void:
         return
     var plate_ids: PackedInt32Array = tectonics["plate_id"]
     var forcing: PackedFloat32Array = tectonics["forcing"]
+    var uplift_forcing: PackedFloat32Array = tectonics["uplift_forcing"]
+    var divergence_forcing: PackedFloat32Array = tectonics["divergence_forcing"]
     var crust_affinity: PackedFloat32Array = tectonics["crust_affinity"]
     var macro_elevation: PackedFloat32Array = tectonics["macro_elevation_m"]
     if (
         plate_ids.size() != 64 * 32 or
         forcing.size() != 64 * 32 or
+        uplift_forcing.size() != 64 * 32 or
+        divergence_forcing.size() != 64 * 32 or
         crust_affinity.size() != 64 * 32 or
         macro_elevation.size() != 64 * 32
     ):
@@ -114,12 +120,16 @@ func _initialize() -> void:
     var seen_plates := {}
     var has_convergence := false
     var has_divergence := false
+    var has_uplift_response := false
+    var has_divergence_response := false
     var has_crust_transition := false
     var macro_min := float(macro_elevation[0])
     var macro_max := macro_min
     for i in range(plate_ids.size()):
         var plate_id := int(plate_ids[i])
         var force := float(forcing[i])
+        var uplift := float(uplift_forcing[i])
+        var divergence := float(divergence_forcing[i])
         var affinity := float(crust_affinity[i])
         var macro_m := float(macro_elevation[i])
         if (
@@ -127,6 +137,12 @@ func _initialize() -> void:
             plate_id >= 16 or
             force != force or
             absf(force) > 1.0 or
+            uplift != uplift or
+            uplift < 0.0 or
+            uplift > 1.0 or
+            divergence != divergence or
+            divergence < 0.0 or
+            divergence > 1.0 or
             affinity != affinity or
             affinity < 0.0 or
             affinity > 1.0 or
@@ -140,6 +156,8 @@ func _initialize() -> void:
         seen_plates[plate_id] = true
         has_convergence = has_convergence or force > 0.0001
         has_divergence = has_divergence or force < -0.0001
+        has_uplift_response = has_uplift_response or uplift > 0.05
+        has_divergence_response = has_divergence_response or divergence > 0.05
         has_crust_transition = has_crust_transition or (affinity > 0.05 and affinity < 0.95)
         macro_min = minf(macro_min, macro_m)
         macro_max = maxf(macro_max, macro_m)
@@ -147,6 +165,8 @@ func _initialize() -> void:
         seen_plates.size() < 8 or
         !has_convergence or
         !has_divergence or
+        !has_uplift_response or
+        !has_divergence_response or
         !has_crust_transition or
         macro_min >= -3000.0 or
         macro_max <= 1000.0

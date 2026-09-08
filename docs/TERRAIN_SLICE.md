@@ -141,10 +141,14 @@ The ridged modulation follows the established procedural-terrain use of absolute
 
 The resulting `macro_elevation_m` remains the authoritative low-frequency basis consumed by `TerrainGenerator`; the `Macro relief` map layer continues to show that raw basis without meso/local terrain detail. A seed-42 128 x 64 visual-regression sentinel constrains the convergent uplift footprint so it cannot regress to the previous wide smooth ribbon while the 64-seed robustness sweep still requires non-trivial uplift coverage and boundary continuity.
 
-The global map exposes five inspection layers: authoritative `Elevation`, plus `Plates`, `Tectonic forcing`, `Crust`, and raw `Macro relief`. The latter four remain debug presentations; plate colors, crust colors, forcing colors, and macro coloring live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
+The global map exposes five inspection layers: authoritative `Elevation`, plus `Plates`, `Tectonic forcing`, `Crust`, and raw `Macro relief`. The latter four remain debug presentations. The `Tectonic forcing` view now renders the terrain-driving response rather than the legacy nearest-pair diagnostic: `uplift_forcing - divergence_forcing` is mapped with a zero-centered red/neutral/blue diverging palette, with a visible neutral gray for inactive interiors. The legacy signed `forcing` array remains exported by the adapter for compatibility and low-level boundary debugging. The `Plates` view adds a presentation-only one-pixel dark topology outline; no outline is overlaid on continuous field layers, so it cannot be mistaken for a terrain discontinuity.
 
-- https://docs.godotengine.org/en/4.7/classes/class_button.html
-- https://docs.godotengine.org/en/4.7/classes/class_packedint32array.html
+Godot 4.7 documents the existing runtime `Image.create_from_data()` / RGB8 texture path and `Color.lerp()` used by these presentation maps. The signed-response palette follows standard visualization practice for values centered on a meaningful zero:
+
+- https://docs.godotengine.org/en/4.7/classes/class_image.html
+- https://docs.godotengine.org/en/4.7/classes/class_color.html
+- https://matplotlib.org/stable/users/explain/colors/colormapnorms.html
+- https://matplotlib.org/stable/tutorials/colors/colormaps.html
 
 The architectural comparison remains Demiurge's explicit separation between tectonic query state, tectonic debug visualization, and later terrain/erosion consumers. WorldSim uses a much smaller analytical model here rather than copying its baked implementation:
 

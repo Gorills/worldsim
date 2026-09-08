@@ -53,6 +53,8 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 - `set_focus_direction(direction)` / `set_focus_projected(east_m, north_m)` / `clear_focus()`
 - `sample_terrain_height(east_m, north_m)`
 - `sample_terrain_patch(center_east_m, center_north_m, spacing_m, resolution)`
+- `sample_terrain_equirectangular(width, height)`
+- `sample_tectonics_equirectangular(width, height)`
 - `get_tick()`
 - `get_render_packet()`
 - `get_field_descriptors()`
@@ -62,6 +64,8 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 - `get_last_error()`
 
 All public adapter methods catch C++ exceptions before returning to Godot. Errors are reported with `UtilityFunctions::push_error()` and retained in `get_last_error()`.
+
+For global-map diagnostics, `sample_tectonics_equirectangular()` returns aligned `plate_id`, legacy signed `forcing`, terrain-driving `uplift_forcing` and `divergence_forcing`, `crust_affinity`, and `macro_elevation_m` arrays. These arrays are debug adapter data only; they do not become authoritative Godot-owned state.
 
 ## 64-bit cell IDs
 
