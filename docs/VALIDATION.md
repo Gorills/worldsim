@@ -36,6 +36,30 @@ This file distinguishes what was actually executed from architectural intent.
 Reference mismatches are emitted as warnings rather than CTest failures because the current generator has not yet been scientifically calibrated. CI runs the 64-seed baseline and publishes `worldsim-geology-benchmark` for review. Methodology, reference sources, warning semantics, and explicitly unsupported scientific claims are documented in `docs/GEOLOGY_VALIDATION.md`.
 
 
+## Geology plausibility baseline — 2026-09-08
+
+Corrected pull-request CI run `34182628679` evaluated 64 consecutive seeds with 4,096 equal-area probes per seed and a level-5 uniform cube-sphere topology cover. Both Core/GCC and Godot 4.7/Linux jobs completed successfully.
+
+Measured aggregate baseline:
+
+- plate-area coefficient of variation: 0.0577 mean (0.0369..0.0886);
+- largest/smallest plate-area ratio: 1.2385 mean (1.1405..1.3810);
+- plate-center nearest-neighbor spacing CV: 0.0616 mean;
+- coarse boundary-length mix using the PB2002 +/-20 degree strike-slip rule: 39.45% convergent, 39.19% divergent, 21.36% transform;
+- above-sea land fraction: 25.50% mean (17.54%..31.75%);
+- coarse ocean and land elevation modes: -4,375 m and +625 m;
+- high-affinity crust connected components: 7.05 mean (3..14);
+- crust-matched uplift macro-relief excess: +540 m mean.
+
+The benchmark emitted exactly two reference warnings:
+
+1. `plate_geometry_too_regular`: plate areas and seed-center spacing are too uniform to express a PB2002-like hierarchy of plate scales.
+2. `earthlike_land_mode_displaced`: the generated land-elevation mode is more than 500 m above the modern-Earth near-sea-level reference.
+
+The corrected boundary-kinematics mix does **not** trigger the broad PB2002 comparison warning. The earlier exploratory 45-degree transform split was rejected before merge because Bird's published classification uses +/-20 degrees from boundary azimuth.
+
+These results establish a pre-fix baseline only. They do not imply that unmeasured processes such as plate-age evolution, physical Euler rates, subduction, crustal thickness, isostasy or erosion are scientifically validated.
+
 ## Claims deliberately not made
 
 - scientific calibration of the demo climate/ecology equations;
