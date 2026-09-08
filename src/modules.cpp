@@ -70,13 +70,75 @@ void write_geology_state(
     fs.set(cell,ids.regolith_thickness,state.regolith_thickness_m);
 }
 
-CellId active_cell_at_direction(const WorldState& world, Vec3d direction) {
-    for (std::uint8_t level=0;level<=CellId::kMaxLevel;++level) {
-        const CellId candidate=world.topology().from_direction(direction,level);
-        if (world.active_cells().contains(candidate)) return candidate;
-        if (level==CellId::kMaxLevel) break;
+std::vector<CellId> active_cells_covering_region(
+    const WorldState& world,
+    CellId region
+) {
+    if (world.active_cells().contains(region)) return {region};
+
+    CellId ancestor=region;
+    while (ancestor.level()>0) {
+        ancestor=ancestor.parent();
+        if (world.active_cells().contains(ancestor)) return {ancestor};
     }
-    throw std::runtime_error("adaptive cover does not contain direction");
+
+    std::vector<CellId> out;
+    std::vector<CellId> pending{region};
+    while (!pending.empty()) {
+        const CellId cell=pending.back();
+        pending.pop_back();
+        if (world.active_cells().contains(cell)) {
+            out.push_back(cell);
+            continue;
+        }
+        if (cell.level()>=CellId::kMaxLevel)
+            throw std::runtime_error("adaptive cover has a spatial hole");
+        const auto children=cell.children();
+        pending.insert(pending.end(),children.begin(),children.end());
+    }
+    if (out.empty()) throw std::runtime_error("adaptive cover has a spatial hole");
+    return out;
+}
+
+double region_mean_elevation(
+    const WorldState& world,
+    const FieldStore& fs,
+    FieldId elevation,
+    CellId region
+) {
+    const auto leaves=active_cells_covering_region(world,region);
+    double weighted_sum=0.0;
+    double area_sum=0.0;
+    for (CellId leaf:leaves) {
+        // If a coarser active ancestor represents this region, its intensive
+        // elevation is the best state available at the current simulation LOD.
+        const double area=leaf.level()<region.level()
+            ? world.topology().area_m2(region)
+            : world.topology().area_m2(leaf);
+        weighted_sum+=fs.get(leaf,elevation)*area;
+        area_sum+=area;
+    }
+    if (!(area_sum>0.0)) throw std::runtime_error("zero-area geology region");
+    return weighted_sum/area_sum;
+}
+
+void accumulate_region_mass(
+    const WorldState& world,
+    CellId region,
+    double mass_kg,
+    std::map<CellId,double>& deposits
+) {
+    if (!(mass_kg>0.0)) return;
+    const auto leaves=active_cells_covering_region(world,region);
+    if (leaves.size()==1 && leaves.front().level()<region.level()) {
+        deposits[leaves.front()]+=mass_kg;
+        return;
+    }
+    double area_sum=0.0;
+    for (CellId leaf:leaves) area_sum+=world.topology().area_m2(leaf);
+    if (!(area_sum>0.0)) throw std::runtime_error("zero-area sediment target");
+    for (CellId leaf:leaves)
+        deposits[leaf]+=mass_kg*world.topology().area_m2(leaf)/area_sum;
 }
 
 double land_fraction_from_elevation(double elevation_m) {
@@ -113,10 +175,22 @@ void update_geography_surface(
         double neighbor_sum=0.0;
         std::size_t neighbor_count=0;
         for (CellId same_level_neighbor:world.topology().neighbors4(cell)) {
-            const Vec3d direction=world.topology().center_unit(same_level_neighbor);
-            const CellId neighbor=active_cell_at_direction(world,direction);
-            if (neighbor==cell) continue;
-            neighbor_sum+=local_elevation.at(neighbor);
+            const auto leaves=active_cells_covering_region(
+                world,
+                same_level_neighbor
+            );
+            double weighted_sum=0.0;
+            double area_sum=0.0;
+            for (CellId leaf:leaves) {
+                if (leaf==cell) continue;
+                const double area=leaf.level()<same_level_neighbor.level()
+                    ? world.topology().area_m2(same_level_neighbor)
+                    : world.topology().area_m2(leaf);
+                weighted_sum+=local_elevation.at(leaf)*area;
+                area_sum+=area;
+            }
+            if (area_sum<=0.0) continue;
+            neighbor_sum+=weighted_sum/area_sum;
             ++neighbor_count;
         }
         const double local=local_elevation.at(cell);
@@ -216,27 +290,29 @@ public:
             double downhill_elevation=source_elevation;
             double downhill_distance_m=1.0;
 
+            std::optional<CellId> downhill_region;
             for (CellId same_level_neighbor:ctx.world.topology().neighbors4(cell)) {
-                const Vec3d neighbor_direction=
-                    ctx.world.topology().center_unit(same_level_neighbor);
-                const CellId neighbor=active_cell_at_direction(
+                const double candidate=region_mean_elevation(
                     ctx.world,
-                    neighbor_direction
+                    fs,
+                    ids_.elevation,
+                    same_level_neighbor
                 );
-                if (neighbor==cell) continue;
-                const double candidate=fs.get(neighbor,ids_.elevation);
                 if (candidate<downhill_elevation) {
-                    downhill=neighbor;
+                    downhill_region=same_level_neighbor;
                     downhill_elevation=candidate;
                     downhill_distance_m=kEarthRadiusM*std::acos(std::clamp(
-                        dot(source_direction,ctx.world.topology().center_unit(neighbor)),
+                        dot(
+                            source_direction,
+                            ctx.world.topology().center_unit(same_level_neighbor)
+                        ),
                         -1.0,
                         1.0
                     ));
                 }
             }
 
-            if (downhill==cell) {
+            if (!downhill_region) {
                 fs.set(cell,ids_.erosion_rate,0.0);
                 continue;
             }
@@ -266,7 +342,12 @@ public:
                 erosion_depth
             );
             if (budget.transported_mass_kg()>0.0)
-                deposits[downhill]+=budget.transported_mass_kg();
+                accumulate_region_mass(
+                    ctx.world,
+                    *downhill_region,
+                    budget.transported_mass_kg(),
+                    deposits
+                );
             fs.set(cell,ids_.erosion_rate,erosion_rate);
         }
 
