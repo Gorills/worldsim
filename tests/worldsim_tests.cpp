@@ -207,7 +207,7 @@ void test_determinism_and_snapshot() {
     for (std::uint8_t legacy_version:{
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
         std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9},
-        std::uint8_t{10}
+        std::uint8_t{10},std::uint8_t{11}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -1341,6 +1341,82 @@ void test_geology_model_process_contracts() {
         supercritical_hillslope_rate<=2.0e-2,
         "critical-slope transport regularization is not finite and bounded"
     );
+
+    const double shallow_marine_rate=
+        geology.marine_sediment_transport_rate_m_per_year(
+            0.02,
+            100.0,
+            100.0
+        );
+    const double deep_marine_rate=
+        geology.marine_sediment_transport_rate_m_per_year(
+            0.02,
+            3'000.0,
+            100.0
+        );
+    check(
+        shallow_marine_rate>5.0*deep_marine_rate,
+        "marine sediment transport did not weaken into deep water"
+    );
+    check(
+        geology.marine_sediment_transport_rate_m_per_year(
+            0.04,
+            100.0,
+            100.0
+        )>shallow_marine_rate,
+        "marine sediment transport did not increase with downhill slope"
+    );
+    near(
+        geology.marine_sediment_transport_rate_m_per_year(
+            0.02,
+            0.0,
+            100.0
+        ),
+        0.0,
+        1.0e-15,
+        "marine sediment transport remained active above sea level"
+    );
+    near(
+        geology.marine_sediment_transport_rate_m_per_year(
+            0.02,
+            100.0,
+            0.0
+        ),
+        0.0,
+        1.0e-15,
+        "marine sediment transport entrained nonexistent sediment"
+    );
+
+    GeologyState marine_entrainment=ocean;
+    marine_entrainment.regolith_thickness_m=7.0;
+    marine_entrainment.sediment_mass_kg=
+        geology.sediment_mass_for_thickness_kg(1.0,area_m2);
+    const double marine_crust_before=
+        marine_entrainment.crust_thickness_m;
+    const double marine_regolith_before=
+        marine_entrainment.regolith_thickness_m;
+    const double entrained_mass=geology.entrain_sediment(
+        marine_entrainment,
+        area_m2,
+        2.0
+    );
+    check(
+        entrained_mass>0.0 &&
+        marine_entrainment.sediment_mass_kg<=1.0,
+        "marine entrainment did not exhaust a thinner sediment column"
+    );
+    near(
+        marine_entrainment.crust_thickness_m,
+        marine_crust_before,
+        1.0e-15,
+        "marine sediment entrainment eroded bedrock"
+    );
+    near(
+        marine_entrainment.regolith_thickness_m,
+        marine_regolith_before,
+        1.0e-15,
+        "marine sediment entrainment consumed terrestrial regolith state"
+    );
 }
 
 void test_geology_hillslope_transport_without_runoff() {
@@ -1413,6 +1489,79 @@ void test_geology_hillslope_transport_without_runoff() {
     check(
         saw_creep && max_change>1.0,
         "zero-runoff hillslope creep was not wired into geology evolution"
+    );
+}
+
+void test_geology_marine_sediment_transport_without_runoff() {
+    SimulationConfig cfg;
+    cfg.base_level=2;
+    cfg.max_level=2;
+    cfg.tick_seconds=365.2422*86'400.0;
+
+    Simulation sim(42,cfg);
+    sim.add_module(std::make_unique<GeographyModule>());
+    sim.add_module(std::make_unique<ZeroRunoffModule>());
+    sim.build();
+
+    const auto sediment=*sim.fields().find("geology.sediment_mass_kg");
+    const auto regolith=*sim.fields().find("geology.regolith_thickness_m");
+    const auto continental=*sim.fields().find("geology.continental_fraction");
+    const auto runoff=*sim.fields().find("hydrology.runoff_m3_day");
+    auto& fs=sim.world().stores().get<FieldStore>();
+
+    std::map<CellId,double> before;
+    double total_before=0.0;
+    for (CellId cell:sim.world().active_cells()) {
+        // Force a water-only process fixture. With no runoff, no continental
+        // regolith production and no mobile regolith, the pre-marine-routing
+        // model had no mechanism capable of changing sediment mass.
+        fs.set(cell,continental,0.0);
+        fs.set(cell,regolith,0.0);
+        near(
+            fs.get(cell,runoff),
+            0.0,
+            1.0e-15,
+            "marine-routing fixture initialized nonzero runoff"
+        );
+        const double mass=fs.get(cell,sediment);
+        before[cell]=mass;
+        total_before+=mass;
+    }
+
+    // Geology runs every 24 base ticks. With one simulated year per base tick
+    // this executes one 24-year submerged sediment-routing step.
+    sim.step(24);
+
+    double total_after=0.0;
+    double max_change=0.0;
+    bool saw_transport_rate=false;
+    const auto erosion_rate=*sim.fields().find("geology.erosion_rate_m_yr");
+    for (CellId cell:sim.world().active_cells()) {
+        const double mass=fs.get(cell,sediment);
+        total_after+=mass;
+        max_change=std::max(
+            max_change,
+            std::abs(mass-before.at(cell))
+        );
+        if (fs.get(cell,erosion_rate)>0.0)
+            saw_transport_rate=true;
+        near(
+            fs.get(cell,runoff),
+            0.0,
+            1.0e-15,
+            "marine-routing fixture acquired runoff"
+        );
+    }
+
+    near(
+        total_after,
+        total_before,
+        1.0e-12,
+        "marine sediment routing did not conserve sediment mass"
+    );
+    check(
+        saw_transport_rate && max_change>1.0,
+        "submerged sediment did not move without runoff or regolith"
     );
 }
 
@@ -1664,6 +1813,7 @@ int main() {
         test_sphere_native_terrain_continuity();
         test_geology_model_process_contracts();
         test_geology_hillslope_transport_without_runoff();
+        test_geology_marine_sediment_transport_without_runoff();
         test_geology_mixed_margin_uses_both_crust_sides();
         test_geology_drainage_accumulation();
         test_geography_refinement_preserves_geology_state();
