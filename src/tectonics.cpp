@@ -290,34 +290,38 @@ TectonicSample TectonicModel::sample_direction(Vec3d direction) const {
 
     std::array<double,kPlateCount> plate_scores{};
     std::uint32_t owner=0;
-    std::uint32_t neighbor=1;
     for (std::uint32_t i=0;i<kPlateCount;++i)
         plate_scores[i]=dot(p,plates_[i].seed_direction);
 
     double owner_score=plate_scores[owner];
-    double neighbor_score=plate_scores[neighbor];
-    if (neighbor_score>owner_score) {
-        std::swap(owner,neighbor);
-        std::swap(owner_score,neighbor_score);
-    }
-    for (std::uint32_t i=2;i<kPlateCount;++i) {
-        const double score=plate_scores[i];
-        if (score>owner_score) {
-            neighbor=owner;
-            neighbor_score=owner_score;
+    for (std::uint32_t i=1;i<kPlateCount;++i) {
+        if (plate_scores[i]>owner_score) {
             owner=i;
-            owner_score=score;
-        } else if (score>neighbor_score) {
-            neighbor=i;
-            neighbor_score=score;
+            owner_score=plate_scores[i];
         }
     }
 
-    const BoundaryMetrics nearest_boundary=boundary_metrics(
+    // The runner-up ownership score is not necessarily the nearest spherical
+    // Voronoi boundary: pair bisector distance also depends on the angular
+    // separation of the two plate seeds. Compare actual bisector distances.
+    std::uint32_t neighbor=owner==0 ? 1 : 0;
+    BoundaryMetrics nearest_boundary=boundary_metrics(
         p,
         plates_[owner],
         plates_[neighbor]
     );
+    for (std::uint32_t i=0;i<kPlateCount;++i) {
+        if (i==owner || i==neighbor) continue;
+        const BoundaryMetrics candidate=boundary_metrics(
+            p,
+            plates_[owner],
+            plates_[i]
+        );
+        if (candidate.distance_rad<nearest_boundary.distance_rad) {
+            neighbor=i;
+            nearest_boundary=candidate;
+        }
+    }
     const double boundary_influence=
         1.0-smoothstep01(nearest_boundary.distance_rad/kBoundaryInfluenceRad);
     const double boundary_forcing=nearest_boundary.convergence*boundary_influence;

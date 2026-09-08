@@ -332,6 +332,30 @@ void test_tectonic_model_partition_and_determinism() {
         check(at_seed.plate_id==i,"plate seed is not owned by its plate");
     }
 
+    // Regression: the second-highest ownership score is plate 2 here, but
+    // plate 1 has the closer spherical bisector because its seed separation
+    // from the owner is larger. The old runner-up shortcut reported plate 2.
+    const Vec3d nearest_boundary_probe=normalized({
+        -0.025044263980563215,
+        0.1296002405154865,
+        0.99125
+    });
+    const TectonicSample nearest_boundary_sample=a.sample_direction(nearest_boundary_probe);
+    check(nearest_boundary_sample.plate_id==0,
+          "nearest-boundary regression probe changed owning plate");
+    check(nearest_boundary_sample.neighbor_plate_id==1,
+          "tectonic model did not report the geometrically nearest boundary");
+    const Vec3d expected_boundary_normal=normalized(
+        a.plates()[0].seed_direction-a.plates()[1].seed_direction
+    );
+    const double expected_boundary_distance=std::asin(std::abs(std::clamp(
+        dot(nearest_boundary_probe,expected_boundary_normal),
+        -1.0,
+        1.0
+    )));
+    near(nearest_boundary_sample.boundary_distance_rad,expected_boundary_distance,1.0e-15,
+         "tectonic nearest-boundary distance is inconsistent with reported neighbor");
+
     CubeSphereTopology topology;
     bool differs_across_seed=false;
     bool observed_positive_forcing=false;
