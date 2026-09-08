@@ -134,6 +134,98 @@ void test_cube_sphere() {
     near(area,4.0*kPi*kEarthRadiusM*kEarthRadiusM,1e-12,"cube-sphere area does not close");
 }
 
+void test_adaptive_cover_resolution() {
+    WorldState fine_neighbor_world(7);
+    fine_neighbor_world.initialize_cover(1);
+
+    const CellId source=CellId::make(0,1,0,0);
+    const CellId right=
+        fine_neighbor_world.topology().neighbors4(source)[1];
+    check(
+        right==CellId::make(0,1,1,0),
+        "adaptive-cover fixture did not select in-face neighbor"
+    );
+
+    fine_neighbor_world.refine(right);
+    const auto parts=fine_neighbor_world.resolve_active_cover(right);
+    check(
+        parts.size()==4,
+        "refined region did not resolve to all active children"
+    );
+    double weight_sum=0.0;
+    double area_sum=0.0;
+    for (const ActiveCoverPart& part:parts) {
+        check(
+            fine_neighbor_world.active_cells().contains(part.cell),
+            "adaptive-cover resolution returned inactive leaf"
+        );
+        check(
+            part.cell.parent()==right,
+            "adaptive-cover resolution escaped requested region"
+        );
+        check(
+            part.weight>0.0,
+            "adaptive-cover resolution returned non-positive weight"
+        );
+        weight_sum+=part.weight;
+        area_sum+=fine_neighbor_world.topology().area_m2(part.cell);
+    }
+    near(
+        weight_sum,
+        1.0,
+        1.0e-15,
+        "adaptive-cover weights did not close"
+    );
+    for (const ActiveCoverPart& part:parts) {
+        near(
+            part.weight,
+            fine_neighbor_world.topology().area_m2(part.cell)/area_sum,
+            1.0e-14,
+            "adaptive-cover fine-leaf weight is not area proportional"
+        );
+    }
+
+    const auto fine_sides=fine_neighbor_world.active_neighbors4(source);
+    check(
+        fine_sides[1].size()==4,
+        "active neighbor query collapsed refined interface"
+    );
+    for (std::size_t i=0;i<parts.size();++i) {
+        check(
+            fine_sides[1][i].cell==parts[i].cell,
+            "active neighbor query changed deterministic leaf order"
+        );
+        near(
+            fine_sides[1][i].weight,
+            parts[i].weight,
+            1.0e-15,
+            "active neighbor query changed region weights"
+        );
+    }
+
+    WorldState coarse_neighbor_world(8);
+    coarse_neighbor_world.initialize_cover(1);
+    coarse_neighbor_world.refine(source);
+    const CellId fine_source=source.children()[1];
+    check(
+        coarse_neighbor_world.active_cells().contains(fine_source),
+        "coarse-neighbor fixture did not refine source"
+    );
+    const auto coarse_sides=
+        coarse_neighbor_world.active_neighbors4(fine_source);
+    check(
+        coarse_sides[1].size()==1 &&
+        coarse_sides[1][0].cell==right,
+        "fine source did not resolve neighboring region to coarse ancestor"
+    );
+    near(
+        coarse_sides[1][0].weight,
+        1.0,
+        1.0e-15,
+        "coarse ancestor did not represent full neighboring region"
+    );
+}
+
 void test_lod_conservation() {
     FieldRegistry r;
     const auto ext=r.register_field({"test.mass","kg",FieldSemantics::Extensive,0.0,0.0,1e20});
@@ -1939,6 +2031,7 @@ int main() {
         test_scheduler_cadence_alignment();
         test_focus_validation();
         test_cube_sphere();
+        test_adaptive_cover_resolution();
         test_lod_conservation();
         test_lod_hysteresis();
         test_determinism_and_snapshot();
