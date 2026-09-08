@@ -231,6 +231,12 @@ double GeologyModel::sediment_column_thickness_m(
             kSedimentCompactionPerM;
         const double residual=
             thickness-pore_depth-solid_depth;
+        if (
+            std::abs(residual)<=
+            1.0e-12*std::max(1.0,solid_depth)
+        ) {
+            return thickness;
+        }
         if (residual>0.0) hi=thickness;
         else lo=thickness;
 
