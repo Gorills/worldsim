@@ -69,6 +69,7 @@ GeologyState GeologyModel::initial_state(Vec3d direction, double cell_area_m2) c
     return {
         crust_thickness,
         crust_density,
+        affinity,
         age,
         sediment_mass,
         regolith
@@ -82,8 +83,12 @@ void GeologyModel::advance_tectonics(
 ) const {
     if (!(dt_years>0.0)) return;
     const TectonicSample tectonic=tectonics_.sample_direction(direction);
-    const double affinity=std::clamp(tectonic.continental_affinity,0.0,1.0);
     const double dt_ma=dt_years/1.0e6;
+    state.continental_fraction=std::clamp(
+        state.continental_fraction,
+        0.0,
+        1.0
+    );
 
     state.lithosphere_age_ma=std::clamp(
         state.lithosphere_age_ma+dt_ma,
@@ -92,36 +97,55 @@ void GeologyModel::advance_tectonics(
     );
 
     if (tectonic.divergence_forcing>0.0) {
-        if (affinity<0.45) {
-            // Oceanic spreading creates young crust and relaxes its thickness
-            // toward a thin basaltic reference column.
-            const double renewal=1.0-std::exp(
-                -tectonic.divergence_forcing*dt_ma/2.0
-            );
-            state.lithosphere_age_ma*=1.0-renewal;
-            state.crust_thickness_m=lerp(
-                state.crust_thickness_m,
-                7'000.0,
-                renewal
-            );
-        } else {
-            // Continental rifting thins buoyant crust before breakup.
-            state.crust_thickness_m-=650.0*
-                tectonic.divergence_forcing*dt_ma;
-        }
+        // Long-lived continental extension can complete breakup. The evolving
+        // fraction, not the immutable seed affinity, decides when a column
+        // crosses into oceanic spreading.
+        state.continental_fraction=std::clamp(
+            state.continental_fraction-
+                0.05*tectonic.divergence_forcing*dt_ma,
+            0.0,
+            1.0
+        );
+        const double oceanic_share=smoothstep01(
+            (0.55-state.continental_fraction)/0.25
+        );
+        const double continental_share=1.0-oceanic_share;
+        state.crust_thickness_m-=650.0*
+            tectonic.divergence_forcing*
+            continental_share*
+            dt_ma;
+
+        // Once breakup has progressed far enough, spreading renews young thin
+        // basaltic crust instead of thinning continental crust indefinitely.
+        const double renewal=1.0-std::exp(
+            -tectonic.divergence_forcing*
+            oceanic_share*
+            dt_ma/2.0
+        );
+        state.lithosphere_age_ma*=1.0-renewal;
+        state.crust_thickness_m=lerp(
+            state.crust_thickness_m,
+            7'000.0,
+            renewal
+        );
     }
 
     if (tectonic.uplift_forcing>0.0) {
-        if (affinity>=0.45) {
-            // Continental convergence/collision stores shortening as crustal
-            // thickening, which subsequently drives isostatic uplift.
-            state.crust_thickness_m+=750.0*
-                tectonic.uplift_forcing*dt_ma;
-        } else {
-            // Oceanic convergence consumes crust into the mantle reservoir.
-            state.crust_thickness_m-=420.0*
-                tectonic.uplift_forcing*dt_ma;
-        }
+        const double continental_share=smoothstep01(
+            (state.continental_fraction-0.30)/0.35
+        );
+        const double oceanic_share=1.0-continental_share;
+        // Continental convergence/collision stores shortening as crustal
+        // thickening. Oceanic convergence consumes crust into the mantle
+        // reservoir; transitional margins smoothly share both responses.
+        state.crust_thickness_m+=750.0*
+            tectonic.uplift_forcing*
+            continental_share*
+            dt_ma;
+        state.crust_thickness_m-=420.0*
+            tectonic.uplift_forcing*
+            oceanic_share*
+            dt_ma;
     }
 
     state.crust_thickness_m=std::clamp(
@@ -130,7 +154,11 @@ void GeologyModel::advance_tectonics(
         70'000.0
     );
 
-    const double target_density=lerp(2'950.0,2'800.0,affinity);
+    const double target_density=lerp(
+        2'950.0,
+        2'800.0,
+        state.continental_fraction
+    );
     const double density_relax=1.0-std::exp(-0.04*dt_ma);
     state.crust_density_kg_m3=lerp(
         state.crust_density_kg_m3,
@@ -140,7 +168,8 @@ void GeologyModel::advance_tectonics(
 
     // Weathering continuously rebuilds a finite mobile regolith mantle.
     state.regolith_thickness_m=std::clamp(
-        state.regolith_thickness_m+0.45*affinity*dt_ma,
+        state.regolith_thickness_m+
+            0.45*state.continental_fraction*dt_ma,
         0.0,
         30.0
     );
@@ -159,8 +188,14 @@ double GeologyModel::surface_elevation_m(
     double cell_area_m2
 ) const {
     const TectonicSample tectonic=tectonics_.sample_direction(direction);
-    const double affinity=std::clamp(tectonic.continental_affinity,0.0,1.0);
-    const double continental_weight=smoothstep01((affinity-0.20)/0.60);
+    const double continental_fraction=std::clamp(
+        state.continental_fraction,
+        0.0,
+        1.0
+    );
+    const double continental_weight=smoothstep01(
+        (continental_fraction-0.20)/0.60
+    );
 
     const double isostatic_continent=
         -4'300.0+
@@ -185,9 +220,15 @@ double GeologyModel::surface_elevation_m(
     // Convergent oceanic margins form trenches while continental overriding
     // crust and continent-continent collisions remain positive. Continental
     // divergence retains the rift depression not captured by thermal age.
-    elevation+=900.0*tectonic.uplift_forcing*affinity;
-    elevation-=1'600.0*tectonic.uplift_forcing*(1.0-affinity);
-    elevation-=800.0*tectonic.divergence_forcing*affinity;
+    elevation+=900.0*
+        tectonic.uplift_forcing*
+        continental_fraction;
+    elevation-=1'600.0*
+        tectonic.uplift_forcing*
+        (1.0-continental_fraction);
+    elevation-=800.0*
+        tectonic.divergence_forcing*
+        continental_fraction;
 
     // Preserve bounded sphere-native meso/local roughness while replacing the
     // old tectonic macro height with the stateful geological equilibrium.
