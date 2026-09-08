@@ -112,6 +112,11 @@ public:
     void validate_active_cover(const std::set<CellId>& active_cells) const override;
 
     Cohort& add(Cohort cohort);
+    std::uint64_t transfer_count(
+        std::uint64_t cohort_id,
+        CellId target,
+        double count
+    );
     [[nodiscard]] std::vector<std::reference_wrapper<Cohort>> in_cell(CellId cell);
     [[nodiscard]] std::vector<std::reference_wrapper<const Cohort>> in_cell(CellId cell) const;
     [[nodiscard]] const std::map<std::uint64_t,Cohort>& all() const { return cohorts_; }
