@@ -46,6 +46,17 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Run geology plausibility benchmark
+        run: ./out/dev/worldsim_geology_benchmark --seed-count 64 --samples 4096 --cover-level 5 --output out/geology-benchmark
+
+      - name: Upload geology plausibility benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: worldsim-geology-benchmark
+          path: out/geology-benchmark
+          if-no-files-found: error
+          retention-days: 14
+
   godot-linux:
     name: Godot 4.7 / Linux integration
     runs-on: ubuntu-22.04
