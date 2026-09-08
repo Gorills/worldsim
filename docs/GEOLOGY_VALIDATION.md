@@ -62,9 +62,14 @@ Oceanic age-depth behavior follows the broad empirical form documented by Parson
 
 - Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
 
-Erosion is slope/runoff driven using a bounded stream-power-like law. Eroded sediment and bedrock are converted to transported mass and deposited downslope; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass.
+Erosion is slope/runoff driven using a bounded stream-power-like law. Eroded sediment and bedrock are converted to transported mass and deposited downslope; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass. Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign.
 
 - Whipple, K. X. & Tucker, G. E. (1999), *Dynamics of the stream-power river incision model*. https://doi.org/10.1029/1999JB900120
+
+Cross-cell transport does not treat a same-level cube-sphere neighbor as if it were necessarily an active simulation leaf. At a coarse/fine interface WorldSim restricts the active descendants by area to compare neighbor elevation and distributes transported extensive sediment by area. This follows the conservative coarse/fine synchronization principle used by established AMR schemes rather than selecting an arbitrary refined child.
+
+- Berger, M. J. & Colella, P. (1989), *Local adaptive mesh refinement for shock hydrodynamics*. https://doi.org/10.1016/0021-9991(89)90035-1
+- AMReX documentation, *Using FluxRegisters*: coarse/fine conservation compares area- and time-weighted fluxes and corrects mismatches at refinement interfaces. https://amrex-codes.github.io/amrex/docs_html/AmrCore.html
 
 The model is intentionally a reduced geological closure, not a 3-D mantle or thermo-mechanical lithosphere solver. Elastic-plate flexure remains the physical interpretation of the bounded spatial load response rather than a claim of detailed rheology.
 
@@ -87,7 +92,7 @@ The benchmark therefore records, using equal-area spherical probes:
 - mode separation;
 - correlation between authoritative terrain and tectonic macro relief.
 
-The broad 15..45% land warning and 2.5 km mode-separation warning are sanity ranges only. The benchmark records coarse ocean and land histogram modes for inspection, but it does not gate the absolute land-mode elevation. ETOPO1's published hypsographic summary places the continental grouping several hundred meters above sea level and reports an average land height near 800 m, so a universal +/-500 m land-mode threshold is not supported by that reference. These warnings are not intended to force every generated rocky planet to reproduce modern Earth.
+The broad 15..45% land warning (checked both on the aggregate mean and for per-seed outliers) and 2.5 km mode-separation warning are sanity ranges only. The benchmark records coarse ocean and land histogram modes for inspection, but it does not gate the absolute land-mode elevation. ETOPO1's published hypsographic summary places the continental grouping several hundred meters above sea level and reports an average land height near 800 m, so a universal +/-500 m land-mode threshold is not supported by that reference. These warnings are not intended to force every generated rocky planet to reproduce modern Earth.
 
 ### Spatial coupling
 
