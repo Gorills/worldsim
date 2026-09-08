@@ -31,7 +31,7 @@ This follows the same relevant large-planet practice as Demiurge: terrain is a d
 
 Static geography is re-sampled after actual simulation-cover refinement/coarsening through the module lifecycle. This is required because generic intensive-field refinement copies parent values and therefore cannot create higher-frequency terrain detail by itself.
 
-Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain function changes. The tectonic-authority change introduced snapshot version 3; the orogenic-shaping change advances it again to version 4. Version-2 and version-3 snapshots are rejected because they can contain geography sampled from older terrain functions under the same field schema, which would otherwise be mixed with current terrain when a later LOD cover change triggers geography resampling.
+Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain/geology contract changes. Tectonic authority introduced version 3, orogenic shaping version 4, plate-layout diversification version 5, the minimum-separation correction version 6, and stateful geological evolution version 7. Versions 2 through 6 are rejected because they may contain geography or geology produced under an older authoritative contract.
 
 ## Godot large-world strategy
 
@@ -102,7 +102,7 @@ The map deliberately exposes terrain-source defects rather than hiding them. The
 
 The kernel contains a deterministic query-only `TectonicModel` that partitions the unit sphere into 16 seeded spherical Voronoi plates. `TerrainGenerator` consumes its continuous macro response, while plate ids, forcing, crust affinity, and raw macro relief remain separately inspectable through debug layers. A plate stores only a seed direction and a normalized relative angular-velocity vector; continental/oceanic crust is **not** a per-plate boolean.
 
-For any unit direction the model selects the two nearest plate seeds, treats their spherical bisector as the local diagnostic boundary, and derives:
+For any unit direction the model selects the owning Voronoi seed, compares its spherical bisectors against every competing seed, and uses the geometrically nearest boundary for the local diagnostic response. It derives:
 
 - owning and neighboring plate ids;
 - angular distance to that boundary;
