@@ -1146,6 +1146,40 @@ void test_geology_model_process_contracts() {
          "flat terrain erodes under slope-driven erosion law");
 }
 
+void test_geology_drainage_accumulation() {
+    SimulationConfig cfg;
+    cfg.base_level=2;
+    cfg.max_level=2;
+    cfg.tick_seconds=3600.0;
+    auto sim=make_terrain_simulation(42,cfg);
+    sim->step(24);
+
+    const auto drainage_area=*sim->fields().find("geology.drainage_area_m2");
+    const auto discharge=*sim->fields().find(
+        "geology.drainage_discharge_m3_day"
+    );
+    const auto land=*sim->fields().find("geography.land_fraction");
+    const auto& fs=sim->world().stores().get<FieldStore>();
+
+    bool accumulated_upstream=false;
+    for (CellId cell:sim->world().active_cells()) {
+        const double local_land_area=
+            sim->world().topology().area_m2(cell)*fs.get(cell,land);
+        const double catchment=fs.get(cell,drainage_area);
+        const double flow=fs.get(cell,discharge);
+        check(std::isfinite(catchment) && catchment>=0.0,
+              "invalid accumulated drainage area");
+        check(std::isfinite(flow) && flow>=0.0,
+              "invalid accumulated drainage discharge");
+        check(catchment+1.0>=local_land_area,
+              "drainage accumulation lost local contributing area");
+        if (catchment>local_land_area*1.01+1.0)
+            accumulated_upstream=true;
+    }
+    check(accumulated_upstream,
+          "drainage graph did not accumulate any upstream catchment");
+}
+
 void test_geography_refinement_preserves_geology_state() {
     SimulationConfig cfg;
     cfg.base_level=4;
@@ -1242,6 +1276,7 @@ int main() {
         test_authoritative_terrain_scale_and_determinism();
         test_sphere_native_terrain_continuity();
         test_geology_model_process_contracts();
+        test_geology_drainage_accumulation();
         test_geography_refinement_preserves_geology_state();
         test_c_api();
         test_module_extension_contract();
