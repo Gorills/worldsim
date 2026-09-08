@@ -186,6 +186,81 @@ void StateStoreRegistry::coarsen(std::span<const CellId> children, CellId parent
 
 WorldState::WorldState(std::uint64_t seed): seed_(seed) {}
 
+std::vector<ActiveCoverPart> WorldState::resolve_active_cover(
+    CellId region
+) const {
+    if (!region.valid())
+        throw std::invalid_argument("invalid adaptive-cover region");
+    if (active_cells_.empty())
+        throw std::runtime_error("adaptive cover is not initialized");
+    if (active_cells_.contains(region))
+        return {{region,1.0}};
+
+    CellId ancestor=region;
+    while (ancestor.level()>0) {
+        ancestor=ancestor.parent();
+        if (active_cells_.contains(ancestor))
+            return {{ancestor,1.0}};
+    }
+
+    std::vector<CellId> leaves;
+    std::vector<CellId> pending{region};
+    while (!pending.empty()) {
+        const CellId cell=pending.back();
+        pending.pop_back();
+        if (active_cells_.contains(cell)) {
+            leaves.push_back(cell);
+            continue;
+        }
+        if (cell.level()>=CellId::kMaxLevel)
+            throw std::runtime_error("adaptive cover has a spatial hole");
+        const auto children=cell.children();
+        pending.insert(pending.end(),children.begin(),children.end());
+    }
+    if (leaves.empty())
+        throw std::runtime_error("adaptive cover has a spatial hole");
+
+    std::sort(
+        leaves.begin(),
+        leaves.end(),
+        [](CellId a, CellId b) { return a.raw()<b.raw(); }
+    );
+    double area_sum=0.0;
+    for (CellId leaf:leaves)
+        area_sum+=topology_.area_m2(leaf);
+    if (!(area_sum>0.0))
+        throw std::runtime_error("adaptive cover region has zero area");
+
+    std::vector<ActiveCoverPart> out;
+    out.reserve(leaves.size());
+    double weight_sum=0.0;
+    for (std::size_t i=0;i<leaves.size();++i) {
+        const double weight=i+1U==leaves.size()
+            ? std::max(0.0,1.0-weight_sum)
+            : topology_.area_m2(leaves[i])/area_sum;
+        out.push_back({leaves[i],weight});
+        weight_sum+=weight;
+    }
+    if (std::abs(weight_sum-1.0)>1.0e-12)
+        throw std::runtime_error(
+            "adaptive cover region weights do not close"
+        );
+    return out;
+}
+
+std::array<std::vector<ActiveCoverPart>,4>
+WorldState::active_neighbors4(CellId cell) const {
+    if (!active_cells_.contains(cell))
+        throw std::invalid_argument(
+            "active_neighbors4 requires an active source cell"
+        );
+    std::array<std::vector<ActiveCoverPart>,4> out;
+    const auto same_level=topology_.neighbors4(cell);
+    for (std::size_t i=0;i<same_level.size();++i)
+        out[i]=resolve_active_cover(same_level[i]);
+    return out;
+}
+
 void WorldState::initialize_cover(std::uint8_t level) {
     if (!active_cells_.empty()) throw std::runtime_error("world cover already initialized");
     active_cells_=uniform_cover(level);
