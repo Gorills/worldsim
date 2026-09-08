@@ -31,7 +31,7 @@ This follows the same relevant large-planet practice as Demiurge: terrain is a d
 
 Static geography is re-sampled after actual simulation-cover refinement/coarsening through the module lifecycle. This is required because generic intensive-field refinement copies parent values and therefore cannot create higher-frequency terrain detail by itself.
 
-Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain/geology contract changes. Tectonic authority introduced version 3, orogenic shaping version 4, plate-layout diversification version 5, the minimum-separation correction version 6, and stateful geological evolution version 7. Versions 2 through 6 are rejected because they may contain geography or geology produced under an older authoritative contract.
+Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain/geology contract changes. Tectonic authority introduced version 3, orogenic shaping version 4, plate-layout diversification version 5, the minimum-separation correction version 6, stateful geological evolution version 7, and burial-dependent sediment compaction version 8. Versions 2 through 7 are rejected because they may contain geography or geology produced under an older authoritative contract.
 
 ## Godot large-world strategy
 
