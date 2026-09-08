@@ -27,6 +27,10 @@ struct GeologyFieldIds {
     FieldId sediment_mass{};
     FieldId regolith_thickness{};
     FieldId erosion_rate{};
+    FieldId trench_forcing{};
+    FieldId volcanic_arc_forcing{};
+    FieldId collision_forcing{};
+    FieldId rift_forcing{};
     std::optional<FieldId> runoff;
 };
 
@@ -41,6 +45,10 @@ GeologyFieldIds geology_fields(const FieldRegistry& r) {
         require_field(r,"geology.sediment_mass_kg"),
         require_field(r,"geology.regolith_thickness_m"),
         require_field(r,"geology.erosion_rate_m_yr"),
+        require_field(r,"geology.trench_forcing"),
+        require_field(r,"geology.volcanic_arc_forcing"),
+        require_field(r,"geology.collision_forcing"),
+        require_field(r,"geology.rift_forcing"),
         r.find("hydrology.runoff_m3_day")
     };
 }
@@ -164,11 +172,20 @@ void update_geography_surface(
     std::map<CellId,double> local_elevation;
     for (CellId cell:world.active_cells()) {
         const GeologyState state=read_geology_state(fs,cell,ids);
+        const Vec3d direction=world.topology().center_unit(cell);
+        const BoundaryFeatureSample features=geology.boundary_features(
+            state,
+            direction
+        );
+        fs.set(cell,ids.trench_forcing,features.trench_forcing);
+        fs.set(cell,ids.volcanic_arc_forcing,features.volcanic_arc_forcing);
+        fs.set(cell,ids.collision_forcing,features.collision_forcing);
+        fs.set(cell,ids.rift_forcing,features.rift_forcing);
         local_elevation.emplace(
             cell,
             geology.surface_elevation_m(
                 state,
-                world.topology().center_unit(cell),
+                direction,
                 world.topology().area_m2(cell)
             )
         );
@@ -264,7 +281,11 @@ public:
                 "field:geology.lithosphere_age_ma",
                 "field:geology.sediment_mass_kg",
                 "field:geology.regolith_thickness_m",
-                "field:geology.erosion_rate_m_yr"
+                "field:geology.erosion_rate_m_yr",
+                "field:geology.trench_forcing",
+                "field:geology.volcanic_arc_forcing",
+                "field:geology.collision_forcing",
+                "field:geology.rift_forcing"
             }
         };
     }
@@ -592,6 +613,10 @@ void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geology.sediment_mass_kg","kg",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"geology.regolith_thickness_m","m",FieldSemantics::Intensive,0.0,0.0,100.0});
     r.register_field({"geology.erosion_rate_m_yr","m/yr",FieldSemantics::Intensive,0.0,0.0,0.1});
+    r.register_field({"geology.trench_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
+    r.register_field({"geology.volcanic_arc_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
+    r.register_field({"geology.collision_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
+    r.register_field({"geology.rift_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
 }
 
 void GeographyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
