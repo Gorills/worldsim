@@ -400,6 +400,10 @@ public:
                 : 0.001*area*land;
         }
         for (CellId cell:elevation_order) {
+            // Terrestrial drainage terminates at the first submerged receiver.
+            // Marine sediment routing below may continue farther downslope, but
+            // river discharge is not propagated across the ocean floor.
+            if (fs.get(cell,ids_.elevation)<0.0) continue;
             const auto route=routes.find(cell);
             if (route==routes.end()) continue;
             for (const FlowTarget& target:route->second.targets) {
@@ -423,35 +427,67 @@ public:
             }
 
             const double area=ctx.world.topology().area_m2(cell);
-            const double runoff_m_day=
-                discharge[cell]/std::max(1.0,area);
+            const double source_elevation=fs.get(cell,ids_.elevation);
             GeologyState& state=states.at(cell);
-            const double fluvial_erosion_rate=
-                geology.erosion_rate_m_per_year(
-                    route->second.slope,
-                    runoff_m_day,
-                    state.regolith_thickness_m
+
+            double transport_rate=0.0;
+            double transported_mass=0.0;
+            if (source_elevation<0.0) {
+                // Once sediment crosses sea level, stop applying terrestrial
+                // runoff/hillslope incision. Existing marine sediment can
+                // still move downslope through a sediment-only submarine path.
+                const double sediment_depth=
+                    geology.sediment_column_thickness_m(
+                        state.sediment_mass_kg,
+                        area
+                    );
+                transport_rate=
+                    geology.marine_sediment_transport_rate_m_per_year(
+                        route->second.slope,
+                        -source_elevation,
+                        sediment_depth
+                    );
+                const double transport_depth=std::min(
+                    0.05,
+                    transport_rate*dt_years
                 );
-            const double hillslope_transport_rate=
-                geology.hillslope_transport_rate_m_per_year(
-                    route->second.slope,
-                    state.regolith_thickness_m
+                transported_mass=geology.entrain_sediment(
+                    state,
+                    area,
+                    transport_depth
                 );
-            const double erosion_rate=
-                fluvial_erosion_rate+hillslope_transport_rate;
-            const double erosion_depth=std::min(
-                0.05,
-                erosion_rate*dt_years
-            );
-            const ErosionBudget budget=geology.erode(
-                state,
-                area,
-                erosion_depth
-            );
+            } else {
+                const double runoff_m_day=
+                    discharge[cell]/std::max(1.0,area);
+                const double fluvial_erosion_rate=
+                    geology.erosion_rate_m_per_year(
+                        route->second.slope,
+                        runoff_m_day,
+                        state.regolith_thickness_m
+                    );
+                const double hillslope_transport_rate=
+                    geology.hillslope_transport_rate_m_per_year(
+                        route->second.slope,
+                        state.regolith_thickness_m
+                    );
+                transport_rate=
+                    fluvial_erosion_rate+hillslope_transport_rate;
+                const double erosion_depth=std::min(
+                    0.05,
+                    transport_rate*dt_years
+                );
+                const ErosionBudget budget=geology.erode(
+                    state,
+                    area,
+                    erosion_depth
+                );
+                transported_mass=budget.transported_mass_kg();
+            }
+
             for (const FlowTarget& target:route->second.targets)
                 deposits[target.cell]+=
-                    budget.transported_mass_kg()*target.weight;
-            fs.set(cell,ids_.erosion_rate,erosion_rate);
+                    transported_mass*target.weight;
+            fs.set(cell,ids_.erosion_rate,transport_rate);
         }
 
         for (const auto& [cell,mass]:deposits)

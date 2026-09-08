@@ -86,6 +86,18 @@ public:
         double regolith_thickness_m
     ) const;
 
+    [[nodiscard]] double marine_sediment_transport_rate_m_per_year(
+        double downhill_slope,
+        double water_depth_m,
+        double sediment_thickness_m
+    ) const;
+
+    [[nodiscard]] double entrain_sediment(
+        GeologyState& state,
+        double cell_area_m2,
+        double transport_depth_m
+    ) const;
+
     [[nodiscard]] ErosionBudget erode(
         GeologyState& state,
         double cell_area_m2,

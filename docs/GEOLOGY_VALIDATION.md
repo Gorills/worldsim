@@ -73,12 +73,16 @@ Regolith production is now depth-limited rather than a constant addition. Bare o
 - Heimsath, A. M., Dietrich, W. E., Nishiizumi, K. & Finkel, R. C. (1997), *The soil production function and landscape equilibrium*. https://doi.org/10.1038/41056
 - Landlab, *ExponentialWeathererIntegrated*: analytical integration of exponential soil production over a timestep. https://landlab.readthedocs.io/en/latest/generated/api/landlab.components.weathering.exponential_weathering_integrated.html
 
-Both fluvial and hillslope removal feed the same conservative downstream mass path. Eroded sediment and bedrock are converted to transported mass and deposited along the same downstream routing weights; transport updates are accumulated before application so iteration order cannot create or destroy sediment mass. Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign. Sediment geometry no longer assumes one depth-independent bulk density: WorldSim uses a single generic shaley-sand/silt equilibrium compaction profile, `phi(z)=0.56 exp(-0.39e-3 z)`, and integrates the remaining solid fraction to convert conserved sediment mass to column thickness. The constants are the Sclater-Christie shaley-sand/silt values; the model intentionally collapses lithology to one generic mixture because no sediment-composition state exists yet. This is an equilibrium burial closure only: pore pressure, permeability, cementation and irreversible maximum-burial history are not modeled.
+Fluvial and hillslope removal feed the same conservative downstream mass path on land. Terrestrial drainage and discharge stop at the first submerged receiver instead of being propagated across the ocean floor. Once a source cell is below sea level, terrestrial incision is disabled and only its existing sediment column may be re-entrained. That marine path uses the same strictly downhill adaptive-cover route and accumulated-before-application mass updates, so sediment remains conservative while moving from coastal receivers toward lower marine basins. The reduced marine rate is slope-dependent, saturates with available sediment thickness, and weakens exponentially with water depth; this follows the qualitative depth-dependent submarine-diffusion structure used by Landlab's `SimpleSubmarineDiffuser`, but WorldSim's `100 m` shallow-water threshold, `1,500 m` decay scale and `0.01 m/yr` cap are engineering scales for its much coarser cells rather than copied physical diffusivities. No ocean currents, tides, wave climate, turbidity-current dynamics or delta-channel solver is implied.
+
+Deposited sediment increases geometric surface thickness while its load produces partial isostatic subsidence, so basin infill has the correct net sign. Sediment geometry no longer assumes one depth-independent bulk density: WorldSim uses a single generic shaley-sand/silt equilibrium compaction profile, `phi(z)=0.56 exp(-0.39e-3 z)`, and integrates the remaining solid fraction to convert conserved sediment mass to column thickness. The constants are the Sclater-Christie shaley-sand/silt values; the model intentionally collapses lithology to one generic mixture because no sediment-composition state exists yet. This is an equilibrium burial closure only: pore pressure, permeability, cementation and irreversible maximum-burial history are not modeled.
 
 - Whipple, K. X. & Tucker, G. E. (1999), *Dynamics of the stream-power river incision model*. https://doi.org/10.1029/1999JB900120
 - Roering, J. J., Kirchner, J. W. & Dietrich, W. E. (1999), *Evidence for nonlinear, diffusive sediment transport on hillslopes and implications for landscape morphology*. https://doi.org/10.1029/1998WR900090
 - Landlab, *TransportLengthHillslopeDiffuser*: critical-slope transport and comparison with the classical nonlinear diffusion law. https://landlab.readthedocs.io/en/latest/tutorials/hillslope_geomorphology/transport-length_hillslope_diffuser/TLHDiff_tutorial.html
 - Landlab, *DepthDependentDiffuser*: depth- and slope-dependent hillslope sediment flux with conservative link transport. https://landlab.readthedocs.io/en/latest/generated/api/landlab.components.depth_dependent_diffusion.hillslope_depth_dependent_linear_flux.html
+- Landlab, *SimpleSubmarineDiffuser*: marine sediment transport with water-depth-dependent diffusivity. https://landlab.readthedocs.io/en/latest/generated/api/landlab.components.marine_sediment_transport.simple_submarine_diffuser.html
+- Salles, T. (2019), *eSCAPE: Regional to Global Scale Landscape Evolution Model v2.0*: source-to-sink landscape evolution including continental and marine sedimentary basin formation. https://doi.org/10.5194/gmd-12-4165-2019
 - Athy, L. F. (1930), *Density, Porosity, and Compaction of Sedimentary Rocks*. https://doi.org/10.1306/3D93289E-16B1-11D7-8645000102C1865D
 - Sclater, J. G. & Christie, P. A. F. (1980), *Continental stretching: An explanation of the Post-Mid-Cretaceous subsidence of the central North Sea Basin*. https://doi.org/10.1029/JB085iB07p03711
 
@@ -160,13 +164,13 @@ CI publishes this directory as the `worldsim-geology-benchmark` artifact.
 
 ## What this benchmark cannot validate yet
 
-The v1 model now has enough state to make process-level assertions about crustal thickness/density, continental breakup, lithosphere age, thermal subsidence, asymmetric trench/volcanic-arc geometry, reduced isostasy, fluvial incision, hillslope creep and sediment mass transport. It still does **not** validate:
+The v1 model now has enough state to make process-level assertions about crustal thickness/density, continental breakup, lithosphere age, thermal subsidence, asymmetric trench/volcanic-arc geometry, reduced isostasy, fluvial incision, hillslope creep, conservative coast-to-basin marine sediment redistribution and sediment mass transport. It still does **not** validate:
 
 - plate velocities in physical angular-rate units or time-evolving plate geometry;
 - slab geometry, mantle convection or time-dependent trench migration beyond the reduced pair-stable subduction polarity;
 - a solved elastic/viscoelastic lithosphere with spatially varying effective elastic thickness;
 - rock-type/mineral phase evolution, metamorphism or explicit crust/mantle chemistry;
-- multi-layer sediment stratigraphy, disequilibrium/pressure-dependent compaction, cementation and marine transport;
+- multi-layer sediment stratigraphy, disequilibrium/pressure-dependent compaction, cementation, resolved marine currents/waves/tides, delta-channel dynamics or turbidity-current runout;
 - glacial, aeolian, coastal and groundwater geomorphology;
 - supercontinent-cycle plate reconstruction.
 
