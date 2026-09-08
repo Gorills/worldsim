@@ -74,7 +74,7 @@ extensive-ledger LOD conservation and current snapshot round-trip.
 `worldsim_soil_carbon_tests` covers pure-model and integrated soil-carbon
 closure, bounded short/long steps, temperature/moisture response, staged pool
 transfers, dormant submerged stock, LOD conservation, aggregate reconstruction,
-and current epoch-22 snapshot round-trip and deterministic continuation.
+and current epoch-23 snapshot round-trip and deterministic continuation.
 
 The Soil carbon v1 integration run completed all **12/12** CTest targets.
 ASan, UBSan and float-cast-overflow instrumentation passed the dedicated suite,
@@ -217,5 +217,5 @@ with maximum relative residual 2.70362e-14. Reference-grid river geometry is
 independent of camera refinement; this does not establish spatial convergence
 of an adaptive hydraulic solver. Basin hydrology introduced epoch 17; snapshot
 epoch 18 introduced persistent climate state, Wildfire v1 epoch 19, Soil carbon
-v1 epoch 20, snow-albedo coupling epoch 21, and fauna carbon accounting uses
-the current epoch 22.
+v1 epoch 20, snow-albedo coupling epoch 21, fauna carbon accounting epoch 22,
+and the grazing-timestep correction uses the current epoch 23.

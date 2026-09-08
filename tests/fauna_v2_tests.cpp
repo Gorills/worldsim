@@ -1,3 +1,5 @@
+#include "worldsim/hydrology.hpp"
+#include "worldsim/modules.hpp"
 #include "worldsim/simulation.hpp"
 
 #include <algorithm>
@@ -21,6 +23,26 @@ void near(double a, double b, double relative, const char* message) {
     if (std::abs(a-b)>relative*scale)
         throw std::runtime_error(message);
 }
+
+void run_system(Simulation& sim, std::string_view id, double dt_days) {
+    Scheduler scheduler;
+    GeographyModule().register_systems(scheduler,sim.fields());
+    MagicModule().register_systems(scheduler,sim.fields());
+    ClimateModule().register_systems(scheduler,sim.fields());
+    HydrologyModule().register_systems(scheduler,sim.fields());
+    EcologyModule().register_systems(scheduler,sim.fields());
+    scheduler.finalize();
+
+    SystemContext ctx{sim.world(),sim.fields(),dt_days};
+    for (ISimSystem* system:scheduler.order()) {
+        if (system->id()==id) {
+            system->step(ctx);
+            return;
+        }
+    }
+    throw std::runtime_error("test system not found");
+}
+
 
 void clear_fauna(Simulation& sim) {
     auto& cohorts=sim.world().stores().get<CohortStore>();
@@ -403,6 +425,67 @@ void test_migration_resolves_refined_neighbor_region() {
     cohorts.validate_active_cover(sim->world().active_cells());
 }
 
+void test_grazing_rate_scales_with_elapsed_time() {
+    const SimulationConfig config{1,1,3600.0};
+    constexpr std::uint64_t seed=5051;
+
+    const auto run_fixture=[&](double dt_days) {
+        auto simulation=make_default_simulation(seed,config);
+        clear_fauna(*simulation);
+        clear_plants(*simulation);
+
+        auto& fields=simulation->world().stores().get<FieldStore>();
+        const auto land=*simulation->fields().find(
+            "geography.land_fraction"
+        );
+        const auto grass=*simulation->fields().find(
+            "ecology.grass_carbon_kg"
+        );
+
+        CellId source;
+        for (CellId cell:simulation->world().active_cells()) {
+            if (fields.get(cell,land)>0.50) {
+                source=cell;
+                break;
+            }
+        }
+        check(source.valid(),"grazing timestep fixture found no land cell");
+        set_grass_density(*simulation,source,1.0);
+
+        const double forage_before=fields.get(source,grass);
+        constexpr double body_mass_kg=35.0;
+        constexpr double reserve_kg=2.0;
+        const double individual_carbon=
+            (body_mass_kg+reserve_kg)*
+            kFaunaCarbonFractionOfWetMass;
+
+        // Make grazing forage-cap limited at both 0.5 and 1.0 day. The
+        // regression therefore isolates whether the cap itself is a daily
+        // rate or an accidental per-system-invocation fraction.
+        simulation->world().stores().get<CohortStore>().add({
+            0,0,source,9451,1,
+            10.0*forage_before/individual_carbon,
+            body_mass_kg,reserve_kg
+        });
+
+        run_system(*simulation,"ecology.fauna",dt_days);
+        return forage_before-fields.get(source,grass);
+    };
+
+    const double half_day_loss=run_fixture(0.5);
+    const double full_day_loss=run_fixture(1.0);
+    check(
+        half_day_loss>0.0 && full_day_loss>0.0,
+        "grazing timestep fixture did not consume forage"
+    );
+    near(
+        2.0*half_day_loss,
+        full_day_loss,
+        1.0e-12,
+        "herbivore grazing cap did not scale with elapsed time"
+    );
+}
+
 void test_fauna_carbon_budget_and_starvation() {
     const SimulationConfig config{1,1,3600.0};
     auto simulation=make_default_simulation(5050,config);
@@ -492,12 +575,12 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{22},
+        snapshot[8]==std::byte{23},
         "unexpected authoritative snapshot epoch"
     );
 
     auto legacy=snapshot;
-    legacy[8]=std::byte{21};
+    legacy[8]=std::byte{22};
     bool rejected=false;
     try {
         auto restored=make_default_simulation(6060);
@@ -505,7 +588,10 @@ void test_snapshot_epoch_current() {
     } catch (const std::runtime_error&) {
         rejected=true;
     }
-    check(rejected,"snapshot v21 was accepted by the fauna-carbon model");
+    check(
+        rejected,
+        "snapshot v22 was accepted after grazing timestep semantics changed"
+    );
 
     auto restored=make_default_simulation(6060);
     restored->load_snapshot(snapshot);
@@ -522,6 +608,7 @@ int main() {
         test_indexed_transfer_conserves_population();
         test_uniform_habitat_selection();
         test_migration_resolves_refined_neighbor_region();
+        test_grazing_rate_scales_with_elapsed_time();
         test_fauna_carbon_budget_and_starvation();
         test_snapshot_epoch_current();
         std::cout << "fauna_v2_tests: OK\n";

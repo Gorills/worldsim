@@ -4,8 +4,9 @@
 > snow stock affect land shortwave absorption,
 > vegetation exposure and fire danger. Its current contract is documented in
 > `SNOW_ALBEDO.md`; the Climate-v2 execution record below remains historical
-> evidence for epoch 18. Fauna carbon accounting subsequently raises the
-> current combined-world epoch to 22.
+> evidence for epoch 18. Fauna carbon accounting introduced epoch 22; the
+> grazing-timestep correction subsequently raises the current combined-world
+> epoch to 23.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 

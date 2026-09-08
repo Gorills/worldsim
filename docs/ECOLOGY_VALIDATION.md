@@ -146,7 +146,7 @@ The dedicated `worldsim_soil_carbon_tests` suite checks:
 - submerged stock remains dormant instead of being deleted;
 - all component pools and the cumulative ledger survive refine/coarsen; and
 - historical epoch-20 soil-carbon snapshots round-tripped and continued
-  deterministically; the current combined world uses epoch 22.
+  deterministically; the current combined world uses epoch 23.
 
 The dedicated `worldsim_fauna_v2_tests` suite checks the movement and fauna
 carbon contracts:
@@ -157,10 +157,12 @@ carbon contracts:
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
 - the integrated daily ecology carbon budget closes against reported NPP;
+- the forage-limited herbivore grazing ceiling scales with elapsed fauna-step
+  time, so a controlled half-day pass removes half the forage of a one-day pass;
 - starvation cannot create population and over-capacity cohorts decline even
   when standing forage is abundant; and
-- the current epoch-22 snapshot includes the fauna-respiration ledger, rejects
-  version 21, and round-trips exactly.
+- the current epoch-23 snapshot includes the fauna-respiration ledger, rejects
+  version 22 after the grazing-timestep semantic change, and round-trips exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
@@ -172,7 +174,7 @@ The dedicated `worldsim_fire_tests` suite checks:
 - the aggregate vegetation field remains the exact sum of the PFT pools;
 - spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
 - extensive fire ledgers survive coarsening; and
-- snapshot epoch 22 round-trips authoritative fire, soil-carbon, fauna-carbon
+- snapshot epoch 23 round-trips authoritative fire, soil-carbon, fauna-carbon
   and snow-coupled climate state.
 
 ## Explicitly unsupported ecology claims

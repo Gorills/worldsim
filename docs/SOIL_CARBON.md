@@ -1,7 +1,8 @@
 # Soil carbon v1
 
 > Snow-albedo coupling v1 introduced snapshot epoch 21; fauna carbon accounting
-> subsequently raises the current combined-world epoch to 22.
+> introduced epoch 22, and the grazing-timestep correction subsequently raises
+> the current combined-world epoch to 23.
 > The Soil-carbon-v1 execution record below remains historical evidence for
 > epoch 20.
 
