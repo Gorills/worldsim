@@ -1,3 +1,4 @@
+#include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
 #include "worldsim/simulation.hpp"
 
