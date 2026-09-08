@@ -10,6 +10,7 @@ namespace {
 
 constexpr double kGoldenAngleRad=2.3999632297286533222;
 constexpr double kMacroCompetitionScoreGap=0.10;
+constexpr double kPlateLayoutJitterRad=1.0;
 constexpr std::uint32_t kCrustCalibrationSamples=128;
 
 double smoothstep01(double x) {
@@ -250,9 +251,12 @@ TectonicModel::TectonicModel(std::uint64_t seed):
             i,
             base
         );
+        // Keep the Fibonacci scaffold as a guard against pathological random
+        // clustering, but allow enough deterministic displacement for the
+        // Voronoi cells to develop a meaningful plate-area hierarchy.
         const double jitter_angle=(
             deterministic_unit(seed,fnv1a64("tectonics.layout.angle"),0,i)-0.5
-        )*0.24;
+        )*kPlateLayoutJitterRad;
         const Vec3d seed_direction=normalized(
             base*std::cos(jitter_angle)+tangent*std::sin(jitter_angle)
         );

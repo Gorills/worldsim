@@ -65,7 +65,7 @@ The benchmark therefore records, using equal-area spherical probes:
 - mode separation;
 - correlation between authoritative terrain and tectonic macro relief.
 
-The broad 15..45% land warning and 2.5 km mode-separation warning are sanity ranges only. A separate modern-Earth reference warning fires when the coarse land-elevation mode is more than 500 m from sea level; modern-Earth literature places the continental/land hypsometric mode at or near sea level. These warnings are not intended to force every generated rocky planet to reproduce modern Earth.
+The broad 15..45% land warning and 2.5 km mode-separation warning are sanity ranges only. The benchmark records coarse ocean and land histogram modes for inspection, but it does not gate the absolute land-mode elevation. ETOPO1's published hypsographic summary places the continental grouping several hundred meters above sea level and reports an average land height near 800 m, so a universal +/-500 m land-mode threshold is not supported by that reference. These warnings are not intended to force every generated rocky planet to reproduce modern Earth.
 
 ### Spatial coupling
 

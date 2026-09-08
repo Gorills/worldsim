@@ -186,7 +186,7 @@ void test_determinism_and_snapshot() {
     // under the same field schema, so reject them rather than mixing terrain
     // models after a later LOD cover resample.
     check(snap.size()>11,"snapshot header is unexpectedly short");
-    for (std::uint8_t legacy_version:{std::uint8_t{2},std::uint8_t{3}}) {
+    for (std::uint8_t legacy_version:{std::uint8_t{2},std::uint8_t{3},std::uint8_t{4}}) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
         bool rejected_legacy_snapshot=false;
@@ -332,29 +332,76 @@ void test_tectonic_model_partition_and_determinism() {
         check(at_seed.plate_id==i,"plate seed is not owned by its plate");
     }
 
-    // Regression: the second-highest ownership score is plate 2 here, but
-    // plate 1 has the closer spherical bisector because its seed separation
-    // from the owner is larger. The old runner-up shortcut reported plate 2.
-    const Vec3d nearest_boundary_probe=normalized({
-        -0.025044263980563215,
-        0.1296002405154865,
-        0.99125
-    });
-    const TectonicSample nearest_boundary_sample=a.sample_direction(nearest_boundary_probe);
-    check(nearest_boundary_sample.plate_id==0,
-          "nearest-boundary regression probe changed owning plate");
-    check(nearest_boundary_sample.neighbor_plate_id==1,
-          "tectonic model did not report the geometrically nearest boundary");
-    const Vec3d expected_boundary_normal=normalized(
-        a.plates()[0].seed_direction-a.plates()[1].seed_direction
-    );
-    const double expected_boundary_distance=std::asin(std::abs(std::clamp(
-        dot(nearest_boundary_probe,expected_boundary_normal),
-        -1.0,
-        1.0
-    )));
-    near(nearest_boundary_sample.boundary_distance_rad,expected_boundary_distance,1.0e-15,
-         "tectonic nearest-boundary distance is inconsistent with reported neighbor");
+    // Regression for the old runner-up ownership-score shortcut. Find a
+    // deterministic probe where the second-highest seed score is not the
+    // geometrically nearest owner/competitor bisector, then verify that the
+    // model reports the bisector rather than the score runner-up. Searching
+    // keeps this contract independent of the exact seeded plate layout.
+    bool nearest_boundary_case_checked=false;
+    constexpr int nearest_boundary_probe_count=4096;
+    for (int probe=0;probe<nearest_boundary_probe_count && !nearest_boundary_case_checked;++probe) {
+        const double z=1.0-2.0*(static_cast<double>(probe)+0.5)/
+            static_cast<double>(nearest_boundary_probe_count);
+        const double phi=0.419+static_cast<double>(probe)*2.3999632297286533222;
+        const double radial=std::sqrt(std::max(0.0,1.0-z*z));
+        const Vec3d direction{
+            radial*std::cos(phi),
+            radial*std::sin(phi),
+            z
+        };
+
+        std::uint32_t expected_owner=0;
+        for (std::uint32_t i=1;i<TectonicModel::kPlateCount;++i) {
+            if (dot(direction,a.plates()[i].seed_direction)>
+                dot(direction,a.plates()[expected_owner].seed_direction))
+                expected_owner=i;
+        }
+
+        std::uint32_t score_runner_up=expected_owner==0 ? 1 : 0;
+        std::uint32_t expected_neighbor=score_runner_up;
+        double runner_up_score=dot(
+            direction,
+            a.plates()[score_runner_up].seed_direction
+        );
+        const auto bisector_distance=[&](std::uint32_t neighbor) {
+            const Vec3d normal=normalized(
+                a.plates()[expected_owner].seed_direction-
+                a.plates()[neighbor].seed_direction
+            );
+            return std::asin(std::abs(std::clamp(
+                dot(direction,normal),
+                -1.0,
+                1.0
+            )));
+        };
+        double expected_distance=bisector_distance(expected_neighbor);
+
+        for (std::uint32_t i=0;i<TectonicModel::kPlateCount;++i) {
+            if (i==expected_owner) continue;
+            const double score=dot(direction,a.plates()[i].seed_direction);
+            if (i!=score_runner_up && score>runner_up_score) {
+                score_runner_up=i;
+                runner_up_score=score;
+            }
+            const double distance=bisector_distance(i);
+            if (distance<expected_distance) {
+                expected_neighbor=i;
+                expected_distance=distance;
+            }
+        }
+        if (score_runner_up==expected_neighbor) continue;
+
+        const TectonicSample sample=a.sample_direction(direction);
+        check(sample.plate_id==expected_owner,
+              "nearest-boundary regression probe changed owning plate");
+        check(sample.neighbor_plate_id==expected_neighbor,
+              "tectonic model did not report the geometrically nearest boundary");
+        near(sample.boundary_distance_rad,expected_distance,1.0e-15,
+             "tectonic nearest-boundary distance is inconsistent with reported neighbor");
+        nearest_boundary_case_checked=true;
+    }
+    check(nearest_boundary_case_checked,
+          "nearest-boundary regression could not find a score/bisector disagreement");
 
     CubeSphereTopology topology;
     bool differs_across_seed=false;
@@ -632,6 +679,9 @@ void test_tectonic_model_multiseed_robustness() {
     constexpr double golden_angle_rad=2.3999632297286533222;
     constexpr double sample_phase_rad=0.731;
 
+    double plate_area_ratio_sum=0.0;
+    double center_spacing_cv_sum=0.0;
+
     for (std::uint64_t seed=0;seed<seed_count;++seed) {
         const TectonicModel tectonics(seed);
 
@@ -642,6 +692,7 @@ void test_tectonic_model_multiseed_robustness() {
         int divergence_count=0;
         int positive_macro_count=0;
         int deep_ocean_count=0;
+        std::array<int,TectonicModel::kPlateCount> plate_sample_counts{};
 
         Vec3d nearest_direction{};
         TectonicSample nearest_sample{};
@@ -681,6 +732,7 @@ void test_tectonic_model_multiseed_robustness() {
             divergence_count+=sample.divergence_forcing>0.05 ? 1 : 0;
             positive_macro_count+=sample.macro_elevation_m>0.0 ? 1 : 0;
             deep_ocean_count+=sample.macro_elevation_m<-3'000.0 ? 1 : 0;
+            ++plate_sample_counts[sample.plate_id];
 
             if (sample.boundary_distance_rad<nearest_distance) {
                 nearest_distance=sample.boundary_distance_rad;
@@ -702,6 +754,40 @@ void test_tectonic_model_multiseed_robustness() {
             static_cast<double>(positive_macro_count)*inverse_count;
         const double deep_ocean_fraction=
             static_cast<double>(deep_ocean_count)*inverse_count;
+
+        const auto [min_plate_samples,max_plate_samples]=std::minmax_element(
+            plate_sample_counts.begin(),plate_sample_counts.end()
+        );
+        check(*min_plate_samples>0,"multi-seed plate-area probe missed a plate");
+        plate_area_ratio_sum+=static_cast<double>(*max_plate_samples)/
+            static_cast<double>(*min_plate_samples);
+
+        std::array<double,TectonicModel::kPlateCount> nearest_center_distances{};
+        double center_distance_sum=0.0;
+        for (std::uint32_t i=0;i<TectonicModel::kPlateCount;++i) {
+            double nearest=kPi;
+            for (std::uint32_t j=0;j<TectonicModel::kPlateCount;++j) {
+                if (i==j) continue;
+                nearest=std::min(nearest,std::acos(std::clamp(
+                    dot(tectonics.plates()[i].seed_direction,
+                        tectonics.plates()[j].seed_direction),
+                    -1.0,
+                    1.0
+                )));
+            }
+            nearest_center_distances[i]=nearest;
+            center_distance_sum+=nearest;
+        }
+        const double mean_center_distance=center_distance_sum/
+            static_cast<double>(TectonicModel::kPlateCount);
+        double center_distance_variance=0.0;
+        for (double distance:nearest_center_distances) {
+            const double delta=distance-mean_center_distance;
+            center_distance_variance+=delta*delta;
+        }
+        center_spacing_cv_sum+=std::sqrt(
+            center_distance_variance/static_cast<double>(TectonicModel::kPlateCount)
+        )/mean_center_distance;
 
         check(mean_affinity>0.15 && mean_affinity<0.45,
               "multi-seed crust mean collapsed toward all-ocean or all-continent");
@@ -742,6 +828,12 @@ void test_tectonic_model_multiseed_robustness() {
         check(std::abs(left.macro_elevation_m-right.macro_elevation_m)<5.0,
               "multi-seed macro relief is discontinuous at a plate boundary");
     }
+
+    const double inverse_seed_count=1.0/static_cast<double>(seed_count);
+    check(plate_area_ratio_sum*inverse_seed_count>1.80,
+          "multi-seed plate areas regressed toward an equal-area partition");
+    check(center_spacing_cv_sum*inverse_seed_count>0.10,
+          "multi-seed plate centers regressed toward regular spacing");
 }
 
 void test_authoritative_terrain_tracks_tectonic_macro_relief() {
