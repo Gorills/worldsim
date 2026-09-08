@@ -22,6 +22,7 @@ struct GeologyFieldIds {
     FieldId land_fraction{};
     FieldId crust_thickness{};
     FieldId crust_density{};
+    FieldId continental_fraction{};
     FieldId lithosphere_age{};
     FieldId sediment_mass{};
     FieldId regolith_thickness{};
@@ -35,6 +36,7 @@ GeologyFieldIds geology_fields(const FieldRegistry& r) {
         require_field(r,"geography.land_fraction"),
         require_field(r,"geology.crust_thickness_m"),
         require_field(r,"geology.crust_density_kg_m3"),
+        require_field(r,"geology.continental_fraction"),
         require_field(r,"geology.lithosphere_age_ma"),
         require_field(r,"geology.sediment_mass_kg"),
         require_field(r,"geology.regolith_thickness_m"),
@@ -51,6 +53,7 @@ GeologyState read_geology_state(
     return {
         fs.get(cell,ids.crust_thickness),
         fs.get(cell,ids.crust_density),
+        fs.get(cell,ids.continental_fraction),
         fs.get(cell,ids.lithosphere_age),
         fs.get(cell,ids.sediment_mass),
         fs.get(cell,ids.regolith_thickness)
@@ -65,6 +68,7 @@ void write_geology_state(
 ) {
     fs.set(cell,ids.crust_thickness,state.crust_thickness_m);
     fs.set(cell,ids.crust_density,state.crust_density_kg_m3);
+    fs.set(cell,ids.continental_fraction,state.continental_fraction);
     fs.set(cell,ids.lithosphere_age,state.lithosphere_age_ma);
     fs.set(cell,ids.sediment_mass,state.sediment_mass_kg);
     fs.set(cell,ids.regolith_thickness,state.regolith_thickness_m);
@@ -243,6 +247,7 @@ public:
             "field:geography.elevation_m",
             "field:geology.crust_thickness_m",
             "field:geology.crust_density_kg_m3",
+            "field:geology.continental_fraction",
             "field:geology.lithosphere_age_ma",
             "field:geology.sediment_mass_kg",
             "field:geology.regolith_thickness_m"
@@ -255,6 +260,7 @@ public:
                 "field:geography.land_fraction",
                 "field:geology.crust_thickness_m",
                 "field:geology.crust_density_kg_m3",
+                "field:geology.continental_fraction",
                 "field:geology.lithosphere_age_ma",
                 "field:geology.sediment_mass_kg",
                 "field:geology.regolith_thickness_m",
@@ -581,6 +587,7 @@ void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geography.land_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
     r.register_field({"geology.crust_thickness_m","m",FieldSemantics::Intensive,35'000.0,3'000.0,70'000.0});
     r.register_field({"geology.crust_density_kg_m3","kg/m3",FieldSemantics::Intensive,2'850.0,2'500.0,3'300.0});
+    r.register_field({"geology.continental_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
     r.register_field({"geology.lithosphere_age_ma","Ma",FieldSemantics::Intensive,100.0,0.0,4'500.0});
     r.register_field({"geology.sediment_mass_kg","kg",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"geology.regolith_thickness_m","m",FieldSemantics::Intensive,0.0,0.0,100.0});
