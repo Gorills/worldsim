@@ -5,7 +5,7 @@
 #   make map     # build GDExtension if needed, then launch godot/project/world_map.tscn
 #   make visual  # build core and write the five-seed C++ visual diagnostic suite
 
-.PHONY: help core godot run run-scene map visual test
+.PHONY: help core godot run run-scene map visual geology test
 
 GODOT ?= godot
 export GODOT
@@ -18,6 +18,7 @@ help:
 		'make run-scene  same as make run' \
 		'make map        build GDExtension, then launch world_map.tscn' \
 		'make visual     build core and generate C++ visual diagnostic suite' \
+		'make geology    build core and run geology plausibility benchmark' \
 		'make test       build kernel and run ctest --preset dev' \
 		'' \
 		'Override the editor with GODOT=/path/to/godot'
@@ -38,6 +39,9 @@ map: godot
 
 visual: core
 	./out/dev/worldsim_visual_dump --suite --width 512 --height 256 --output out/visual-dump
+
+geology: core
+	./out/dev/worldsim_geology_benchmark --seed-count 64 --samples 4096 --cover-level 5 --output out/geology-benchmark
 
 test:
 	cmake --preset dev
