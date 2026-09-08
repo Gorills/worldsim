@@ -1,6 +1,7 @@
 #pragma once
 
 #include "worldsim/fields.hpp"
+#include <array>
 #include <bit>
 #include <cstring>
 #include <limits>
@@ -164,6 +165,11 @@ struct SimulationEvent {
     double magnitude{};
 };
 
+struct ActiveCoverPart {
+    CellId cell;
+    double weight{};
+};
+
 class WorldState {
 public:
     explicit WorldState(std::uint64_t seed);
@@ -173,6 +179,11 @@ public:
     [[nodiscard]] const CubeSphereTopology& topology() const { return topology_; }
     [[nodiscard]] CubeSphereTopology& topology() { return topology_; }
     [[nodiscard]] const std::set<CellId>& active_cells() const { return active_cells_; }
+    [[nodiscard]] std::vector<ActiveCoverPart> resolve_active_cover(
+        CellId region
+    ) const;
+    [[nodiscard]] std::array<std::vector<ActiveCoverPart>,4>
+    active_neighbors4(CellId cell) const;
     [[nodiscard]] StateStoreRegistry& stores() { return stores_; }
     [[nodiscard]] const StateStoreRegistry& stores() const { return stores_; }
     void initialize_cover(std::uint8_t level);
