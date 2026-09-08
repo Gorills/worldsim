@@ -504,11 +504,19 @@ public:
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
         const double dt=ctx.dt_days;
+        constexpr double forcing_angular_rate_rad_per_day=0.048;
+        const double base_tick_days=
+            dt/static_cast<double>(cadence_ticks());
+        const double elapsed_days=
+            (static_cast<double>(ctx.world.tick())+1.0)*
+            base_tick_days;
         for (CellId cell:ctx.world.active_cells()) {
             const double area=ctx.world.topology().area_m2(cell);
             double mana=fs.get(cell,mana_);
             const double phase=deterministic_unit(ctx.world.seed(),fnv1a64("magic.phase"),0,cell.raw())*2.0*kPi;
-            const double forcing=1.0+0.25*std::sin(phase+static_cast<double>(ctx.world.tick())*0.002);
+            const double forcing=1.0+0.25*std::sin(
+                phase+elapsed_days*forcing_angular_rate_rad_per_day
+            );
             const double equilibrium=area*2.0e6*forcing;
             mana += (equilibrium-mana)*(1.0-std::exp(-0.02*dt));
             fs.set(cell,mana_,mana);
