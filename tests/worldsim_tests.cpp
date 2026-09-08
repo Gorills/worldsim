@@ -976,12 +976,17 @@ void test_geology_model_process_contracts() {
     Vec3d collision_direction{1,0,0};
     Vec3d rift_direction{1,0,0};
     Vec3d subduction_direction{1,0,0};
+    Vec3d volcanic_arc_direction{1,0,0};
     double min_affinity=2.0;
     double max_affinity=-1.0;
     double collision_score=-1.0;
     double rift_score=-1.0;
     double subduction_score=-1.0;
+    double volcanic_arc_score=-1.0;
+    double trench_peak_distance=kPi;
+    double arc_peak_distance=0.0;
 
+    constexpr double area_m2=1.0e10;
     constexpr int sample_count=4096;
     constexpr double golden_angle_rad=2.3999632297286533222;
     for (int i=0;i<sample_count;++i) {
@@ -999,24 +1004,31 @@ void test_geology_model_process_contracts() {
             max_affinity=sample.continental_affinity;
             most_continental=direction;
         }
-        const double collision=sample.uplift_forcing*sample.continental_affinity;
-        if (collision>collision_score) {
-            collision_score=collision;
+        const GeologyState state=geology.initial_state(direction,area_m2);
+        const BoundaryFeatureSample features=geology.boundary_features(
+            state,
+            direction
+        );
+        if (features.collision_forcing>collision_score) {
+            collision_score=features.collision_forcing;
             collision_direction=direction;
         }
-        const double rift=sample.divergence_forcing*sample.continental_affinity;
-        if (rift>rift_score) {
-            rift_score=rift;
+        if (features.rift_forcing>rift_score) {
+            rift_score=features.rift_forcing;
             rift_direction=direction;
         }
-        const double subduction=sample.uplift_forcing*(1.0-sample.continental_affinity);
-        if (subduction>subduction_score) {
-            subduction_score=subduction;
+        if (features.trench_forcing>subduction_score) {
+            subduction_score=features.trench_forcing;
             subduction_direction=direction;
+            trench_peak_distance=sample.boundary_distance_rad;
+        }
+        if (features.volcanic_arc_forcing>volcanic_arc_score) {
+            volcanic_arc_score=features.volcanic_arc_forcing;
+            volcanic_arc_direction=direction;
+            arc_peak_distance=sample.boundary_distance_rad;
         }
     }
 
-    constexpr double area_m2=1.0e10;
     const GeologyState ocean=geology.initial_state(most_oceanic,area_m2);
     const GeologyState continent=geology.initial_state(most_continental,area_m2);
     check(continent.crust_thickness_m>ocean.crust_thickness_m+15'000.0,
@@ -1039,8 +1051,15 @@ void test_geology_model_process_contracts() {
     check(old_elevation<young_elevation-1'000.0,
           "oceanic thermal subsidence lost age dependence");
 
-    check(collision_score>0.05 && rift_score>0.03 && subduction_score>0.03,
-          "geology process probes did not resolve required boundary regimes");
+    check(
+        collision_score>0.02 &&
+        rift_score>0.03 &&
+        subduction_score>0.02 &&
+        volcanic_arc_score>0.02,
+        "geology process probes did not resolve required boundary regimes"
+    );
+    check(arc_peak_distance>trench_peak_distance+0.5*kPi/180.0,
+          "volcanic arc is not spatially offset inland from trench forcing");
 
     GeologyState collision=geology.initial_state(collision_direction,area_m2);
     const double collision_before=collision.crust_thickness_m;
@@ -1071,7 +1090,16 @@ void test_geology_model_process_contracts() {
     const double subduction_before=subduction.crust_thickness_m;
     geology.advance_tectonics(subduction,subduction_direction,5.0e6);
     check(subduction.crust_thickness_m<subduction_before,
-          "oceanic convergence did not consume crust");
+          "selected subducting side did not consume crust");
+
+    GeologyState volcanic_arc=geology.initial_state(
+        volcanic_arc_direction,
+        area_m2
+    );
+    const double volcanic_arc_before=volcanic_arc.crust_thickness_m;
+    geology.advance_tectonics(volcanic_arc,volcanic_arc_direction,5.0e6);
+    check(volcanic_arc.crust_thickness_m>volcanic_arc_before,
+          "overriding volcanic arc did not accrete crust");
 
     GeologyState source=continent;
     GeologyState sink=ocean;
