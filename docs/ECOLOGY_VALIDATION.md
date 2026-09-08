@@ -30,16 +30,26 @@ Landlab's soil-moisture component provides the relevant modeling precedent: root
 - Landlab, `SoilMoisture`: https://landlab.readthedocs.io/en/latest/generated/api/landlab.components.soil_moisture.soil_moisture_dynamics.html
 - Laio, F., Porporato, A., Ridolfi, L. & Rodriguez-Iturbe, I. (2001), *Plants in water-controlled ecosystems: active role in hydrologic processes and response to water stress II*. https://doi.org/10.1016/S0309-1708(01)00005-7
 
-### Soil fertility and detritus
+### Soil fertility, detritus and soil carbon
 
-Two persistent ecology fields close the first living-soil feedback:
+The original living-soil fields remain:
 
 - `ecology.soil_fertility`: intensive reduced fertility state in `[0,1]`;
 - `ecology.litter_carbon_kg`: extensive detrital carbon stock.
 
-Regolith depth provides the mineral-substrate contribution to fertility. Plant turnover, herbivory waste and a reduced carcass-carbon return add litter. Litter decomposes faster under warm/moist conditions and feeds back into the reduced fertility state. Strong runoff leaches that state.
+Soil carbon v1 adds persistent fast and slow soil-organic-carbon pools, their
+derived aggregate, a current heterotrophic-respiration flux and a cumulative
+respiration ledger. Litter transfers to fast carbon, fast carbon transfers to
+slow carbon, and each decomposition path partitions its remainder into the
+ledger. The isolated soil step therefore conserves litter + soil stocks +
+cumulative respired carbon. Exact rates, references, LOD semantics and limits
+are documented in [SOIL_CARBON.md](SOIL_CARBON.md).
 
-This deliberately stops short of an elemental nitrogen/phosphorus budget. `soil_fertility` is an index, not kilograms of N or P, and litter decomposition may return fertility while carbon leaves the modeled terrestrial pools. A later biogeochemistry slice should introduce explicit nutrient reservoirs before any claim of elemental conservation.
+Regolith depth provides the mineral-substrate contribution to fertility. Plant turnover, herbivory waste and a reduced carcass-carbon return add litter. Litter and soil carbon decompose faster under warm/moist conditions. Labile litter and decomposition feed back into the reduced fertility state. Strong runoff leaches that state.
+
+This deliberately stops short of an elemental nitrogen/phosphorus budget.
+`soil_fertility` is an index, not kilograms of N or P. A later nutrient slice
+must introduce explicit reservoirs before any claim of elemental conservation.
 
 The conceptual basis is standard ecosystem-process practice: soil organic matter depends strongly on climate and substrate controls, while process models such as Biome-BGC couple water, vegetation, litter and soil state rather than treating plant productivity as independent of the substrate.
 
@@ -98,8 +108,9 @@ the adaptive active-cover resolver. Fire removes PFT-specific live biomass and
 litter, returns uncombusted mortality to litter, and transfers combusted carbon
 to explicit emission and pyrogenic-carbon ledgers.
 
-The fire transfer itself closes carbon, but the wider ecology still lacks a
-closed atmospheric/ocean/soil carbon cycle. The complete field, LOD,
+The fire transfer itself closes carbon, and Soil carbon v1 now closes its own
+litter/soil/respiration boundary. The wider ecology still lacks a closed
+atmospheric/ocean/fauna carbon cycle. The complete field, LOD,
 accounting, reference and unsupported-claim contract is in [FIRE.md](FIRE.md).
 
 ## Executable validation
@@ -119,6 +130,15 @@ The core `worldsim_tests` suite continues to check living-soil, adaptive-cover a
 - extensive litter carbon participates in the existing LOD split/sum semantics through the field store;
 - snapshot determinism and continuation include ecology state through the field schema.
 
+The dedicated `worldsim_soil_carbon_tests` suite checks:
+
+- conservative litter/fast/slow/respiration transfers at short and long steps;
+- warmer, wetter conditions accelerate decomposition;
+- incoming transfers do not cross multiple pools in one step;
+- submerged stock remains dormant instead of being deleted;
+- all component pools and the cumulative ledger survive refine/coarsen; and
+- snapshot epoch 20 round-trips and continues deterministically.
+
 The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
 
 - indexed cohort transfer preserves total count, keeps source/target spatial lookup coherent, and merges repeated transfers into an existing same-lineage destination cohort;
@@ -126,7 +146,7 @@ The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- snapshot epoch 19 includes authoritative wildfire state, version 18 is rejected, and the current snapshot round-trips exactly.
+- snapshot epoch 20 includes authoritative soil-carbon state, version 19 is rejected, and the current snapshot round-trips exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
@@ -137,7 +157,7 @@ The dedicated `worldsim_fire_tests` suite checks:
 - the aggregate vegetation field remains the exact sum of the PFT pools;
 - spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
 - extensive fire ledgers survive coarsening; and
-- snapshot epoch 19 round-trips authoritative fire state.
+- snapshot epoch 20 round-trips authoritative fire and soil-carbon state.
 
 ## Explicitly unsupported ecology claims
 

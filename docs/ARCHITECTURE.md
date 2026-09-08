@@ -84,6 +84,12 @@ heat or water stocks, and the climate graph never mistakes same-level
 
 Future structured stores should own their aggregation semantics rather than encoding them as arbitrary fields.
 
+Soil carbon remains spatial field state because each pool has ordinary
+extensive split/sum semantics. Litter feeds fast soil carbon, fast carbon feeds
+slow carbon, and all three decomposition paths feed an extensive cumulative
+respiration ledger. `ecology.soil_carbon_kg` is a derived aggregate and is not
+an additional stock. See `SOIL_CARBON.md` for its accounting boundary.
+
 ## 4. Modules and systems
 
 `ISimModule` has four bounded responsibilities:
@@ -145,7 +151,7 @@ Production domains should introduce typed command payloads and typed event schem
 
 ## 8. Snapshots
 
-Snapshot version 19 contains:
+Snapshot version 20 contains:
 
 - magic header and format version;
 - field schema hash;
@@ -163,7 +169,7 @@ A snapshot is rejected if the field schema, simulation config, seed, store set, 
 
 Loading stages a new world and calls each module's `register_stores()` for that world; these hooks must only register in the supplied registry and must not cache world/store references. All payloads and spatial references are validated before committing the replacement. A rejected load preserves the live world, focus, commands and events. A successful load invalidates previously retained world/store references. Command counts are bounded by available bytes; numeric commands/events/focus and command sequence uniqueness are validated.
 
-Snapshot v19 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, version 12 the coast-to-basin geology model before living-soil ecology, version 13 the living-soil model before persistent grass/shrub/tree functional-type pools, and version 14 the Flora-v1 model before habitat-selected fauna redistribution. Version 15 predates volume-weighted crust restriction, oceanic buoyancy response, corrected seasons and bounded vegetation losses. Version 16 predates basin hydrology, its persistent routing graph and integrated cross-domain water fluxes. Version 17 predates the persistent climate heat/moisture reservoirs and closed planet-water exchange. Version 18 predates authoritative wildfire state, carbon-transfer ledgers and the fire-before-fauna ordering. Versions 2 through 18 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
+Snapshot v20 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, version 12 the coast-to-basin geology model before living-soil ecology, version 13 the living-soil model before persistent grass/shrub/tree functional-type pools, and version 14 the Flora-v1 model before habitat-selected fauna redistribution. Version 15 predates volume-weighted crust restriction, oceanic buoyancy response, corrected seasons and bounded vegetation losses. Version 16 predates basin hydrology, its persistent routing graph and integrated cross-domain water fluxes. Version 17 predates the persistent climate heat/moisture reservoirs and closed planet-water exchange. Version 18 predates authoritative wildfire state, carbon-transfer ledgers and the fire-before-fauna ordering. Version 19 predates persistent fast/slow soil carbon and its explicit respiration flux/ledger. Versions 2 through 19 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
 
 ## 9. Why magic does not contaminate the core
 

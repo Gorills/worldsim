@@ -1,6 +1,7 @@
 #include "worldsim/modules.hpp"
 #include "worldsim/geology.hpp"
 #include "worldsim/hydrology.hpp"
+#include "worldsim/soil_carbon.hpp"
 #include "worldsim/terrain.hpp"
 
 #include <algorithm>
@@ -529,7 +530,20 @@ public:
           water_(require_field(r,"hydrology.soil_water_m3")),
           runoff_(require_field(r,"hydrology.drainage_since_soil_m3")),
           fertility_(require_field(r,"ecology.soil_fertility")),
-          litter_(require_field(r,"ecology.litter_carbon_kg")) {}
+          litter_(require_field(r,"ecology.litter_carbon_kg")),
+          fast_carbon_(
+              require_field(r,"ecology.soil_fast_carbon_kg")
+          ),
+          slow_carbon_(
+              require_field(r,"ecology.soil_slow_carbon_kg")
+          ),
+          soil_carbon_(require_field(r,"ecology.soil_carbon_kg")),
+          heterotrophic_respiration_(require_field(
+              r,"ecology.heterotrophic_respiration_kg_day"
+          )),
+          respired_carbon_(
+              require_field(r,"ecology.soil_respired_carbon_kg")
+          ) {}
 
     std::string_view id() const override { return "ecology.soil"; }
     Tick cadence_ticks() const override { return 24; }
@@ -544,11 +558,19 @@ public:
                     "field:hydrology.soil_water_m3",
                     "field:hydrology.drainage_since_soil_m3",
                     "field:ecology.soil_fertility",
-                    "field:ecology.litter_carbon_kg"
+                    "field:ecology.litter_carbon_kg",
+                    "field:ecology.soil_fast_carbon_kg",
+                    "field:ecology.soil_slow_carbon_kg",
+                    "field:ecology.soil_respired_carbon_kg"
                 },
                 {
                     "field:ecology.soil_fertility",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.soil_fast_carbon_kg",
+                    "field:ecology.soil_slow_carbon_kg",
+                    "field:ecology.soil_carbon_kg",
+                    "field:ecology.heterotrophic_respiration_kg_day",
+                    "field:ecology.soil_respired_carbon_kg",
                     "field:hydrology.drainage_since_soil_m3"
                 }};
     }
@@ -563,7 +585,13 @@ public:
             fs.set(cell,runoff_,0.0);
             if (effective_area<=1.0) {
                 fs.set(cell,fertility_,0.0);
-                fs.set(cell,litter_,0.0);
+                fs.set(cell,heterotrophic_respiration_,0.0);
+                fs.set(
+                    cell,
+                    soil_carbon_,
+                    fs.get(cell,fast_carbon_)+
+                    fs.get(cell,slow_carbon_)
+                );
                 continue;
             }
 
@@ -579,28 +607,43 @@ public:
                 0.0,
                 1.0
             );
-            const double temp=fs.get(cell,temp_);
-            const double temperature_factor=std::clamp(
-                std::pow(2.0,(temp-283.0)/10.0),
-                0.1,
-                4.0
+            const SoilCarbonStep carbon=carbon_model_.advance(
+                {
+                    fs.get(cell,litter_),
+                    fs.get(cell,fast_carbon_),
+                    fs.get(cell,slow_carbon_)
+                },
+                fs.get(cell,temp_),
+                moisture,
+                ctx.dt_days
             );
-
-            double litter=fs.get(cell,litter_);
-            constexpr double base_decomposition_per_day=1.0e-3;
-            const double decomposition_rate=
-                base_decomposition_per_day*
-                temperature_factor*
-                (0.15+0.85*moisture);
-            const double decomposed=litter*(
-                1.0-std::exp(-decomposition_rate*ctx.dt_days)
+            fs.set(cell,litter_,carbon.state.litter_carbon_kg);
+            fs.set(cell,fast_carbon_,carbon.state.fast_carbon_kg);
+            fs.set(cell,slow_carbon_,carbon.state.slow_carbon_kg);
+            fs.set(
+                cell,
+                soil_carbon_,
+                carbon.state.fast_carbon_kg+
+                carbon.state.slow_carbon_kg
             );
-            litter=std::max(0.0,litter-decomposed);
+            fs.set(
+                cell,
+                heterotrophic_respiration_,
+                ctx.dt_days>0.0
+                    ? carbon.fluxes.respired_kg/ctx.dt_days
+                    : 0.0
+            );
+            fs.add(
+                cell,
+                respired_carbon_,
+                carbon.fluxes.respired_kg
+            );
 
             const double substrate_factor=
                 -std::expm1(-regolith/0.75);
             const double litter_density=
-                litter/std::max(1.0,effective_area);
+                carbon.state.litter_carbon_kg/
+                std::max(1.0,effective_area);
             const double organic_factor=
                 -std::expm1(-litter_density/0.75);
             const double target_fertility=std::clamp(
@@ -624,6 +667,10 @@ public:
             // Decomposition gives a small mineralization pulse to the reduced
             // fertility state. This is deliberately an index-level feedback,
             // not an elemental N/P mass balance.
+            const double decomposed=
+                carbon.fluxes.litter_decomposed_kg+
+                carbon.fluxes.fast_decomposed_kg+
+                carbon.fluxes.slow_decomposed_kg;
             fertility+=std::min(
                 0.05,
                 0.10*decomposed/std::max(1.0,effective_area)
@@ -640,12 +687,14 @@ public:
                 fertility_,
                 std::clamp(fertility,0.0,1.0)
             );
-            fs.set(cell,litter_,litter);
         }
     }
 
 private:
     FieldId temp_,land_,regolith_,water_,runoff_,fertility_,litter_;
+    FieldId fast_carbon_,slow_carbon_,soil_carbon_;
+    FieldId heterotrophic_respiration_,respired_carbon_;
+    SoilCarbonModel carbon_model_;
 };
 
 class VegetationSystem final : public ISimSystem {
@@ -1730,6 +1779,11 @@ void MagicModule::initialize(WorldState& world, const FieldRegistry& r) {
 void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.soil_fertility","1",FieldSemantics::Intensive,0.25,0.0,1.0});
     r.register_field({"ecology.litter_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.soil_fast_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.soil_slow_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.soil_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.heterotrophic_respiration_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.soil_respired_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.grass_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.shrub_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.tree_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
@@ -1758,6 +1812,13 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
     const auto regolith=require_field(r,"geology.regolith_thickness_m");
     const auto fertility=require_field(r,"ecology.soil_fertility");
     const auto litter=require_field(r,"ecology.litter_carbon_kg");
+    const auto fast_carbon=require_field(
+        r,"ecology.soil_fast_carbon_kg"
+    );
+    const auto slow_carbon=require_field(
+        r,"ecology.soil_slow_carbon_kg"
+    );
+    const auto soil_carbon=require_field(r,"ecology.soil_carbon_kg");
     const std::array<FieldId,3> pft{
         require_field(r,"ecology.grass_carbon_kg"),
         require_field(r,"ecology.shrub_carbon_kg"),
@@ -1812,6 +1873,19 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
         }
         fs.set(c,carbon,pft_total);
         fs.set(c,litter,0.08*pft_total);
+        const double soil_suitability=
+            substrate_factor*(0.25+0.75*suitability);
+        const double initial_fast_carbon=
+            effective*0.55*soil_suitability;
+        const double initial_slow_carbon=
+            effective*3.50*soil_suitability;
+        fs.set(c,fast_carbon,initial_fast_carbon);
+        fs.set(c,slow_carbon,initial_slow_carbon);
+        fs.set(
+            c,
+            soil_carbon,
+            initial_fast_carbon+initial_slow_carbon
+        );
 
         if (lf>0.2 && suitability>0.12 && soil_fertility>0.08) {
             const double km2=effective/1.0e6;
@@ -1843,6 +1917,15 @@ void EcologyModule::on_spatial_cover_changed(
     const FieldId active_fraction=require_field(
         r,"ecology.fire_active_fraction"
     );
+    const FieldId fast_carbon=require_field(
+        r,"ecology.soil_fast_carbon_kg"
+    );
+    const FieldId slow_carbon=require_field(
+        r,"ecology.soil_slow_carbon_kg"
+    );
+    const FieldId soil_carbon=require_field(
+        r,"ecology.soil_carbon_kg"
+    );
     for (CellId cell:world.active_cells()) {
         const double land_area=
             world.topology().area_m2(cell)*fs.get(cell,land);
@@ -1852,6 +1935,11 @@ void EcologyModule::on_spatial_cover_changed(
             land_area>1.0
                 ? std::clamp(fs.get(cell,active_area)/land_area,0.0,1.0)
                 : 0.0
+        );
+        fs.set(
+            cell,
+            soil_carbon,
+            fs.get(cell,fast_carbon)+fs.get(cell,slow_carbon)
         );
     }
 }

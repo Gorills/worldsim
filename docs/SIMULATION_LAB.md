@@ -123,8 +123,9 @@ Headless integration must verify:
   hydrology/ecology/fire fields, advances time, updates statistics/history and
   can inspect a cell.
 
-Wildfire v1 extends the curated ecosystem view with localized fire-danger,
-active-fraction and emission layers plus a distinct fire color ramp. The full
-active/burned-area and pyrogenic-carbon state remains available through the
-advanced field list. See `FIRE.md` for the simulation contract and its Godot
-4.7 localization reference.
+Wildfire v1 extends the curated ecosystem view with localized fire-danger and
+active-fraction layers plus a distinct fire color ramp. Soil carbon v1 adds the
+total soil-organic-carbon stock and current heterotrophic respiration to the
+same curated view; fast/slow components and the cumulative respiration ledger
+remain available through the advanced field list. See `FIRE.md` and
+`SOIL_CARBON.md` for their simulation contracts.

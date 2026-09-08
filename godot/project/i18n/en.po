@@ -213,6 +213,21 @@ msgstr "Net primary production"
 msgid "LAB_FIELD_FERTILITY"
 msgstr "Soil fertility"
 
+msgid "LAB_FIELD_SOIL_CARBON"
+msgstr "Soil organic carbon"
+
+msgid "LAB_FIELD_FAST_SOIL_CARBON"
+msgstr "Fast soil carbon"
+
+msgid "LAB_FIELD_SLOW_SOIL_CARBON"
+msgstr "Slow soil carbon"
+
+msgid "LAB_FIELD_SOIL_RESPIRATION"
+msgstr "Soil respiration"
+
+msgid "LAB_FIELD_SOIL_RESPIRATION_TOTAL"
+msgstr "Cumulative soil respiration"
+
 msgid "LAB_FIELD_GRASS"
 msgstr "Grass carbon"
 
@@ -262,7 +277,7 @@ msgid "LAB_PURPOSE_ECOSYSTEM"
 msgstr "Does biomass grow only where land, water, temperature and fertility permit it? Watch production before expecting total biomass to move."
 
 msgid "LAB_DESCRIPTION_ECOSYSTEM"
-msgstr "Vegetation carbon changes slowly. Compare production and fuel with fire danger; during dry periods, active fire transfers biomass into emissions and char before fauna responds."
+msgstr "Vegetation feeds litter and persistent soil carbon. Compare production with soil respiration; during dry periods, fire transfers fuel into emissions and char before fauna responds."
 
 msgid "LAB_PURPOSE_LOD"
 msgstr "Does simulation detail increase only around the selected focus while physical quantities remain stable across refinement transitions?"

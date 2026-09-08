@@ -17,6 +17,7 @@ add_library(worldsim
     src/geology.cpp
     src/climate.cpp
     src/hydrology.cpp
+    src/soil_carbon.cpp
     src/fields.cpp
     src/state.cpp
     src/simulation.cpp
@@ -97,6 +98,11 @@ if(WORLDSIM_BUILD_TESTS)
   target_link_libraries(worldsim_fire_tests PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_fire_tests)
   add_test(NAME worldsim_fire_tests COMMAND worldsim_fire_tests)
+
+  add_executable(worldsim_soil_carbon_tests tests/soil_carbon_tests.cpp)
+  target_link_libraries(worldsim_soil_carbon_tests PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_soil_carbon_tests)
+  add_test(NAME worldsim_soil_carbon_tests COMMAND worldsim_soil_carbon_tests)
 
   add_executable(worldsim_sanitizer_smoke tests/sanitizer_smoke.cpp)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)

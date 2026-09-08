@@ -377,12 +377,12 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{19},
+        snapshot[8]==std::byte{20},
         "unexpected authoritative snapshot epoch"
     );
 
     auto legacy=snapshot;
-    legacy[8]=std::byte{18};
+    legacy[8]=std::byte{19};
     bool rejected=false;
     try {
         auto restored=make_default_simulation(6060);
@@ -390,7 +390,7 @@ void test_snapshot_epoch_current() {
     } catch (const std::runtime_error&) {
         rejected=true;
     }
-    check(rejected,"snapshot v18 was accepted by the wildfire-v1 model");
+    check(rejected,"snapshot v19 was accepted by the soil-carbon-v1 model");
 
     auto restored=make_default_simulation(6060);
     restored->load_snapshot(snapshot);

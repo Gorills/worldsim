@@ -4,7 +4,7 @@ This file distinguishes what was actually executed from architectural intent.
 
 ## Current audit
 
-The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Climate v2 and Wildfire v1 were implemented after that audit and are recorded in [CLIMATE.md](CLIMATE.md) and [FIRE.md](FIRE.md). Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
+The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Climate v2, Wildfire v1 and Soil carbon v1 were implemented after that audit and are recorded in [CLIMATE.md](CLIMATE.md), [FIRE.md](FIRE.md) and [SOIL_CARBON.md](SOIL_CARBON.md). Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
 
 ## Core test coverage
 
@@ -18,7 +18,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 18);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 19);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -66,7 +66,19 @@ export path.
 `worldsim_fire_tests` covers fire gating without fuel, wet-weather suppression,
 deterministic natural ignition, explicit fire-carbon transfer closure, PFT
 aggregate consistency, coarse-to-fine spread through the active-cover resolver,
-extensive-ledger LOD conservation and snapshot epoch 19 round-trip.
+extensive-ledger LOD conservation and current snapshot round-trip.
+
+`worldsim_soil_carbon_tests` covers pure-model and integrated soil-carbon
+closure, bounded short/long steps, temperature/moisture response, staged pool
+transfers, dormant submerged stock, LOD conservation, aggregate reconstruction,
+snapshot epoch 20 round-trip and deterministic continuation.
+
+The Soil carbon v1 integration run completed all **12/12** CTest targets.
+ASan, UBSan and float-cast-overflow instrumentation passed the dedicated suite,
+bounded smoke and all 14 audit scenarios. Godot 4.7.2 rebuilt and its native
+smoke plus Russian laboratory integration discovered 67 fields and verified the
+soil aggregate against its fast/slow components. Exact scope and limitations
+are recorded in `SOIL_CARBON.md`.
 
 The Wildfire v1 integration run completed all **11/11** CTest targets. ASan,
 UBSan and float-cast-overflow instrumentation passed the dedicated fire suite,
@@ -88,7 +100,7 @@ Reference mismatches are emitted as warnings rather than CTest failures because 
 
 ## Ecology validation scope
 
-The default ecology now has a living-soil substrate, propagule-limited grass/shrub/tree functional types, and reduced habitat-selected fauna redistribution across the shared adaptive-cover adjacency contract. Executable contracts and explicit limitations are documented in `docs/ECOLOGY_VALIDATION.md`. The fertility field remains an index rather than a claimed nitrogen/phosphorus mass budget, and fauna movement is population redistribution rather than an individual trajectory model.
+The default ecology now has persistent fast/slow soil carbon, a living-soil substrate, propagule-limited grass/shrub/tree functional types, and reduced habitat-selected fauna redistribution across the shared adaptive-cover adjacency contract. Executable contracts and explicit limitations are documented in `docs/ECOLOGY_VALIDATION.md` and `docs/SOIL_CARBON.md`. The fertility field remains an index rather than a claimed nitrogen/phosphorus mass budget, and fauna movement is population redistribution rather than an individual trajectory model.
 
 
 ## Pre-fix geology plausibility baseline — 2026-09-08
@@ -188,4 +200,5 @@ full-world adaptive-cover diagnostic. The latter closes the land-water budget
 with maximum relative residual 2.70362e-14. Reference-grid river geometry is
 independent of camera refinement; this does not establish spatial convergence
 of an adaptive hydraulic solver. Basin hydrology introduced epoch 17; snapshot
-epoch 18 introduced persistent climate state; Wildfire v1 epoch 19 is current.
+epoch 18 introduced persistent climate state, Wildfire v1 epoch 19, and Soil
+carbon v1 epoch 20 is current.

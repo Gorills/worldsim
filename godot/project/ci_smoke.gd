@@ -79,6 +79,33 @@ func _initialize() -> void:
                 quit(24)
                 return
 
+    for key in ["ecology.soil_fast_carbon_kg", "ecology.soil_slow_carbon_kg",
+                "ecology.soil_carbon_kg",
+                "ecology.heterotrophic_respiration_kg_day",
+                "ecology.soil_respired_carbon_kg"]:
+        var soil_values := sim.get_field_values(key)
+        if soil_values.size() != packet["positions"].size():
+            push_error("Soil-carbon field is missing or misaligned: %s" % key)
+            quit(26)
+            return
+        for soil_value in soil_values:
+            if not is_finite(soil_value) or soil_value < 0.0:
+                push_error("Soil-carbon field contains invalid state: %s" % key)
+                quit(27)
+                return
+
+    var fast_soil := sim.get_field_values("ecology.soil_fast_carbon_kg")
+    var slow_soil := sim.get_field_values("ecology.soil_slow_carbon_kg")
+    var total_soil := sim.get_field_values("ecology.soil_carbon_kg")
+    for index in range(total_soil.size()):
+        var component_sum := float(fast_soil[index]) + float(slow_soil[index])
+        if absf(float(total_soil[index]) - component_sum) > maxf(
+            1.0e-3, absf(component_sum) * 2.0e-6
+        ):
+            push_error("Soil-carbon aggregate disagrees with component pools")
+            quit(28)
+            return
+
     var diagnostic_elevation := sim.sample_field_equirectangular(
         "geography.elevation_m", 16, 8, true
     )

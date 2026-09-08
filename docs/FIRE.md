@@ -1,5 +1,9 @@
 # Wildfire v1 contract
 
+> Soil carbon v1 subsequently raises the current snapshot epoch to 20 and adds
+> conservative decomposition pools. The Wildfire-v1 execution record below is
+> retained as historical evidence for epoch 19.
+
 WorldSim wildfire v1 is a reduced, daily disturbance process coupled to the
 existing climate, hydrology, vegetation and fauna systems. It is designed to
 exercise authoritative disturbance state, mixed-LOD propagation and explicit
@@ -86,10 +90,12 @@ plant C before + litter C before + char C before + emitted C before
   = plant C after + litter C after + char C after + emitted C after
 ```
 
-This identity covers fire transfers only. Existing photosynthesis,
-respiration, decomposition and fauna demography do not yet form a closed
-planetary carbon cycle, so `fire_emitted_carbon_kg` is a cumulative destination
-ledger rather than a coupled atmospheric CO2 reservoir.
+This identity covers fire transfers only. Soil carbon v1 separately closes
+litter/soil decomposition against a cumulative respiration ledger, but
+photosynthesis, plant/fauna respiration and atmosphere/ocean exchange do not
+yet form a closed planetary carbon cycle. `fire_emitted_carbon_kg` therefore
+remains a cumulative destination ledger rather than a coupled atmospheric CO2
+reservoir.
 
 ## Design references
 
