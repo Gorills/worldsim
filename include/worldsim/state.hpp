@@ -99,6 +99,17 @@ struct Cohort {
     double reserve_kg{};
 };
 
+// Reduced wet-mass-to-carbon conversion used by the fauna material budget.
+// body_mass_kg and reserve_kg are per-individual wet masses; population count
+// is the only demographic degree of freedom in the current cohort model.
+inline constexpr double kFaunaCarbonFractionOfWetMass=0.15;
+
+[[nodiscard]] inline double cohort_carbon_kg(const Cohort& cohort) {
+    return cohort.count*
+        (cohort.body_mass_kg+cohort.reserve_kg)*
+        kFaunaCarbonFractionOfWetMass;
+}
+
 class CohortStore final : public IStateStore {
 public:
     static constexpr std::string_view kKey="ecology.cohorts";

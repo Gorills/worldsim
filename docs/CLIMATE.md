@@ -1,10 +1,11 @@
 # Climate v2 — reduced coupled energy and moisture model
 
-> Snow-albedo coupling v1 subsequently raises the current snapshot epoch to 21
-> and makes hydrology's snow stock affect land shortwave absorption,
+> Snow-albedo coupling v1 introduced snapshot epoch 21 and makes hydrology's
+> snow stock affect land shortwave absorption,
 > vegetation exposure and fire danger. Its current contract is documented in
 > `SNOW_ALBEDO.md`; the Climate-v2 execution record below remains historical
-> evidence for epoch 18.
+> evidence for epoch 18. Fauna carbon accounting subsequently raises the
+> current combined-world epoch to 22.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 

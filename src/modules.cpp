@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <optional>
@@ -1410,9 +1411,15 @@ private:
     FieldId emitted_,char_;
 };
 
+// Reduced standing-biomass pyramid used to bound the two demo trophic guilds.
+// These are model closure parameters, not Earth-calibrated species claims.
+constexpr double kHerbivoreCarbonPerWeightedForage=1.0e-4;
+constexpr double kCarnivoreCarbonPerHerbivoreCarbon=0.08;
+constexpr double kInitialHerbivoreCapacityFraction=0.10;
+
 class FaunaSystem final : public ISimSystem {
 public:
-    explicit FaunaSystem(const FieldRegistry& r)
+    FaunaSystem(const FieldRegistry& r, bool fire_enabled)
         : land_(require_field(r,"geography.land_fraction")),
           pft_{
               require_field(r,"ecology.grass_carbon_kg"),
@@ -1420,12 +1427,18 @@ public:
               require_field(r,"ecology.tree_carbon_kg")
           },
           carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
-          litter_(require_field(r,"ecology.litter_carbon_kg")) {}
+          litter_(require_field(r,"ecology.litter_carbon_kg")),
+          respired_(require_field(
+              r,"ecology.fauna_respired_carbon_kg"
+          )),
+          fire_enabled_(fire_enabled) {}
 
     std::string_view id() const override { return "ecology.fauna"; }
     Tick cadence_ticks() const override { return 24; }
     std::vector<std::string> after() const override {
-        return {"ecology.fire"};
+        return {
+            fire_enabled_ ? "ecology.fire" : "ecology.vegetation"
+        };
     }
     SystemAccess access() const override {
         return {{
@@ -1435,6 +1448,7 @@ public:
                     "field:ecology.tree_carbon_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.fauna_respired_carbon_kg",
                     "store:ecology.cohorts"
                 },
                 {
@@ -1443,6 +1457,7 @@ public:
                     "field:ecology.tree_carbon_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.fauna_respired_carbon_kg",
                     "store:ecology.cohorts"
                 }};
     }
@@ -1452,6 +1467,36 @@ public:
         auto& cs=ctx.world.stores().get<CohortStore>();
         constexpr std::array<double,3> forage_preference{
             1.0,0.55,0.12
+        };
+        constexpr double herbivore_assimilation=0.25;
+        constexpr double carnivore_assimilation=0.75;
+        constexpr double herbivore_maintenance_per_day=0.0025;
+        constexpr double carnivore_maintenance_per_day=0.0030;
+        constexpr double herbivore_max_growth_per_day=0.00050;
+        constexpr double carnivore_max_growth_per_day=0.00025;
+        constexpr double herbivore_mortality_per_day=0.00020;
+        constexpr double carnivore_mortality_per_day=0.00030;
+        constexpr double density_regulation_per_day=0.010;
+
+        const auto group_carbon=[](const std::vector<Cohort*>& cohorts) {
+            double carbon=0.0;
+            for (const Cohort* cohort:cohorts)
+                carbon+=cohort_carbon_kg(*cohort);
+            return carbon;
+        };
+        const auto scale_group=[](
+            const std::vector<Cohort*>& cohorts,
+            double before_carbon,
+            double after_carbon
+        ) {
+            if (!(before_carbon>0.0)) return;
+            const double scale=std::clamp(
+                after_carbon/before_carbon,
+                0.0,
+                std::numeric_limits<double>::max()
+            );
+            for (Cohort* cohort:cohorts)
+                cohort->count=std::max(0.0,cohort->count*scale);
         };
 
         // First update local trophic dynamics. Migration is deliberately a
@@ -1478,13 +1523,31 @@ public:
                 weighted_forage+=
                     vegetation[i]*forage_preference[i];
 
-            double total_demand=0.0;
-            for (const Cohort* herbivore:herbivores)
-                total_demand+=
-                    herbivore->count*
-                    herbivore->body_mass_kg*
-                    0.018*
-                    ctx.dt_days;
+            const double herbivore_carbon_before=
+                group_carbon(herbivores);
+            const double herbivore_capacity=
+                weighted_forage*kHerbivoreCarbonPerWeightedForage;
+            const double herbivore_capacity_ratio=
+                herbivore_capacity>0.0
+                    ? herbivore_carbon_before/herbivore_capacity
+                    : std::numeric_limits<double>::infinity();
+            const double herbivore_net_growth_per_day=
+                herbivore_max_growth_per_day*
+                std::clamp(1.0-herbivore_capacity_ratio,0.0,1.0);
+            const double herbivore_maintenance=
+                herbivore_carbon_before*
+                herbivore_maintenance_per_day*
+                ctx.dt_days;
+            const double herbivore_growth_budget=
+                herbivore_carbon_before*
+                (
+                    herbivore_mortality_per_day+
+                    herbivore_net_growth_per_day
+                )*
+                ctx.dt_days;
+            const double total_demand=
+                (herbivore_maintenance+herbivore_growth_budget)/
+                herbivore_assimilation;
 
             const double consumed=std::min(
                 total_demand,
@@ -1503,41 +1566,100 @@ public:
                 }
             }
 
-            // A reduced fraction of grazed plant carbon returns immediately
-            // as fecal/unassimilated detritus.
-            fs.add(cell,litter_,0.35*consumed);
-            const double food_ratio=total_demand>0.0
-                ? std::clamp(consumed/total_demand,0.0,1.0)
-                : 1.0;
-            for (Cohort* herbivore:herbivores) {
-                const double rate=
-                    0.0045*food_ratio-
-                    0.006*(1.0-food_ratio);
-                herbivore->count=std::max(
-                    0.0,
-                    herbivore->count*
-                    std::exp(rate*ctx.dt_days)
-                );
-            }
+            // Every demographic gain is paid by assimilated forage carbon.
+            // Maintenance is respired; unassimilated food and background
+            // mortality return to litter. This closes the local fauna transfer
+            // against vegetation, litter, cohort biomass and the ledger.
+            const double herbivore_assimilated=
+                consumed*herbivore_assimilation;
+            const double herbivore_respired=std::min(
+                herbivore_carbon_before+herbivore_assimilated,
+                herbivore_maintenance
+            );
+            const double herbivore_after_metabolism=std::max(
+                0.0,
+                herbivore_carbon_before+
+                    herbivore_assimilated-
+                    herbivore_respired
+            );
+            const double herbivore_background_mortality=
+                herbivore_after_metabolism*
+                (-std::expm1(
+                    -herbivore_mortality_per_day*ctx.dt_days
+                ));
+            const double herbivore_after_background=std::max(
+                0.0,
+                herbivore_after_metabolism-
+                    herbivore_background_mortality
+            );
+            const double herbivore_excess_fraction=
+                herbivore_after_background>0.0
+                    ? std::clamp(
+                        (herbivore_after_background-herbivore_capacity)/
+                            herbivore_after_background,
+                        0.0,
+                        1.0
+                    )
+                    : 0.0;
+            const double herbivore_density_mortality=
+                herbivore_after_background*
+                (-std::expm1(
+                    -density_regulation_per_day*
+                    herbivore_excess_fraction*
+                    ctx.dt_days
+                ));
+            const double herbivore_carbon_after=std::max(
+                0.0,
+                herbivore_after_background-
+                    herbivore_density_mortality
+            );
+            fs.add(
+                cell,
+                litter_,
+                consumed-herbivore_assimilated+
+                    herbivore_background_mortality+
+                    herbivore_density_mortality
+            );
+            fs.add(cell,respired_,herbivore_respired);
+            scale_group(
+                herbivores,
+                herbivore_carbon_before,
+                herbivore_carbon_after
+            );
 
-            double prey_biomass=0.0;
-            for (const Cohort* herbivore:herbivores)
-                prey_biomass+=
-                    herbivore->count*
-                    herbivore->body_mass_kg;
-            double pred_demand=0.0;
-            for (const Cohort* carnivore:carnivores)
-                pred_demand+=
-                    carnivore->count*
-                    carnivore->body_mass_kg*
-                    0.025*
-                    ctx.dt_days;
+            const double prey_biomass=group_carbon(herbivores);
+            const double carnivore_carbon_before=
+                group_carbon(carnivores);
+            const double carnivore_capacity=
+                prey_biomass*kCarnivoreCarbonPerHerbivoreCarbon;
+            const double carnivore_capacity_ratio=
+                carnivore_capacity>0.0
+                    ? carnivore_carbon_before/carnivore_capacity
+                    : std::numeric_limits<double>::infinity();
+            const double carnivore_net_growth_per_day=
+                carnivore_max_growth_per_day*
+                std::clamp(1.0-carnivore_capacity_ratio,0.0,1.0);
+            const double carnivore_maintenance=
+                carnivore_carbon_before*
+                carnivore_maintenance_per_day*
+                ctx.dt_days;
+            const double carnivore_growth_budget=
+                carnivore_carbon_before*
+                (
+                    carnivore_mortality_per_day+
+                    carnivore_net_growth_per_day
+                )*
+                ctx.dt_days;
+            const double pred_demand=
+                (carnivore_maintenance+carnivore_growth_budget)/
+                carnivore_assimilation;
             const double killed=std::min(
                 pred_demand,
-                prey_biomass*0.003
+                prey_biomass*std::clamp(
+                    0.003*ctx.dt_days,0.0,1.0
+                )
             );
             if (prey_biomass>0.0 && killed>0.0) {
-                fs.add(cell,litter_,0.12*killed);
                 const double survival=std::clamp(
                     1.0-killed/prey_biomass,
                     0.0,
@@ -1547,19 +1669,66 @@ public:
                     herbivore->count*=survival;
             }
 
-            const double pred_food=pred_demand>0.0
-                ? std::clamp(killed/pred_demand,0.0,1.0)
-                : 1.0;
+            const double carnivore_assimilated=
+                killed*carnivore_assimilation;
+            const double carnivore_respired=std::min(
+                carnivore_carbon_before+carnivore_assimilated,
+                carnivore_maintenance
+            );
+            const double carnivore_after_metabolism=std::max(
+                0.0,
+                carnivore_carbon_before+
+                    carnivore_assimilated-
+                    carnivore_respired
+            );
+            const double carnivore_background_mortality=
+                carnivore_after_metabolism*
+                (-std::expm1(
+                    -carnivore_mortality_per_day*ctx.dt_days
+                ));
+            const double carnivore_after_background=std::max(
+                0.0,
+                carnivore_after_metabolism-
+                    carnivore_background_mortality
+            );
+            const double carnivore_excess_fraction=
+                carnivore_after_background>0.0
+                    ? std::clamp(
+                        (carnivore_after_background-carnivore_capacity)/
+                            carnivore_after_background,
+                        0.0,
+                        1.0
+                    )
+                    : 0.0;
+            const double carnivore_density_mortality=
+                carnivore_after_background*
+                (-std::expm1(
+                    -density_regulation_per_day*
+                    carnivore_excess_fraction*
+                    ctx.dt_days
+                ));
+            const double carnivore_carbon_after=std::max(
+                0.0,
+                carnivore_after_background-
+                    carnivore_density_mortality
+            );
+            fs.add(
+                cell,
+                litter_,
+                killed-carnivore_assimilated+
+                    carnivore_background_mortality+
+                    carnivore_density_mortality
+            );
+            fs.add(cell,respired_,carnivore_respired);
             for (Cohort* carnivore:carnivores) {
                 const double before=carnivore->count;
-                const double rate=
-                    0.0035*pred_food-
-                    0.007*(1.0-pred_food);
-                carnivore->count=std::max(
-                    0.0,
-                    carnivore->count*
-                    std::exp(rate*ctx.dt_days)
-                );
+                if (carnivore_carbon_before>0.0)
+                    carnivore->count=std::max(
+                        0.0,
+                        carnivore->count*
+                            carnivore_carbon_after/
+                            carnivore_carbon_before
+                    );
                 if (
                     before>=1.0 &&
                     carnivore->count<1.0
@@ -1747,7 +1916,8 @@ public:
 private:
     FieldId land_;
     std::array<FieldId,3> pft_;
-    FieldId carbon_,litter_;
+    FieldId carbon_,litter_,respired_;
+    bool fire_enabled_{};
 };
 
 } // namespace
@@ -1813,6 +1983,7 @@ void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.tree_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.vegetation_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.npp_kg_day","kgC/day",FieldSemantics::Extensive,0.0,-1.0e30,1.0e30});
+    r.register_field({"ecology.fauna_respired_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_active_area_m2","m2",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_active_fraction","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"ecology.fire_danger","1",FieldSemantics::Intensive,0.0,0.0,1.0});
@@ -1825,8 +1996,10 @@ void EcologyModule::register_stores(StateStoreRegistry& stores, const FieldRegis
 void EcologyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
     s.add(std::make_unique<SoilSystem>(r));
     s.add(std::make_unique<VegetationSystem>(r));
-    s.add(std::make_unique<FireSystem>(r));
-    s.add(std::make_unique<FaunaSystem>(r));
+    if (config_.enable_fire)
+        s.add(std::make_unique<FireSystem>(r));
+    if (config_.enable_fauna)
+        s.add(std::make_unique<FaunaSystem>(r,config_.enable_fire));
 }
 void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
     auto& fs=world.stores().get<FieldStore>();
@@ -1868,8 +2041,12 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
         const double suitability=std::exp(
             -std::pow((fs.get(c,temp)-291.0)/24.0,2.0)
         );
+        // Warm-start near the undisturbed long-run biomass scale. The former
+        // 4 kgC/m2 multiplier forced every new world through a roughly 75%
+        // artificial drawdown before approaching its own attractor.
+        constexpr double initial_biomass_density_kg_m2=1.0;
         const double initial_carbon=
-            effective*4.0*suitability*
+            effective*initial_biomass_density_kg_m2*suitability*
             (0.25+0.75*soil_fertility);
 
         const std::array<double,3> pft_score{
@@ -1912,18 +2089,39 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
         );
 
         if (lf>0.2 && suitability>0.12 && soil_fertility>0.08) {
-            const double km2=effective/1.0e6;
-            const double habitat=
-                suitability*(0.30+0.70*soil_fertility);
+            constexpr double herbivore_body_mass_kg=35.0;
+            constexpr double herbivore_reserve_kg=2.0;
+            constexpr double carnivore_body_mass_kg=70.0;
+            constexpr double carnivore_reserve_kg=4.0;
+            const double weighted_forage=
+                fs.get(c,pft[0])+0.55*fs.get(c,pft[1])+
+                0.12*fs.get(c,pft[2]);
+            const double herbivore_carbon=
+                weighted_forage*
+                kHerbivoreCarbonPerWeightedForage*
+                kInitialHerbivoreCapacityFraction;
+            const double herbivore_individual_carbon=
+                (
+                    herbivore_body_mass_kg+
+                    herbivore_reserve_kg
+                )*kFaunaCarbonFractionOfWetMass;
+            const double carnivore_carbon=
+                herbivore_carbon*
+                kCarnivoreCarbonPerHerbivoreCarbon;
+            const double carnivore_individual_carbon=
+                (
+                    carnivore_body_mass_kg+
+                    carnivore_reserve_kg
+                )*kFaunaCarbonFractionOfWetMass;
             cs.add({
                 0,0,c,1,1,
-                std::max(10.0,km2*0.7*habitat),
-                35.0,2.0
+                herbivore_carbon/herbivore_individual_carbon,
+                herbivore_body_mass_kg,herbivore_reserve_kg
             });
             cs.add({
                 0,0,c,2,2,
-                std::max(2.0,km2*0.015*habitat),
-                70.0,4.0
+                carnivore_carbon/carnivore_individual_carbon,
+                carnivore_body_mass_kg,carnivore_reserve_kg
             });
         }
     }

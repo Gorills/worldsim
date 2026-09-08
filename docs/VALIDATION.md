@@ -18,7 +18,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 20);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 21);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -29,7 +29,8 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - living-soil coupling: fertility limits NPP, vegetation turnover creates litter, and litter-rich soil feeds back toward higher reduced fertility;
 - adaptive-cover adjacency: coarse/fine neighbor regions resolve to deterministic active leaves with area-normalized weights that close to one;
 - flora v1: PFT carbon sums to aggregate vegetation, sterile worlds remain sterile without propagules, neighbor recruitment colonizes suitable empty habitat, and woody canopy suppresses grass under otherwise matched conditions;
-- fauna v2: herbivores select neighboring forage, carnivores select neighboring prey, and frozen movement plans prevent same-tick multi-hop migration;
+- fauna v3: food-paid growth, trophic biomass bounds, herbivore forage
+  selection, carnivore prey selection and frozen movement plans;
 - C ABI field discovery and value copying;
 - module-extension contract and generic snapshot support;
 - post-load spatial-store/active-cover validation through normal snapshot round trips;
@@ -73,7 +74,7 @@ extensive-ledger LOD conservation and current snapshot round-trip.
 `worldsim_soil_carbon_tests` covers pure-model and integrated soil-carbon
 closure, bounded short/long steps, temperature/moisture response, staged pool
 transfers, dormant submerged stock, LOD conservation, aggregate reconstruction,
-and current epoch-21 snapshot round-trip and deterministic continuation.
+and current epoch-22 snapshot round-trip and deterministic continuation.
 
 The Soil carbon v1 integration run completed all **12/12** CTest targets.
 ASan, UBSan and float-cast-overflow instrumentation passed the dedicated suite,
@@ -216,4 +217,5 @@ with maximum relative residual 2.70362e-14. Reference-grid river geometry is
 independent of camera refinement; this does not establish spatial convergence
 of an adaptive hydraulic solver. Basin hydrology introduced epoch 17; snapshot
 epoch 18 introduced persistent climate state, Wildfire v1 epoch 19, Soil carbon
-v1 epoch 20, and the current snow-albedo coupling uses epoch 21.
+v1 epoch 20, snow-albedo coupling epoch 21, and fauna carbon accounting uses
+the current epoch 22.

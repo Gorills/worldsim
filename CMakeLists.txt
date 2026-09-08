@@ -65,6 +65,10 @@ if(WORLDSIM_BUILD_CLI)
   add_executable(worldsim_geology_benchmark apps/worldsim_geology_benchmark.cpp)
   target_link_libraries(worldsim_geology_benchmark PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_geology_benchmark)
+
+  add_executable(worldsim_long_run apps/worldsim_long_run.cpp)
+  target_link_libraries(worldsim_long_run PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_long_run)
 endif()
 
 if(WORLDSIM_BUILD_TESTS)
@@ -132,6 +136,17 @@ if(WORLDSIM_BUILD_TESTS)
       COMMAND worldsim_geology_benchmark
         --quick
         --output ${CMAKE_BINARY_DIR}/geology-smoke
+    )
+  endif()
+  if(TARGET worldsim_long_run)
+    add_test(
+      NAME worldsim_long_run_smoke
+      COMMAND worldsim_long_run
+        --years 10
+        --level 1
+        --mode coupled
+        --assert-stable
+        --output ${CMAKE_BINARY_DIR}/long-run-smoke.csv
     )
   endif()
 endif()

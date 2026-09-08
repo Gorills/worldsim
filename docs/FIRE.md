@@ -1,8 +1,9 @@
 # Wildfire v1 contract
 
 > Soil carbon v1 subsequently raised the snapshot epoch to 20 and added
-> conservative decomposition pools. Snow-albedo coupling v1 now raises the
-> current epoch to 21 and suppresses fire danger under projected snow cover.
+> conservative decomposition pools. Snow-albedo coupling v1 introduced epoch
+> 21 and suppresses fire danger under projected snow cover. Fauna carbon
+> accounting subsequently raises the current combined-world epoch to 22.
 > The Wildfire-v1 execution record below is retained as historical evidence for
 > epoch 19.
 
@@ -93,9 +94,10 @@ plant C before + litter C before + char C before + emitted C before
 ```
 
 This identity covers fire transfers only. Soil carbon v1 separately closes
-litter/soil decomposition against a cumulative respiration ledger, but
-photosynthesis, plant/fauna respiration and atmosphere/ocean exchange do not
-yet form a closed planetary carbon cycle. `fire_emitted_carbon_kg` therefore
+litter/soil decomposition against a cumulative respiration ledger. Fauna v3
+also records its body-carbon transfers and respiration, but photosynthesis,
+plant respiration and atmosphere/ocean exchange do not yet form a closed
+planetary carbon cycle. `fire_emitted_carbon_kg` therefore
 remains a cumulative destination ledger rather than a coupled atmospheric CO2
 reservoir.
 

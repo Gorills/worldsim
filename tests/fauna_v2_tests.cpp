@@ -94,6 +94,37 @@ double lineage_count_in_cell(
     return total;
 }
 
+double sum_field(const Simulation& simulation, const char* key) {
+    const auto field=simulation.fields().find(key);
+    if (!field) throw std::runtime_error("missing carbon-budget field");
+    double total=0.0;
+    const auto& fields=simulation.world().stores().get<FieldStore>();
+    for (double value:fields.column(*field)) total+=value;
+    return total;
+}
+
+double tracked_ecology_carbon(const Simulation& simulation) {
+    double total=0.0;
+    for (const char* key:{
+        "ecology.vegetation_carbon_kg",
+        "ecology.litter_carbon_kg",
+        "ecology.soil_fast_carbon_kg",
+        "ecology.soil_slow_carbon_kg",
+        "ecology.soil_respired_carbon_kg",
+        "ecology.fire_emitted_carbon_kg",
+        "ecology.pyrogenic_carbon_kg",
+        "ecology.fauna_respired_carbon_kg"
+    }) {
+        total+=sum_field(simulation,key);
+    }
+    for (const auto& [id,cohort]:
+        simulation.world().stores().get<CohortStore>().all()) {
+        (void)id;
+        total+=cohort_carbon_kg(cohort);
+    }
+    return total;
+}
+
 void test_indexed_transfer_conserves_population() {
     FieldRegistry registry;
     registry.freeze();
@@ -372,17 +403,101 @@ void test_migration_resolves_refined_neighbor_region() {
     cohorts.validate_active_cover(sim->world().active_cells());
 }
 
+void test_fauna_carbon_budget_and_starvation() {
+    const SimulationConfig config{1,1,3600.0};
+    auto simulation=make_default_simulation(5050,config);
+    const double carbon_before=tracked_ecology_carbon(*simulation);
+    const double respired_before=sum_field(
+        *simulation,"ecology.fauna_respired_carbon_kg"
+    );
+    simulation->step(24);
+    const double expected_after=
+        carbon_before+
+        sum_field(*simulation,"ecology.npp_kg_day");
+    near(
+        tracked_ecology_carbon(*simulation),
+        expected_after,
+        3.0e-12,
+        "coupled daily ecology step did not close tracked carbon"
+    );
+    check(
+        sum_field(*simulation,"ecology.fauna_respired_carbon_kg")>
+            respired_before,
+        "feeding fauna did not report maintenance respiration"
+    );
+
+    auto starving=make_default_simulation(5050,config);
+    clear_plants(*starving);
+    double fauna_before=0.0;
+    for (const auto& [id,cohort]:
+        starving->world().stores().get<CohortStore>().all()) {
+        (void)id;
+        fauna_before+=cohort_carbon_kg(cohort);
+    }
+    starving->step(24);
+    double fauna_after=0.0;
+    for (const auto& [id,cohort]:
+        starving->world().stores().get<CohortStore>().all()) {
+        (void)id;
+        fauna_after+=cohort_carbon_kg(cohort);
+    }
+    check(
+        fauna_after<fauna_before,
+        "fauna created population growth without forage"
+    );
+
+    auto overcrowded=make_default_simulation(5050,config);
+    clear_fauna(*overcrowded);
+    clear_plants(*overcrowded);
+    auto& fields=overcrowded->world().stores().get<FieldStore>();
+    const auto land=*overcrowded->fields().find(
+        "geography.land_fraction"
+    );
+    CellId source;
+    for (CellId cell:overcrowded->world().active_cells()) {
+        if (fields.get(cell,land)>0.50) {
+            source=cell;
+            break;
+        }
+    }
+    check(source.valid(),"over-capacity fixture found no land cell");
+    set_grass_density(*overcrowded,source,1.0);
+    const double land_area=
+        overcrowded->world().topology().area_m2(source)*
+        fields.get(source,land);
+    auto& cohorts=overcrowded->world().stores().get<CohortStore>();
+    Cohort& crowd=cohorts.add({
+        0,0,source,9401,1,
+        land_area*0.01/
+            ((35.0+2.0)*kFaunaCarbonFractionOfWetMass),
+        35.0,2.0
+    });
+    const std::uint64_t crowd_lineage=crowd.lineage_id;
+    const double crowd_before=cohorts.total_count();
+    overcrowded->step(24);
+    double crowd_after=0.0;
+    for (const auto& [id,cohort]:cohorts.all()) {
+        (void)id;
+        if (cohort.lineage_id==crowd_lineage)
+            crowd_after+=cohort.count;
+    }
+    check(
+        crowd_after<crowd_before,
+        "fauna density regulation did not reduce an over-capacity guild"
+    );
+}
+
 void test_snapshot_epoch_current() {
     auto sim=make_default_simulation(6060);
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{21},
+        snapshot[8]==std::byte{22},
         "unexpected authoritative snapshot epoch"
     );
 
     auto legacy=snapshot;
-    legacy[8]=std::byte{20};
+    legacy[8]=std::byte{21};
     bool rejected=false;
     try {
         auto restored=make_default_simulation(6060);
@@ -390,13 +505,13 @@ void test_snapshot_epoch_current() {
     } catch (const std::runtime_error&) {
         rejected=true;
     }
-    check(rejected,"snapshot v20 was accepted by the snow-albedo model");
+    check(rejected,"snapshot v21 was accepted by the fauna-carbon model");
 
     auto restored=make_default_simulation(6060);
     restored->load_snapshot(snapshot);
     check(
         restored->save_snapshot()==snapshot,
-        "fauna v2 snapshot roundtrip changed authoritative state"
+        "fauna v3 snapshot roundtrip changed authoritative state"
     );
 }
 
@@ -407,6 +522,7 @@ int main() {
         test_indexed_transfer_conserves_population();
         test_uniform_habitat_selection();
         test_migration_resolves_refined_neighbor_region();
+        test_fauna_carbon_budget_and_starvation();
         test_snapshot_epoch_current();
         std::cout << "fauna_v2_tests: OK\n";
         return EXIT_SUCCESS;

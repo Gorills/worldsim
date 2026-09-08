@@ -6,8 +6,9 @@
 #   make lab     # build GDExtension, then launch the full-world simulation lab
 #   make visual  # build core and write the five-seed C++ visual diagnostic suite
 #   make climate # build core and run the two-year climate diagnostic
+#   make longrun # build core and run the 100-year stability diagnostic
 
-.PHONY: help core godot run run-scene map lab visual geology climate test
+.PHONY: help core godot run run-scene map lab visual geology climate longrun test
 
 GODOT ?= godot
 export GODOT
@@ -23,6 +24,7 @@ help:
 		'make visual     build core and generate C++ visual diagnostic suite' \
 		'make geology    build core and run geology plausibility benchmark' \
 		'make climate    build core and run two-year climate diagnostics' \
+		'make longrun    build core and run a 100-year level-2 stability diagnostic' \
 		'make test       build kernel and run ctest --preset dev' \
 		'' \
 		'Override the editor with GODOT=/path/to/godot'
@@ -52,6 +54,9 @@ geology: core
 
 climate: core
 	./out/dev/worldsim_climate_dump --days 730 --level 2 --adaptive --output out/climate-diagnostics
+
+longrun: core
+	./out/dev/worldsim_long_run --years 100 --level 2 --seed 42 --output out/long-run/seed42-coupled.csv
 
 test:
 	cmake --preset dev

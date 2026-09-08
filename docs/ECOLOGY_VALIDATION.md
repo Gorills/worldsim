@@ -90,9 +90,9 @@ The representation follows the large-scale simplification used by dynamic global
 
 Total vegetation NPP remains limited by living-soil fertility, temperature, solar forcing, root-zone water and magic growth forcing, but production and turnover are now resolved per functional type. Turnover returns carbon to litter. Respiration and turnover are jointly limited by available carbon before committing the step, and NPP reports realized respiration. This keeps the isolated vegetation budget closed even when a long step would otherwise overdraw the pool; it does not imply that the large-step nonlinear ecosystem trajectory is accurate.
 
-The reduced herbivore cohorts preferentially consume grass, then shrubs, with a smaller tree forage contribution. Fauna removes carbon from the same PFT pools and then recomputes total vegetation, preventing the aggregate field from drifting away from functional-type state. A fraction of consumed plant carbon returns to litter, and a bounded estimate of killed wet biomass returns as carcass carbon. Cohort body mass is still not a conserved carbon store.
+The reduced herbivore cohorts preferentially consume grass, then shrubs, with a smaller tree forage contribution. Fauna removes carbon from the same PFT pools and then recomputes total vegetation, preventing the aggregate field from drifting away from functional-type state. Cohort wet mass is converted to an explicit derived carbon stock; growth is limited by assimilated food, unassimilated food and mortality return to litter, and maintenance is accumulated in `ecology.fauna_respired_carbon_kg`. Density regulation bounds herbivores against preference-weighted forage and carnivores against herbivore carbon. Exact closure, parameters, long-run evidence and unsupported claims are recorded in [LONG_RUN_STABILITY.md](LONG_RUN_STABILITY.md).
 
-### Fauna v2: habitat selection and local migration
+### Fauna v3: carbon accounting, trophic bounds and local migration
 
 After the daily local feeding/predation update, the fauna system computes a reduced habitat-quality field for each trophic group. Herbivore quality rises with preference-weighted plant forage per effective land area; carnivore quality rises with herbivore biomass density. Each cohort compares its current cell with the four adjacent spatial regions and redistributes only toward a side whose area-weighted quality is materially better.
 
@@ -116,8 +116,9 @@ litter, returns uncombusted mortality to litter, and transfers combusted carbon
 to explicit emission and pyrogenic-carbon ledgers.
 
 The fire transfer itself closes carbon, and Soil carbon v1 now closes its own
-litter/soil/respiration boundary. The wider ecology still lacks a closed
-atmospheric/ocean/fauna carbon cycle. The complete field, LOD,
+litter/soil/respiration boundary. Fauna now closes its reduced body-carbon
+transfers against litter and a respiration ledger, but the wider ecology still
+lacks a coupled atmospheric/ocean carbon cycle. The complete field, LOD,
 accounting, reference and unsupported-claim contract is in [FIRE.md](FIRE.md).
 
 ## Executable validation
@@ -145,17 +146,21 @@ The dedicated `worldsim_soil_carbon_tests` suite checks:
 - submerged stock remains dormant instead of being deleted;
 - all component pools and the cumulative ledger survive refine/coarsen; and
 - historical epoch-20 soil-carbon snapshots round-tripped and continued
-  deterministically; the current combined world uses epoch 21.
+  deterministically; the current combined world uses epoch 22.
 
-The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
+The dedicated `worldsim_fauna_v2_tests` suite checks the movement and fauna
+carbon contracts:
 
 - indexed cohort transfer preserves total count, keeps source/target spatial lookup coherent, and merges repeated transfers into an existing same-lineage destination cohort;
 - herbivores partially redistribute from low-forage habitat toward a neighboring high-forage cell;
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- the current epoch-21 snapshot includes authoritative soil-carbon and
-  snow-coupled climate state, rejects version 20, and round-trips exactly.
+- the integrated daily ecology carbon budget closes against reported NPP;
+- starvation cannot create population and over-capacity cohorts decline even
+  when standing forage is abundant; and
+- the current epoch-22 snapshot includes the fauna-respiration ledger, rejects
+  version 21, and round-trips exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
@@ -167,8 +172,8 @@ The dedicated `worldsim_fire_tests` suite checks:
 - the aggregate vegetation field remains the exact sum of the PFT pools;
 - spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
 - extensive fire ledgers survive coarsening; and
-- snapshot epoch 21 round-trips authoritative fire, soil-carbon and
-  snow-coupled climate state.
+- snapshot epoch 22 round-trips authoritative fire, soil-carbon, fauna-carbon
+  and snow-coupled climate state.
 
 ## Explicitly unsupported ecology claims
 
