@@ -65,6 +65,11 @@ public:
         double regolith_thickness_m
     ) const;
 
+    [[nodiscard]] double hillslope_transport_rate_m_per_year(
+        double downhill_slope,
+        double regolith_thickness_m
+    ) const;
+
     [[nodiscard]] ErosionBudget erode(
         GeologyState& state,
         double cell_area_m2,
