@@ -62,6 +62,12 @@ if(WORLDSIM_BUILD_TESTS)
   target_link_libraries(worldsim_tests PRIVATE worldsim worldsim_c)
   worldsim_enable_warnings(worldsim_tests)
   add_test(NAME worldsim_tests COMMAND worldsim_tests)
+
+  add_executable(worldsim_fauna_v2_tests tests/fauna_v2_tests.cpp)
+  target_link_libraries(worldsim_fauna_v2_tests PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_fauna_v2_tests)
+  add_test(NAME worldsim_fauna_v2_tests COMMAND worldsim_fauna_v2_tests)
+
   add_executable(worldsim_sanitizer_smoke tests/sanitizer_smoke.cpp)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_sanitizer_smoke)
