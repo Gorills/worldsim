@@ -188,7 +188,7 @@ void test_determinism_and_snapshot() {
     check(snap.size()>11,"snapshot header is unexpectedly short");
     for (std::uint8_t legacy_version:{
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
-        std::uint8_t{6}
+        std::uint8_t{6},std::uint8_t{7}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -1074,6 +1074,46 @@ void test_geology_model_process_contracts() {
     check(old_elevation<young_elevation-1'000.0,
           "oceanic thermal subsidence lost age dependence");
 
+    const double shallow_mass=geology.sediment_mass_for_thickness_kg(
+        500.0,
+        area_m2
+    );
+    const double deep_mass=geology.sediment_mass_for_thickness_kg(
+        3'000.0,
+        area_m2
+    );
+    near(
+        geology.sediment_column_thickness_m(shallow_mass,area_m2),
+        500.0,
+        1.0e-11,
+        "sediment compaction mass/thickness inverse failed for shallow column"
+    );
+    near(
+        geology.sediment_column_thickness_m(deep_mass,area_m2),
+        3'000.0,
+        1.0e-11,
+        "sediment compaction mass/thickness inverse failed for deep column"
+    );
+    const double very_deep_mass=geology.sediment_mass_for_thickness_kg(
+        10'000.0,
+        area_m2
+    );
+    near(
+        geology.sediment_column_thickness_m(very_deep_mass,area_m2),
+        10'000.0,
+        1.0e-10,
+        "sediment compaction inverse lost convergence for deep burial"
+    );
+    const double deep_after_same_mass=
+        geology.sediment_column_thickness_m(
+            deep_mass+shallow_mass,
+            area_m2
+        );
+    check(
+        deep_after_same_mass-3'000.0<450.0,
+        "deep sediment column did not compact added mass"
+    );
+
     check(
         collision_score>0.02 &&
         rift_score>0.03 &&
@@ -1145,7 +1185,7 @@ void test_geology_model_process_contracts() {
     );
     geology.deposit(
         basin,
-        100.0*area_m2*GeologyModel::kSedimentDensityKgM3
+        geology.sediment_mass_for_thickness_kg(100.0,area_m2)
     );
     const double basin_after=geology.surface_elevation_m(
         basin,

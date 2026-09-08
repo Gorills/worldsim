@@ -40,7 +40,13 @@ struct ErosionBudget {
 class GeologyModel {
 public:
     static constexpr double kMantleDensityKgM3=3300.0;
-    static constexpr double kSedimentDensityKgM3=2300.0;
+
+    // Generic shaley-sand/silt equilibrium-compaction closure. The retained
+    // density name is the solid-grain density; bulk density emerges from the
+    // depth-dependent porosity profile.
+    static constexpr double kSedimentDensityKgM3=2680.0;
+    static constexpr double kSedimentSurfacePorosity=0.56;
+    static constexpr double kSedimentCompactionPerM=0.39e-3;
 
     explicit GeologyModel(std::uint64_t seed):
         seed_(seed), tectonics_(seed), terrain_(seed) {}
@@ -51,6 +57,16 @@ public:
     [[nodiscard]] double surface_elevation_m(
         const GeologyState& state,
         Vec3d direction,
+        double cell_area_m2
+    ) const;
+
+    [[nodiscard]] double sediment_column_thickness_m(
+        double sediment_mass_kg,
+        double cell_area_m2
+    ) const;
+
+    [[nodiscard]] double sediment_mass_for_thickness_kg(
+        double sediment_thickness_m,
         double cell_area_m2
     ) const;
 
