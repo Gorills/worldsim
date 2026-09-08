@@ -31,7 +31,7 @@ This follows the same relevant large-planet practice as Demiurge: terrain is a d
 
 Static geography is re-sampled after actual simulation-cover refinement/coarsening through the module lifecycle. This is required because generic intensive-field refinement copies parent values and therefore cannot create higher-frequency terrain detail by itself.
 
-Because this change replaces the authoritative geography function rather than only a debug view, snapshot compatibility advances to version 3. Version-2 snapshots are rejected: they can contain old fixed-continent geography with the same field schema, which would otherwise be mixed with tectonic terrain when a later LOD cover change triggers geography resampling.
+Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain function changes. The tectonic-authority change introduced snapshot version 3; the orogenic-shaping change advances it again to version 4. Version-2 and version-3 snapshots are rejected because they can contain geography sampled from older terrain functions under the same field schema, which would otherwise be mixed with current terrain when a later LOD cover change triggers geography resampling.
 
 ## Godot large-world strategy
 
@@ -130,7 +130,16 @@ The tectonic macro height is derived from:
 - divergent response -> oceanic ridge uplift or continental rift subsidence;
 - transform/shear motion -> no direct vertical term in this slice.
 
-The macro response still uses a 12-degree boundary belt, but pair participation is no longer a boolean score gate. Every pair receives a compact smooth competition weight based on how closely both plates approach local ownership; the weight reaches zero with zero slope before the pair is skipped. True neighboring pairs therefore retain support near their shared boundary, while bisectors of non-neighbor pairs are suppressed when a third plate dominates. This removes the previous discontinuous active-pair contour and its polygon/ghost relief artifacts without changing the nearest-boundary forcing diagnostic. The resulting `macro_elevation_m` is now the authoritative low-frequency basis consumed by `TerrainGenerator`; the `Macro relief` map layer continues to show that raw basis without meso/local terrain detail.
+Pair participation still uses the compact smooth competition weight based on how closely both plates approach local ownership; the weight reaches zero with zero slope before the pair is skipped, so the polygon/ghost fix remains intact. Divergence keeps the broad 12-degree macro belt. Convergent uplift is now shaped separately: a continuous sphere-native width field varies its support between roughly 6 and 11.8 degrees, and a second deterministic ridged coherent-noise field modulates the response with a non-zero floor. Both modifiers are multiplied by the actual positive convergence and competition weights, so they can narrow, segment, and branch an orogen but cannot create isolated tectonic mountains away from a convergent boundary. The nearest-boundary forcing diagnostic remains unchanged.
+
+The ridged modulation follows the established procedural-terrain use of absolute-valued coherent noise to create ridge-like mountainous structure, while the geological constraint remains that strong deformation is concentrated near plate boundaries and convergent margins create mountain systems:
+
+- https://libnoise.sourceforge.net/docs/classnoise_1_1module_1_1RidgedMulti.html
+- https://libnoise.sourceforge.net/tutorials/tutorial5.html
+- https://pubs.usgs.gov/gip/dynamic/understanding.html
+- https://volcanoes.usgs.gov/about/edu/dynamicplanet/nutshell.php
+
+The resulting `macro_elevation_m` remains the authoritative low-frequency basis consumed by `TerrainGenerator`; the `Macro relief` map layer continues to show that raw basis without meso/local terrain detail. A seed-42 128 x 64 visual-regression sentinel constrains the convergent uplift footprint so it cannot regress to the previous wide smooth ribbon while the 64-seed robustness sweep still requires non-trivial uplift coverage and boundary continuity.
 
 The global map exposes five inspection layers: authoritative `Elevation`, plus `Plates`, `Tectonic forcing`, `Crust`, and raw `Macro relief`. The latter four remain debug presentations; plate colors, crust colors, forcing colors, and macro coloring live only in GDScript. Godot 4.7 documents the standard `Button.pressed` signal used by the layer controls and `PackedInt32Array` used for plate ids:
 
