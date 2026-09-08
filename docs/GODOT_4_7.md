@@ -51,9 +51,11 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 - `initialize_terrain_world(seed)` for the terrain-only walking slice
 - `step_hours(hours)`
 - `set_focus_direction(direction)` / `set_focus_projected(east_m, north_m)` / `clear_focus()`
+- `projected_to_direction(east_m, north_m)` for presentation-space placement on sphere maps
 - `sample_terrain_height(east_m, north_m)`
 - `sample_terrain_patch(center_east_m, center_north_m, spacing_m, resolution)`
 - `sample_terrain_equirectangular(width, height)` for current authoritative elevation at active-cell resolution
+- `sample_preview_terrain_equirectangular(width, height)` for the static walking terrain overview
 - `sample_tectonics_equirectangular(width, height)`
 - `get_tick()`
 - `get_render_packet()`
@@ -98,7 +100,62 @@ Logical projected world coordinates remain in 64-bit GDScript scalar values whil
 
 The viewer defines InputMap actions for WASD movement and jump. Mouse look is handled through `_unhandled_input()`; Escape releases/captures the mouse.
 
+`F` switches between grounded walking and non-colliding survey flight. In flight,
+WASD follows the camera, Space/Q move vertically, the mouse wheel selects 0.25,
+2.5, 25, or 250 km/s, and Shift temporarily multiplies the selected speed by
+four. Entering flight raises the camera to at least 250 m above the local ground.
+Returning to walking synchronously creates the destination chunk and places the
+character 1.25 m above its sampled surface before restoring grounded collision.
+This is presentation/navigation state only and does not transfer authority from
+the simulation kernel.
+
+Fast flight integrates horizontal motion directly into the 64-bit logical origin,
+so even a maximum-speed physics step never places a multi-million-meter position
+in the single-precision scene tree. It otherwise reuses the established
+origin-shifting contract.
+Only the destination tile is forced synchronously when a physics step crosses
+chunks; surrounding tiles retain the one-per-rendered-frame budget. Consequently,
+terrain around the camera can visibly fill in after the highest-speed travel.
+This is intentionally a point-to-point inspection control, not distant terrain
+LOD. Geometry clipmaps remain the documented next step if continuous high-speed
+horizon rendering becomes a requirement.
+
+The input and motion choices were checked against the Godot 4.7 `Input` and
+`CharacterBody3D` contracts. Variable speed follows established debug-camera
+practice represented by Unreal Engine's `ADebugCameraController::SpeedScale`:
+
+- https://docs.godotengine.org/en/4.7/classes/class_input.html
+- https://docs.godotengine.org/en/4.7/tutorials/inputs/input_examples.html
+- https://docs.godotengine.org/en/4.7/classes/class_characterbody3d.html
+- https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Engine/ADebugCameraController/SpeedScale?application_version=5.5
+
 HUD text is localized through gettext PO catalogs (English and Russian) and styled by a shared `Theme` resource.
+
+### Walking world map
+
+The walking HUD includes a north-up, whole-sphere equirectangular map in the top
+right. Its 320 x 160 base texture is generated once from the same static preview
+terrain sampled by walking meshes. Color elevation bands, restrained relief
+shading, and a coastline accent preserve legibility at the small display size.
+Latitude/longitude guides are a separate overlay.
+
+The live marker layer converts the walker's 64-bit projected coordinates through
+`TerrainGenerator::projected_to_direction()`, then maps that unit direction to
+equirectangular UV. A second projected point 50 km ahead supplies the arrow
+heading; the horizontal delta wraps across the longitude seam. The overlay is
+redrawn without rebuilding the terrain texture. This follows the usual minimap
+separation between a static base map and live position/orientation markers while
+keeping engine/UI state non-authoritative.
+
+Godot 4.7 custom drawing and `Control.queue_redraw()` are the engine contract for
+the marker overlay. A published survey of game minimaps identifies map
+orientation, player/world centering, corner placement, and directional cues as
+the relevant design dimensions; this viewer deliberately uses a world-centered,
+north-up overview with a heading arrow in the requested top-right corner:
+
+- https://docs.godotengine.org/en/4.7/tutorials/2d/custom_drawing_in_2d.html
+- https://docs.godotengine.org/en/4.7/classes/class_control.html
+- https://www.mdpi.com/2220-9964/12/2/58
 
 The scene is intentionally terrain-only. There is no rendered water, atmosphere, vegetation, fauna, content/entity presentation, or distant terrain render LOD. See `docs/TERRAIN_SLICE.md` for the architecture and scaling decision.
 

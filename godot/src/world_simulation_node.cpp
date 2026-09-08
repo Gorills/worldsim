@@ -40,12 +40,16 @@ void WorldSimulationNode::_bind_methods() {
     ClassDB::bind_method(godot::D_METHOD("set_focus_direction","direction"),&WorldSimulationNode::set_focus_direction);
     ClassDB::bind_method(godot::D_METHOD("clear_focus"),&WorldSimulationNode::clear_focus);
     ClassDB::bind_method(godot::D_METHOD("set_focus_projected","east_m","north_m"),&WorldSimulationNode::set_focus_projected);
+    ClassDB::bind_method(godot::D_METHOD("projected_to_direction","east_m","north_m"),
+                         &WorldSimulationNode::projected_to_direction);
     ClassDB::bind_method(godot::D_METHOD("get_tick"),&WorldSimulationNode::get_tick);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_height","east_m","north_m"),&WorldSimulationNode::sample_terrain_height);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_patch","center_east_m","center_north_m","spacing_m","resolution"),
                          &WorldSimulationNode::sample_terrain_patch);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_equirectangular","width","height"),
                          &WorldSimulationNode::sample_terrain_equirectangular);
+    ClassDB::bind_method(godot::D_METHOD("sample_preview_terrain_equirectangular","width","height"),
+                         &WorldSimulationNode::sample_preview_terrain_equirectangular);
     ClassDB::bind_method(godot::D_METHOD("sample_tectonics_equirectangular","width","height"),
                          &WorldSimulationNode::sample_tectonics_equirectangular);
     ClassDB::bind_method(godot::D_METHOD("get_render_packet"),&WorldSimulationNode::get_render_packet);
@@ -128,6 +132,22 @@ void WorldSimulationNode::set_focus_projected(double east_m, double north_m) {
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in set_focus_projected"); }
+}
+
+Vector3 WorldSimulationNode::projected_to_direction(double east_m, double north_m) const {
+    try {
+        ensure_sim();
+        if (!std::isfinite(east_m) || !std::isfinite(north_m))
+            throw std::invalid_argument("projected coordinates must be finite");
+        const auto direction=worldsim::TerrainGenerator::projected_to_direction(east_m,north_m);
+        last_error_.clear();
+        return {
+            static_cast<godot::real_t>(direction.x),
+            static_cast<godot::real_t>(direction.y),
+            static_cast<godot::real_t>(direction.z)
+        };
+    } catch (const std::exception& e) { report_error(e.what()); return {}; }
+    catch (...) { report_error("unknown C++ exception in projected_to_direction"); return {}; }
 }
 
 void WorldSimulationNode::clear_focus() {
@@ -234,6 +254,42 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_equirectangular(std::int6
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); return {}; }
     catch (...) { report_error("unknown C++ exception in sample_terrain_equirectangular"); return {}; }
+    return out;
+}
+
+PackedFloat32Array WorldSimulationNode::sample_preview_terrain_equirectangular(
+    std::int64_t width,
+    std::int64_t height) const {
+    PackedFloat32Array out;
+    try {
+        ensure_sim();
+        constexpr std::int64_t max_samples=2'097'152;
+        if (width<2 || height<2 || width>max_samples/height)
+            throw std::invalid_argument("preview terrain map must be at least 2x2 and contain at most 2097152 samples");
+
+        const int w=static_cast<int>(width);
+        const int h=static_cast<int>(height);
+        out.resize(w*h);
+        const worldsim::TerrainGenerator terrain(sim_->world().seed());
+        for (int y=0;y<h;++y) {
+            const double v=(static_cast<double>(y)+0.5)/static_cast<double>(h);
+            const double latitude=(0.5-v)*worldsim::kPi;
+            const double sin_lat=std::sin(latitude);
+            const double cos_lat=std::cos(latitude);
+            for (int x=0;x<w;++x) {
+                const double u=(static_cast<double>(x)+0.5)/static_cast<double>(w);
+                const double longitude=(2.0*u-1.0)*worldsim::kPi;
+                const worldsim::Vec3d direction{
+                    cos_lat*std::cos(longitude),
+                    cos_lat*std::sin(longitude),
+                    sin_lat
+                };
+                out.set(y*w+x,static_cast<float>(terrain.sample_direction(direction).elevation_m));
+            }
+        }
+        last_error_.clear();
+    } catch (const std::exception& e) { report_error(e.what()); return {}; }
+    catch (...) { report_error("unknown C++ exception in sample_preview_terrain_equirectangular"); return {}; }
     return out;
 }
 

@@ -13,13 +13,22 @@ msgid "HUD_STATUS_ERROR"
 msgstr "Ошибка WorldSim: %s"
 
 msgid "HUD_STATUS_RUNNING"
-msgstr "восток: %.1f км    север: %.1f км    чанков: %d    FPS: %d    тик: %d"
+msgstr "восток: %.1f км    север: %.1f км    режим: %s    скорость: %s    чанков: %d    FPS: %d    тик: %d"
 
 msgid "HUD_STATUS_PAUSED"
 msgstr "ПАУЗА    тик: %d    активных ячеек: %d    полей: %d"
 
 msgid "HUD_CONTROLS"
-msgstr "WASD: движение    Мышь: обзор    Пробел: прыжок    Esc: освободить/захватить мышь"
+msgstr "WASD: движение    Мышь: обзор    Пробел: прыжок/вверх    F: прогулка/облёт\nВ полёте: Q вниз    Колесо: скорость    Shift: ускорение x4    Esc: освободить/захватить мышь"
+
+msgid "HUD_MODE_WALK"
+msgstr "прогулка"
+
+msgid "HUD_MODE_SURVEY"
+msgstr "облёт"
+
+msgid "HUD_WORLD_MAP"
+msgstr "КАРТА МИРА"
 
 msgid "MAP_TITLE"
 msgstr "Глобальная карта мира"

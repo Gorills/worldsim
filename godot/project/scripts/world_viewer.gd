@@ -6,6 +6,8 @@ extends Node3D
 @onready var head: Node3D = $Player/Head
 @onready var status: Label = $HUD/StatusPanel/Margin/VBox/Status
 @onready var help: Label = $HUD/StatusPanel/Margin/VBox/Help
+@onready var minimap_view: TextureRect = $HUD/MiniMapPanel/Margin/VBox/MapFrame/Inset/Layers/Map
+@onready var minimap_overlay: Control = $HUD/MiniMapPanel/Margin/VBox/MapFrame/Inset/Layers/Overlay
 
 const CHUNK_SIZE_M := 256.0
 const CHUNK_RESOLUTION := 33
@@ -20,6 +22,13 @@ const JUMP_SPEED_M_S := 7.0
 const GRAVITY_M_S2 := 22.0
 const MOUSE_SENSITIVITY := 0.0022
 const SIM_FOCUS_INTERVAL := 0.25
+const SURVEY_SPEEDS_M_S := [250.0, 2500.0, 25000.0, 250000.0]
+const SURVEY_BOOST_MULTIPLIER := 4.0
+const SURVEY_MIN_CLEARANCE_M := 250.0
+const PLAYER_GROUND_CLEARANCE_M := 1.25
+const MINIMAP_WIDTH := 320
+const MINIMAP_HEIGHT := 160
+const MINIMAP_HEADING_SAMPLE_M := 50000.0
 
 var terrain_material: StandardMaterial3D
 var chunks: Dictionary = {}
@@ -34,6 +43,9 @@ var origin_height_m := 0.0
 var sim_focus_elapsed := 0.0
 var status_elapsed := 0.0
 var pitch := 0.0
+var survey_flight_enabled := false
+var survey_speed_index := 1
+var walking_collision_mask := 1
 
 func _ready() -> void:
     sim.initialize_terrain_world(42)
@@ -47,9 +59,14 @@ func _ready() -> void:
 
     origin_height_m = sim.sample_terrain_height(0.0, 0.0)
     _create_chunk(Vector2i.ZERO)
-    player.position = Vector3(0.0, 1.25, 0.0)
+    player.position = Vector3(0.0, PLAYER_GROUND_CLEARANCE_M, 0.0)
+    walking_collision_mask = player.collision_mask
     pitch = -0.22
     head.rotation.x = pitch
+    if !_create_world_minimap():
+        status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
+        return
+    _update_minimap_marker()
     _queue_visible_chunks(Vector2i.ZERO)
     help.text = tr("HUD_CONTROLS")
     _update_status()
@@ -76,8 +93,19 @@ func _process(delta: float) -> void:
         status_elapsed = 0.0
         _update_status()
 
+    _update_minimap_marker()
+
 func _physics_process(delta: float) -> void:
     var input_2d := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+    if survey_flight_enabled:
+        _move_survey_flight(input_2d, delta)
+    else:
+        _move_walker(input_2d, delta)
+
+    _maybe_shift_origin()
+    _refresh_streaming_center()
+
+func _move_walker(input_2d: Vector2, delta: float) -> void:
     var basis := player.global_transform.basis
     var forward := -basis.z
     var right := basis.x
@@ -98,18 +126,60 @@ func _physics_process(delta: float) -> void:
         player.velocity.y -= GRAVITY_M_S2 * delta
     player.move_and_slide()
 
-    _maybe_shift_origin()
+func _move_survey_flight(input_2d: Vector2, delta: float) -> void:
+    var basis := head.global_transform.basis
+    var forward := -basis.z
+    var right := basis.x
+    var vertical := (
+        Input.get_action_strength("jump")
+        - Input.get_action_strength("survey_descend")
+    )
+    var motion := right * input_2d.x - forward * input_2d.y + Vector3.UP * vertical
+    if motion.length_squared() > 1.0:
+        motion = motion.normalized()
 
+    var speed := _survey_speed_m_s()
+    if Input.is_action_pressed("survey_boost"):
+        speed *= SURVEY_BOOST_MULTIPLIER
+    var travel := motion * speed * delta
+    player.velocity = Vector3.ZERO
+    if travel.is_zero_approx():
+        return
+
+    # Integrate horizontal flight directly into the 64-bit logical origin. Even
+    # the fastest tier therefore never puts a multi-million-meter coordinate in
+    # the stock single-precision scene tree for one frame.
+    var old_origin_height := origin_height_m
+    origin_east_m += travel.x
+    origin_north_m += travel.z
+    origin_height_m = sim.sample_terrain_height(origin_east_m, origin_north_m)
+    player.position.y += travel.y + old_origin_height - origin_height_m
+    for key in chunks.keys():
+        var coord: Vector2i = key
+        var chunk: Node3D = chunks[coord]
+        chunk.position = _chunk_local_position(coord)
+
+func _refresh_streaming_center() -> void:
     var next_chunk := _world_chunk(
         origin_east_m + float(player.position.x),
         origin_north_m + float(player.position.z)
     )
     if next_chunk != current_chunk:
         current_chunk = next_chunk
+        # Survey flight can cross many chunks in one physics frame. Build the
+        # destination tile immediately; the remaining neighborhood stays under
+        # the normal one-chunk-per-rendered-frame streaming budget.
+        if survey_flight_enabled:
+            _create_chunk(current_chunk)
         _queue_visible_chunks(current_chunk)
         _trim_chunks(current_chunk)
 
 func _unhandled_input(event: InputEvent) -> void:
+    if event.is_action_pressed("toggle_survey_flight"):
+        _set_survey_flight_enabled(!survey_flight_enabled)
+        get_viewport().set_input_as_handled()
+        return
+
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
         Input.mouse_mode = (
             Input.MOUSE_MODE_VISIBLE
@@ -119,16 +189,149 @@ func _unhandled_input(event: InputEvent) -> void:
         get_viewport().set_input_as_handled()
         return
 
-    if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-        Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-        get_viewport().set_input_as_handled()
-        return
+    if event is InputEventMouseButton and event.pressed:
+        if survey_flight_enabled and event.button_index == MOUSE_BUTTON_WHEEL_UP:
+            _cycle_survey_speed(1)
+            get_viewport().set_input_as_handled()
+            return
+        if survey_flight_enabled and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+            _cycle_survey_speed(-1)
+            get_viewport().set_input_as_handled()
+            return
+        if event.button_index == MOUSE_BUTTON_LEFT:
+            Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+            get_viewport().set_input_as_handled()
+            return
 
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
         player.rotate_y(-event.relative.x * MOUSE_SENSITIVITY)
         pitch = clampf(pitch - event.relative.y * MOUSE_SENSITIVITY, -1.45, 1.45)
         head.rotation.x = pitch
         get_viewport().set_input_as_handled()
+
+func _set_survey_flight_enabled(enabled: bool) -> void:
+    if survey_flight_enabled == enabled:
+        return
+
+    survey_flight_enabled = enabled
+    player.velocity = Vector3.ZERO
+    if enabled:
+        player.motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+        player.collision_mask = 0
+        var ground_local_y := _ground_local_y()
+        player.position.y = maxf(player.position.y, ground_local_y + SURVEY_MIN_CLEARANCE_M)
+    else:
+        # The destination collision must exist before grounded movement resumes.
+        current_chunk = _world_chunk(
+            origin_east_m + float(player.position.x),
+            origin_north_m + float(player.position.z)
+        )
+        _create_chunk(current_chunk)
+        player.position.y = _ground_local_y() + PLAYER_GROUND_CLEARANCE_M
+        player.collision_mask = walking_collision_mask
+        player.motion_mode = CharacterBody3D.MOTION_MODE_GROUNDED
+
+    _update_status()
+
+func _cycle_survey_speed(direction: int) -> void:
+    survey_speed_index = clampi(
+        survey_speed_index + direction,
+        0,
+        SURVEY_SPEEDS_M_S.size() - 1
+    )
+    _update_status()
+
+func _survey_speed_m_s() -> float:
+    return float(SURVEY_SPEEDS_M_S[survey_speed_index])
+
+func _ground_local_y() -> float:
+    var east_m := origin_east_m + float(player.position.x)
+    var north_m := origin_north_m + float(player.position.z)
+    return sim.sample_terrain_height(east_m, north_m) - origin_height_m
+
+func _create_world_minimap() -> bool:
+    var heights := sim.sample_preview_terrain_equirectangular(MINIMAP_WIDTH, MINIMAP_HEIGHT)
+    if heights.size() != MINIMAP_WIDTH * MINIMAP_HEIGHT:
+        return false
+
+    var pixels := PackedByteArray()
+    pixels.resize(MINIMAP_WIDTH * MINIMAP_HEIGHT * 3)
+    for y in range(MINIMAP_HEIGHT):
+        for x in range(MINIMAP_WIDTH):
+            var index := y * MINIMAP_WIDTH + x
+            var height_m := float(heights[index])
+            var left := float(heights[y * MINIMAP_WIDTH + (x - 1 + MINIMAP_WIDTH) % MINIMAP_WIDTH])
+            var right_h := float(heights[y * MINIMAP_WIDTH + (x + 1) % MINIMAP_WIDTH])
+            var up := float(heights[maxi(y - 1, 0) * MINIMAP_WIDTH + x])
+            var down := float(heights[mini(y + 1, MINIMAP_HEIGHT - 1) * MINIMAP_WIDTH + x])
+            var color := _minimap_elevation_color(height_m)
+
+            var coast := height_m >= 0.0 and (
+                left < 0.0 or right_h < 0.0 or up < 0.0 or down < 0.0
+            )
+            if coast:
+                color = Color(0.80, 0.76, 0.50).lerp(color, 0.32)
+            else:
+                var shade := clampf(
+                    (left - right_h) * 0.000045 + (down - up) * 0.000035,
+                    -0.16,
+                    0.16
+                )
+                color = color.lightened(shade) if shade >= 0.0 else color.darkened(-shade)
+
+            var byte_index := index * 3
+            pixels[byte_index] = clampi(roundi(color.r * 255.0), 0, 255)
+            pixels[byte_index + 1] = clampi(roundi(color.g * 255.0), 0, 255)
+            pixels[byte_index + 2] = clampi(roundi(color.b * 255.0), 0, 255)
+
+    var image := Image.create_from_data(
+        MINIMAP_WIDTH,
+        MINIMAP_HEIGHT,
+        false,
+        Image.FORMAT_RGB8,
+        pixels
+    )
+    minimap_view.texture = ImageTexture.create_from_image(image)
+    return true
+
+func _minimap_elevation_color(height_m: float) -> Color:
+    if height_m < 0.0:
+        var depth := clampf(-height_m / 6000.0, 0.0, 1.0)
+        return Color(0.075, 0.30, 0.48).lerp(Color(0.012, 0.035, 0.09), depth)
+    if height_m < 900.0:
+        var lowland := clampf(height_m / 900.0, 0.0, 1.0)
+        return Color(0.20, 0.46, 0.25).lerp(Color(0.48, 0.50, 0.25), lowland)
+    if height_m < 3000.0:
+        var highland := clampf((height_m - 900.0) / 2100.0, 0.0, 1.0)
+        return Color(0.48, 0.50, 0.25).lerp(Color(0.43, 0.33, 0.26), highland)
+    var mountain := clampf((height_m - 3000.0) / 3500.0, 0.0, 1.0)
+    return Color(0.43, 0.33, 0.26).lerp(Color(0.92, 0.94, 0.94), mountain)
+
+func _update_minimap_marker() -> void:
+    var east_m := origin_east_m + float(player.position.x)
+    var north_m := origin_north_m + float(player.position.z)
+    var forward := -player.global_transform.basis.z
+    forward.y = 0.0
+    forward = forward.normalized()
+
+    var current_direction := sim.projected_to_direction(east_m, north_m)
+    var ahead_direction := sim.projected_to_direction(
+        east_m + forward.x * MINIMAP_HEADING_SAMPLE_M,
+        north_m + forward.z * MINIMAP_HEADING_SAMPLE_M
+    )
+    var marker_uv := _sphere_direction_to_map_uv(current_direction)
+    var ahead_uv := _sphere_direction_to_map_uv(ahead_direction)
+    var heading_uv := ahead_uv - marker_uv
+    if heading_uv.x > 0.5:
+        heading_uv.x -= 1.0
+    elif heading_uv.x < -0.5:
+        heading_uv.x += 1.0
+    minimap_overlay.call("set_marker", marker_uv, heading_uv)
+
+func _sphere_direction_to_map_uv(direction: Vector3) -> Vector2:
+    var longitude := atan2(direction.y, direction.x)
+    var latitude := asin(clampf(direction.z, -1.0, 1.0))
+    return Vector2(longitude / TAU + 0.5, 0.5 - latitude / PI)
 
 func _world_chunk(east_m: float, north_m: float) -> Vector2i:
     return Vector2i(
@@ -297,9 +500,20 @@ func _maybe_shift_origin() -> void:
 func _update_status() -> void:
     var east_m := origin_east_m + float(player.position.x)
     var north_m := origin_north_m + float(player.position.z)
+    var mode_text := tr("HUD_MODE_SURVEY") if survey_flight_enabled else tr("HUD_MODE_WALK")
+    var speed_m_s := _survey_speed_m_s() if survey_flight_enabled else WALK_SPEED_M_S
+    if survey_flight_enabled and Input.is_action_pressed("survey_boost"):
+        speed_m_s *= SURVEY_BOOST_MULTIPLIER
+    var speed_text := (
+        "%.1f km/s" % (speed_m_s / 1000.0)
+        if speed_m_s >= 1000.0
+        else "%.0f m/s" % speed_m_s
+    )
     status.text = tr("HUD_STATUS_RUNNING") % [
         east_m / 1000.0,
         north_m / 1000.0,
+        mode_text,
+        speed_text,
         chunks.size(),
         int(Engine.get_frames_per_second()),
         sim.get_tick()

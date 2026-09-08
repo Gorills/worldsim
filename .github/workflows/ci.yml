@@ -123,6 +123,9 @@ jobs:
           # Mesh winding and world-space AABB: inverted triangles were culled, so
           # the exported scene showed only a noisy horizon line instead of terrain.
           timeout 60 "$GODOT" --headless --path godot/project --script res://ci_terrain_view.gd
+          # Survey flight must preserve large logical coordinates, keep the
+          # destination tile available, and restore grounded walking safely.
+          timeout 60 "$GODOT" --headless --path godot/project --script res://ci_fast_travel.gd
           # The macro viewer must build a runtime elevation texture from the same
           # terrain source used by the simulation, not from a separate map generator.
           timeout 60 "$GODOT" --headless --path godot/project --script res://ci_world_map_view.gd

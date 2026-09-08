@@ -28,6 +28,7 @@ public:
     void set_focus_direction(const godot::Vector3& direction);
     void clear_focus();
     void set_focus_projected(double east_m, double north_m);
+    [[nodiscard]] godot::Vector3 projected_to_direction(double east_m, double north_m) const;
     [[nodiscard]] std::int64_t get_tick() const;
     [[nodiscard]] double sample_terrain_height(double east_m, double north_m) const;
     [[nodiscard]] godot::PackedFloat32Array sample_terrain_patch(double center_east_m,
@@ -36,6 +37,9 @@ public:
                                                                   std::int64_t resolution) const;
     [[nodiscard]] godot::PackedFloat32Array sample_terrain_equirectangular(std::int64_t width,
                                                                             std::int64_t height) const;
+    [[nodiscard]] godot::PackedFloat32Array sample_preview_terrain_equirectangular(
+        std::int64_t width,
+        std::int64_t height) const;
     [[nodiscard]] godot::Dictionary sample_tectonics_equirectangular(std::int64_t width,
                                                                        std::int64_t height) const;
 

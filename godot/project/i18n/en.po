@@ -13,13 +13,22 @@ msgid "HUD_STATUS_ERROR"
 msgstr "WorldSim error: %s"
 
 msgid "HUD_STATUS_RUNNING"
-msgstr "east: %.1f km    north: %.1f km    chunks: %d    FPS: %d    tick: %d"
+msgstr "east: %.1f km    north: %.1f km    mode: %s    speed: %s    chunks: %d    FPS: %d    tick: %d"
 
 msgid "HUD_STATUS_PAUSED"
 msgstr "PAUSED    tick: %d    active cells: %d    fields: %d"
 
 msgid "HUD_CONTROLS"
-msgstr "WASD: move    Mouse: look    Space: jump    Esc: release/capture mouse"
+msgstr "WASD: move    Mouse: look    Space: jump/up    F: walk/survey flight\nFlight: Q down    Wheel: speed    Shift: 4x boost    Esc: release/capture mouse"
+
+msgid "HUD_MODE_WALK"
+msgstr "walk"
+
+msgid "HUD_MODE_SURVEY"
+msgstr "survey flight"
+
+msgid "HUD_WORLD_MAP"
+msgstr "WORLD OVERVIEW"
 
 msgid "MAP_TITLE"
 msgstr "Global world map"

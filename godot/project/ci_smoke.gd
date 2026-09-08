@@ -100,6 +100,27 @@ func _initialize() -> void:
         quit(11)
         return
 
+    var walker_origin_direction := sim.projected_to_direction(0.0, 0.0)
+    if absf(walker_origin_direction.length() - 1.0) > 0.0001:
+        push_error("Projected walker coordinates did not map to a unit sphere direction")
+        quit(25)
+        return
+
+    var preview_map := sim.sample_preview_terrain_equirectangular(64, 32)
+    if preview_map.size() != 64 * 32:
+        push_error("Preview terrain map size mismatch: %d" % preview_map.size())
+        quit(26)
+        return
+    var preview_has_land := false
+    var preview_has_ocean := false
+    for preview_height in preview_map:
+        preview_has_land = preview_has_land or preview_height >= 0.0
+        preview_has_ocean = preview_has_ocean or preview_height < 0.0
+    if !preview_has_land or !preview_has_ocean:
+        push_error("Preview terrain map does not contain both ocean and land")
+        quit(27)
+        return
+
     var global_map := sim.sample_terrain_equirectangular(64, 32)
     if global_map.size() != 64 * 32:
         push_error("Global terrain map size mismatch: %d" % global_map.size())
