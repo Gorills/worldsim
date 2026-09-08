@@ -73,6 +73,19 @@ Total vegetation NPP remains limited by living-soil fertility, temperature, sola
 
 The reduced herbivore cohorts preferentially consume grass, then shrubs, with a smaller tree forage contribution. Fauna removes carbon from the same PFT pools and then recomputes total vegetation, preventing the aggregate field from drifting away from functional-type state. A fraction of consumed plant carbon returns to litter, and a bounded estimate of killed wet biomass returns as carcass carbon. Cohort body mass is still not a conserved carbon store.
 
+### Fauna v2: habitat selection and local migration
+
+After the daily local feeding/predation update, the fauna system computes a reduced habitat-quality field for each trophic group. Herbivore quality rises with preference-weighted plant forage per effective land area; carnivore quality rises with herbivore biomass density. Each cohort compares its current cell with the four adjacent spatial regions and redistributes only toward a side whose area-weighted quality is materially better.
+
+Movement uses the same `WorldState::active_neighbors4()` mixed-LOD contract as geology and plant dispersal. If the preferred neighboring region is represented by multiple fine cells, movers are distributed across those active cells according to adaptive-cover weight multiplied by local habitat quality.
+
+Migration is applied from a frozen post-feeding cohort snapshot. Arriving animals therefore cannot immediately move again in the same fauna tick, making results independent of cohort-map iteration order. `CohortStore::transfer_count()` performs the actual redistribution so `Cohort::cell` and the store's spatial index cannot diverge. A destination cohort of the same lineage/species/functional group is merged rather than duplicated.
+
+This is a reduced population redistribution model, not a trajectory-level movement model. The design follows the core movement-ecology principle that movement capacity/state and environmental resource selection are coupled. Integrated step-selection methods likewise treat movement and resource selection jointly rather than as independent processes.
+
+- Nathan et al. (2008), *A movement ecology paradigm for unifying organismal movement research*: https://doi.org/10.1073/pnas.0800375105
+- Avgar et al. (2016), *Integrated step selection analysis: bridging the gap between resource selection and animal movement*: https://doi.org/10.1111/2041-210X.12528
+
 ## Executable validation
 
 `worldsim_tests` now checks:
@@ -86,13 +99,17 @@ The reduced herbivore cohorts preferentially consume grass, then shrubs, with a 
 - a globally sterile plant cover remains sterile without propagules;
 - neighboring grass establishes into an empty suitable cell;
 - woody canopy suppresses grass relative to an otherwise identical open cell;
+- indexed cohort transfer preserves total count, keeps source/target spatial lookup coherent, and merges repeated transfers into an existing same-lineage destination cohort;
+- herbivores partially redistribute from low-forage habitat toward a neighboring high-forage cell;
+- carnivores partially redistribute toward neighboring prey biomass;
+- migrants do not take a second spatial step during the same fauna tick;
 - fertility remains finite and in `[0,1]`, while litter, vegetation, water and cohort counts remain finite and non-negative;
 - extensive litter carbon participates in the existing LOD split/sum semantics through the field store;
 - snapshot determinism and continuation include the new ecology state through the field schema.
 
 ## Explicitly unsupported ecology claims
 
-Living-soil v1 does **not** yet provide:
+The current ecology slice does **not** yet provide:
 
 - explicit nitrogen, phosphorus or other elemental nutrient conservation;
 - microbial biomass, soil horizons, texture classes or soil chemistry;
@@ -100,7 +117,7 @@ Living-soil v1 does **not** yet provide:
 - species-level plant physiology, explicit seed banks, long-distance dispersal kernels or evolutionary adaptation;
 - species-specific physiology, genetics or evolution;
 - explicit wildfire, storm/flood mortality, grazing-driven state transitions or other disturbance regimes;
-- fauna migration, habitat selection or seasonal movement;
+- individual trajectories, home ranges, movement memory, explicit barriers, long-distance dispersal or seasonal migration;
 - aquatic food webs;
 - disease, parasites or decomposer cohorts;
 - closed global carbon accounting including atmosphere/ocean reservoirs;
