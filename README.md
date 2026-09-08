@@ -1,6 +1,6 @@
 # WorldSim
 
-WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, climate/weather, hydrology, vegetation, cohort fauna, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
+WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, climate/weather, regolith-aware hydrology, living-soil fertility/detritus, vegetation, cohort fauna, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
 
 This repository is **not** claiming that the included climate/ecology equations are a scientifically calibrated Earth model. They are deliberately replaceable domain implementations used to exercise the production architecture: spatial hierarchy, conservation across LOD, scheduling, state stores, snapshots, commands, events, engine boundaries, and module extension.
 
@@ -104,4 +104,4 @@ The architecture is informed by established patterns rather than copied from a s
 
 ## Important scope boundary
 
-This archive provides the architectural foundation and a working multi-domain vertical slice. A production world still requires domain work: calibrated atmospheric/ocean models, soils/biogeochemistry, species databases and behavior, settlement/population models, transport, markets, institutions, diplomacy, warfare, epidemiology, content pipelines, persistence scaling, and profiling on the target hardware. Those belong behind the module/state-store/system contracts already present; they are not hidden TODOs that require redesigning the kernel.
+This archive provides the architectural foundation and a working multi-domain vertical slice. A production world still requires domain work: calibrated atmospheric/ocean models, explicit soil biogeochemistry, plant functional types and succession, species databases and behavior, aquatic ecology, population dispersal/migration, eventual settlement/population models, transport, markets, institutions, diplomacy, warfare, epidemiology, content pipelines, persistence scaling, and profiling on the target hardware. Those belong behind the module/state-store/system contracts already present; they are not hidden TODOs that require redesigning the kernel.

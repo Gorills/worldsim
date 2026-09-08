@@ -14,13 +14,15 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative geography/geology snapshot epochs (versions 2 through 11);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 12);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
 - columnar field-store consistency;
 - cohort spatial index consistency;
 - non-negative/finiteness ecology invariants;
+- regolith-aware soil-water storage: thin substrate produces less root-zone storage and more runoff than deep regolith under the same forcing;
+- living-soil coupling: fertility limits NPP, vegetation turnover creates litter, and litter-rich soil feeds back toward higher reduced fertility;
 - C ABI field discovery and value copying;
 - module-extension contract and generic snapshot support;
 - post-load spatial-store/active-cover validation through normal snapshot round trips;
@@ -39,6 +41,10 @@ This file distinguishes what was actually executed from architectural intent.
 `worldsim_geology_benchmark` is a non-authoritative diagnostic executable that measures the tectonic generator and initialized stateful geology surface across multiple seeds. It records plate-area/spacing diversity, resolved boundary kinematic mix, crust connectivity, hypsometry, geological boundary features, and tectonic/topographic coupling using sphere-native sampling.
 
 Reference mismatches are emitted as warnings rather than CTest failures because the current generator has not yet been scientifically calibrated. CI runs the 64-seed baseline and publishes `worldsim-geology-benchmark` for review. Methodology, reference sources, warning semantics, and explicitly unsupported scientific claims are documented in `docs/GEOLOGY_VALIDATION.md`.
+
+## Ecology validation scope
+
+The default ecology now has a living-soil substrate between geology/hydrology and vegetation: regolith-aware water capacity, persistent reduced soil fertility, litter carbon, climate/moisture-dependent decomposition, vegetation turnover, and detrital returns from the reduced fauna loop. Executable contracts and explicit limitations are documented in `docs/ECOLOGY_VALIDATION.md`. The fertility field is intentionally an index rather than a claimed nitrogen/phosphorus mass budget.
 
 
 ## Pre-fix geology plausibility baseline — 2026-09-08
