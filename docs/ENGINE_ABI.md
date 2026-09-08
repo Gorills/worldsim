@@ -42,4 +42,11 @@ The included ABI command is a scheduled field impulse. It is deliberately small;
 
 ## Snapshot files
 
-`ws_save_snapshot_file()` and `ws_load_snapshot_file()` expose the authoritative snapshot. Save compatibility is strict by design: schema/config mismatches fail instead of corrupting state silently.
+`ws_save_snapshot_file()` and `ws_load_snapshot_file()` expose the authoritative snapshot. Save compatibility is strict by design: schema/config mismatches fail instead of corrupting state silently. The current epoch is 17. A rejected load leaves the simulation unchanged, including its cover, queued commands and events. Non-finite command deltas and null load paths fail at the API boundary.
+
+Hydrology fields are available through the existing registry/field-array API.
+`hydrology.surface_water_m3` is a projection of `HydrologyStore`, not an
+independently writable water reservoir; surface diagnostics are overwritten by
+hydrology/geology/LOD projection. Add surface water through the C++ domain
+store API; no new typed surface-water command is exposed by the C ABI in this
+slice. Snow, root-zone water and groundwater remain authoritative fields.

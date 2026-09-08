@@ -41,9 +41,9 @@ uint32_t ws_abi_version(void) { return 1; }
 
 ws_handle* ws_create_default(uint64_t seed) {
     try {
-        auto* h=new ws_handle;
+        auto h=std::make_unique<ws_handle>();
         h->sim=make_default_simulation(seed);
-        return h;
+        return h.release();
     } catch (...) { return nullptr; }
 }
 
@@ -169,6 +169,7 @@ int ws_save_snapshot_file(const ws_handle* handle,const char* path) {
 
 int ws_load_snapshot_file(ws_handle* handle,const char* path) {
     return guard(handle,[&]{
+        if (!path) throw std::invalid_argument("snapshot path is null");
         std::ifstream f(path,std::ios::binary);
         if (!f) throw std::runtime_error("cannot open snapshot for read");
         std::vector<char> chars((std::istreambuf_iterator<char>(f)),std::istreambuf_iterator<char>());

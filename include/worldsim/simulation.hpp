@@ -52,6 +52,8 @@ public:
     virtual ~ISimModule()=default;
     [[nodiscard]] virtual std::string_view id() const=0;
     virtual void register_fields(FieldRegistry&) {}
+    // Called for each new world, including staged snapshot loads. Register only
+    // in the supplied registry; do not cache references to a particular world.
     virtual void register_stores(StateStoreRegistry&, const FieldRegistry&) {}
     virtual void register_systems(Scheduler&, const FieldRegistry&) {}
     virtual void initialize(WorldState&, const FieldRegistry&) {}
@@ -91,12 +93,13 @@ public:
     [[nodiscard]] bool built() const { return built_; }
 
     [[nodiscard]] std::vector<std::byte> save_snapshot() const;
+    // Failure preserves the live world. Success invalidates world/store references.
     void load_snapshot(std::span<const std::byte> data);
 private:
     void process_commands();
     bool update_lod();
     std::uint8_t target_level(Vec3d cell_center, double boundary_margin_deg) const;
-    void restore_active_cells(std::vector<CellId> cells);
+    void restore_active_cells(WorldState& world, const std::vector<CellId>& cells) const;
 
     std::uint64_t seed_{};
     SimulationConfig config_;

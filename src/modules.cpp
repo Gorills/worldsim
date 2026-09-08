@@ -1,5 +1,6 @@
 #include "worldsim/modules.hpp"
 #include "worldsim/geology.hpp"
+#include "worldsim/hydrology.hpp"
 #include "worldsim/terrain.hpp"
 
 #include <algorithm>
@@ -16,16 +17,6 @@ FieldId require_field(const FieldRegistry& r, std::string_view key) {
     const auto id=r.find(key);
     if (!id) throw std::runtime_error("required field missing: "+std::string(key));
     return *id;
-}
-
-double soil_water_capacity_depth_m(double regolith_thickness_m) {
-    constexpr double fractured_substrate_storage_m=0.02;
-    constexpr double developed_soil_storage_m=0.28;
-    constexpr double regolith_storage_scale_m=0.75;
-    const double depth=std::max(0.0,regolith_thickness_m);
-    return fractured_substrate_storage_m+
-        developed_soil_storage_m*
-        (-std::expm1(-depth/regolith_storage_scale_m));
 }
 
 struct GeologyFieldIds {
@@ -194,16 +185,13 @@ public:
     explicit GeologySystem(const FieldRegistry& r):
         ids_(geology_fields(r)),
         has_climate_(r.find("climate.surface_temperature_k").has_value()),
-        has_ecology_(r.find("ecology.vegetation_carbon_kg").has_value()) {}
+        has_hydrology_(r.find("hydrology.surface_water_m3").has_value()) {}
 
     std::string_view id() const override { return "geology.evolution"; }
     Tick cadence_ticks() const override { return 24; }
 
     std::vector<std::string> after() const override {
-        // A runoff field may come from an external/test module without the
-        // default ecology system. Depend on ecology.hydrology only when the
-        // EcologyModule schema is actually present.
-        if (has_ecology_) return {"ecology.hydrology"};
+        if (has_hydrology_) return {"hydrology.balance"};
         if (has_climate_) return {"climate.surface"};
         return {};
     }
@@ -219,8 +207,15 @@ public:
             "field:geology.sediment_mass_kg",
             "field:geology.regolith_thickness_m"
         };
-        if (ids_.runoff) reads.push_back("field:hydrology.runoff_m3_day");
-        return {
+        if (!has_hydrology_ && ids_.runoff) reads.push_back("field:hydrology.runoff_m3_day");
+        std::vector<std::string> coupled_writes;
+        if (has_hydrology_) {
+            reads.push_back("store:hydrology.basins");
+            coupled_writes.push_back("store:hydrology.basins");
+            for (const auto* key:{"surface_water_m3","surface_depth_m","surface_level_m","flooded_fraction", "river_discharge_m3_day","basin_id","lake_id","spill_elevation_m"})
+                coupled_writes.push_back("field:hydrology."+std::string(key));
+        }
+        SystemAccess result{
             std::move(reads),
             {
                 "field:geography.elevation_m",
@@ -240,12 +235,20 @@ public:
                 "field:geology.drainage_discharge_m3_day"
             }
         };
+        result.writes.insert(result.writes.end(),coupled_writes.begin(),coupled_writes.end());
+        return result;
     }
 
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
         const GeologyModel geology(ctx.world.seed());
         const double dt_years=ctx.dt_days/365.2422;
+        std::map<CellId,double> bed_before,land_before;
+        if (has_hydrology_)
+            for (CellId cell:ctx.world.active_cells()) {
+                bed_before[cell]=fs.get(cell,ids_.elevation);
+                land_before[cell]=fs.get(cell,ids_.land_fraction);
+            }
 
         std::map<CellId,GeologyState> states;
         for (CellId cell:ctx.world.active_cells()) {
@@ -340,46 +343,51 @@ public:
             routes.emplace(cell,std::move(route));
         }
 
-        // Accumulate catchment area and runoff through a strictly downhill
-        // directed acyclic graph. Sorting by elevation guarantees all upstream
-        // contributions reach a cell before it is propagated farther down.
-        std::sort(
-            elevation_order.begin(),
-            elevation_order.end(),
-            [&](CellId a, CellId b) {
-                const double ea=fs.get(a,ids_.elevation);
-                const double eb=fs.get(b,ids_.elevation);
-                if (ea!=eb) return ea>eb;
-                return a.raw()<b.raw();
-            }
-        );
-        std::map<CellId,double> drainage_area;
         std::map<CellId,double> discharge;
-        for (CellId cell:ctx.world.active_cells()) {
-            const double area=ctx.world.topology().area_m2(cell);
-            const double land=fs.get(cell,ids_.land_fraction);
-            drainage_area[cell]=area*land;
-            discharge[cell]=ids_.runoff
-                ? fs.get(cell,*ids_.runoff)
-                : 0.001*area*land;
-        }
-        for (CellId cell:elevation_order) {
-            // Terrestrial drainage terminates at the first submerged receiver.
-            // Marine sediment routing below may continue farther downslope, but
-            // river discharge is not propagated across the ocean floor.
-            if (fs.get(cell,ids_.elevation)<0.0) continue;
-            const auto route=routes.find(cell);
-            if (route==routes.end()) continue;
-            for (const FlowTarget& target:route->second.targets) {
-                drainage_area[target.cell]+=
-                    drainage_area[cell]*target.weight;
-                discharge[target.cell]+=
-                    discharge[cell]*target.weight;
+        if (has_hydrology_) {
+            ctx.world.stores().get<HydrologyStore>().consume_geology_discharge(ctx.world,ctx.fields);
+            for (CellId cell:ctx.world.active_cells()) discharge[cell]=fs.get(cell,ids_.drainage_discharge);
+        } else {
+            // Accumulate catchment area and runoff through a strictly downhill
+            // directed acyclic graph. Sorting by elevation guarantees all upstream
+            // contributions reach a cell before it is propagated farther down.
+            std::sort(
+                elevation_order.begin(),
+                elevation_order.end(),
+                [&](CellId a, CellId b) {
+                    const double ea=fs.get(a,ids_.elevation);
+                    const double eb=fs.get(b,ids_.elevation);
+                    if (ea!=eb) return ea>eb;
+                    return a.raw()<b.raw();
+                }
+            );
+            std::map<CellId,double> drainage_area;
+            for (CellId cell:ctx.world.active_cells()) {
+                const double area=ctx.world.topology().area_m2(cell);
+                const double land=fs.get(cell,ids_.land_fraction);
+                drainage_area[cell]=area*land;
+                discharge[cell]=ids_.runoff
+                    ? fs.get(cell,*ids_.runoff)
+                    : 0.001*area*land;
             }
-        }
-        for (CellId cell:ctx.world.active_cells()) {
-            fs.set(cell,ids_.drainage_area,drainage_area[cell]);
-            fs.set(cell,ids_.drainage_discharge,discharge[cell]);
+            for (CellId cell:elevation_order) {
+                // Terrestrial drainage terminates at the first submerged receiver.
+                // Marine sediment routing below may continue farther downslope, but
+                // river discharge is not propagated across the ocean floor.
+                if (fs.get(cell,ids_.elevation)<0.0) continue;
+                const auto route=routes.find(cell);
+                if (route==routes.end()) continue;
+                for (const FlowTarget& target:route->second.targets) {
+                    drainage_area[target.cell]+=
+                        drainage_area[cell]*target.weight;
+                    discharge[target.cell]+=
+                        discharge[cell]*target.weight;
+                }
+            }
+            for (CellId cell:ctx.world.active_cells()) {
+                fs.set(cell,ids_.drainage_area,drainage_area[cell]);
+                fs.set(cell,ids_.drainage_discharge,discharge[cell]);
+            }
         }
 
         std::map<CellId,double> deposits;
@@ -460,12 +468,19 @@ public:
             write_geology_state(fs,cell,ids_,state);
 
         update_geography_surface(ctx.world,ctx.fields,geology);
+        if (has_hydrology_) {
+            for (auto& [cell,height]:bed_before) height=fs.get(cell,ids_.elevation)-height;
+            for (auto& [cell,land]:land_before) land=fs.get(cell,ids_.land_fraction)-land;
+            auto& hydrology=ctx.world.stores().get<HydrologyStore>();
+            hydrology.apply_bed_changes(ctx.world,bed_before,land_before);
+            hydrology.project(ctx.world,ctx.fields);
+        }
     }
 
 private:
     GeologyFieldIds ids_;
     bool has_climate_{};
-    bool has_ecology_{};
+    bool has_hydrology_{};
 };
 
 class MagicSystem final : public ISimSystem {
@@ -525,7 +540,7 @@ public:
             const double decay=std::exp(-ctx.dt_days/2.0);
             const double anom=old_anom*decay+(u*2.0-1.0)*2.2*(1.0-decay);
             const double lat_cooling=42.0*std::pow(std::abs(std::sin(lat)),1.25);
-            const double seasonal=10.0*std::sin(lat)*std::sin(2.0*kPi*(day-172.0)/365.2422);
+            const double seasonal=10.0*std::sin(lat)*std::sin(2.0*kPi*(day-80.0)/365.2422);
             const double lapse=std::max(0.0,elev)*0.0065;
             const double t=301.0-lat_cooling+seasonal-lapse+anom+fs.get(cell,magic_temp_);
             const double insolation=340.0*std::max(0.08,std::cos(lat-decl));
@@ -543,72 +558,6 @@ private:
     FieldId elev_,land_,magic_temp_,temp_,precip_,solar_,anomaly_;
 };
 
-class HydrologySystem final : public ISimSystem {
-public:
-    explicit HydrologySystem(const FieldRegistry& r)
-        : temp_(require_field(r,"climate.surface_temperature_k")),
-          precip_(require_field(r,"climate.precipitation_mm_day")),
-          land_(require_field(r,"geography.land_fraction")),
-          regolith_(require_field(r,"geology.regolith_thickness_m")),
-          water_(require_field(r,"hydrology.soil_water_m3")),
-          runoff_(require_field(r,"hydrology.runoff_m3_day")) {}
-    std::string_view id() const override { return "ecology.hydrology"; }
-    Tick cadence_ticks() const override { return 6; }
-    std::vector<std::string> after() const override { return {"climate.surface"}; }
-    SystemAccess access() const override {
-        return {{
-                    "field:climate.surface_temperature_k",
-                    "field:climate.precipitation_mm_day",
-                    "field:geography.land_fraction",
-                    "field:geology.regolith_thickness_m",
-                    "field:hydrology.soil_water_m3"
-                },
-                {
-                    "field:hydrology.soil_water_m3",
-                    "field:hydrology.runoff_m3_day"
-                }};
-    }
-    void step(SystemContext& ctx) override {
-        auto& fs=ctx.world.stores().get<FieldStore>();
-        for (CellId cell:ctx.world.active_cells()) {
-            const double area=ctx.world.topology().area_m2(cell);
-            const double land=fs.get(cell,land_);
-            const double effective_area=area*land;
-            if (effective_area<=1.0) {
-                fs.set(cell,water_,0.0);
-                fs.set(cell,runoff_,0.0);
-                continue;
-            }
-
-            double water=fs.get(cell,water_);
-            const double rain=
-                fs.get(cell,precip_)*0.001*effective_area*ctx.dt_days;
-            const double temp=fs.get(cell,temp_);
-            const double evap_depth=
-                std::max(0.0,temp-258.0)*0.000035*ctx.dt_days;
-            const double evap=std::min(
-                water+rain,
-                evap_depth*effective_area
-            );
-            water+=rain-evap;
-
-            const double capacity=
-                soil_water_capacity_depth_m(fs.get(cell,regolith_))*
-                effective_area;
-            const double excess=std::max(0.0,water-capacity);
-            water-=excess;
-            fs.set(cell,water_,water);
-            fs.set(
-                cell,
-                runoff_,
-                excess/std::max(ctx.dt_days,1e-12)
-            );
-        }
-    }
-private:
-    FieldId temp_,precip_,land_,regolith_,water_,runoff_;
-};
-
 class SoilSystem final : public ISimSystem {
 public:
     explicit SoilSystem(const FieldRegistry& r)
@@ -616,7 +565,7 @@ public:
           land_(require_field(r,"geography.land_fraction")),
           regolith_(require_field(r,"geology.regolith_thickness_m")),
           water_(require_field(r,"hydrology.soil_water_m3")),
-          runoff_(require_field(r,"hydrology.runoff_m3_day")),
+          runoff_(require_field(r,"hydrology.drainage_since_soil_m3")),
           fertility_(require_field(r,"ecology.soil_fertility")),
           litter_(require_field(r,"ecology.litter_carbon_kg")) {}
 
@@ -631,13 +580,14 @@ public:
                     "field:geography.land_fraction",
                     "field:geology.regolith_thickness_m",
                     "field:hydrology.soil_water_m3",
-                    "field:hydrology.runoff_m3_day",
+                    "field:hydrology.drainage_since_soil_m3",
                     "field:ecology.soil_fertility",
                     "field:ecology.litter_carbon_kg"
                 },
                 {
                     "field:ecology.soil_fertility",
-                    "field:ecology.litter_carbon_kg"
+                    "field:ecology.litter_carbon_kg",
+                    "field:hydrology.drainage_since_soil_m3"
                 }};
     }
 
@@ -647,6 +597,8 @@ public:
             const double area=ctx.world.topology().area_m2(cell);
             const double land=fs.get(cell,land_);
             const double effective_area=area*land;
+            const double drained=fs.get(cell,runoff_);
+            fs.set(cell,runoff_,0.0);
             if (effective_area<=1.0) {
                 fs.set(cell,fertility_,0.0);
                 fs.set(cell,litter_,0.0);
@@ -717,7 +669,7 @@ public:
 
             // Strong drainage slowly leaches the reduced fertility state.
             const double runoff_depth=
-                fs.get(cell,runoff_)*ctx.dt_days/
+                drained/
                 std::max(1.0,effective_area);
             fertility*=std::exp(-0.5*std::max(0.0,runoff_depth));
 
@@ -742,6 +694,8 @@ public:
           land_(require_field(r,"geography.land_fraction")),
           regolith_(require_field(r,"geology.regolith_thickness_m")),
           water_(require_field(r,"hydrology.soil_water_m3")),
+          flooded_(require_field(r,"hydrology.flooded_fraction")),
+          inundation_(require_field(r,"hydrology.inundation_days")),
           growth_(require_field(r,"magic.growth_factor")),
           fertility_(require_field(r,"ecology.soil_fertility")),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
@@ -765,6 +719,8 @@ public:
                     "field:geography.land_fraction",
                     "field:geology.regolith_thickness_m",
                     "field:hydrology.soil_water_m3",
+                    "field:hydrology.flooded_fraction",
+                    "field:hydrology.inundation_days",
                     "field:magic.growth_factor",
                     "field:ecology.soil_fertility",
                     "field:ecology.litter_carbon_kg",
@@ -876,6 +832,8 @@ public:
                 1.0
             );
             const double magic_growth=fs.get(cell,growth_);
+            const double flooded=fs.get(cell,flooded_);
+            const double flood_mortality=0.02*flooded*(-std::expm1(-fs.get(cell,inundation_)/5.0));
 
             const std::array<double,3> moisture_factor{
                 0.25+0.75*moisture,
@@ -958,7 +916,7 @@ public:
                     establishment*
                     shared_space*
                     own_space*
-                    light_factor[i];
+                    light_factor[i]*(1.0-flooded);
 
                 const double temperature_respiration=std::clamp(
                     std::pow(2.0,(temp-283.0)/10.0),
@@ -969,21 +927,26 @@ public:
                     before.at(cell)[i]*
                     respiration_per_day[i]*
                     temperature_respiration;
-                const double npp_rate=
-                    gross_rate-respiration_rate;
-
-                const double turnover=
+                const double requested_turnover=
                     before.at(cell)[i]*
                     (
                         1.0-
                         std::exp(
-                            -turnover_per_day[i]*ctx.dt_days
+                            -(turnover_per_day[i]+flood_mortality)*ctx.dt_days
                         )
                     );
-                const double unconstrained=
-                    before.at(cell)[i]+
-                    npp_rate*ctx.dt_days-
-                    turnover;
+                // Respiration and turnover draw from the same carbon pool.
+                // Limit them jointly before reporting NPP: clamping only the
+                // final stock can otherwise spend unavailable carbon on long
+                // timesteps while still reporting the full respiratory loss.
+                const double available=before.at(cell)[i]+gross_rate*ctx.dt_days;
+                const double requested_respiration=respiration_rate*ctx.dt_days;
+                const double requested_loss=requested_respiration+requested_turnover;
+                const double loss_scale=requested_loss>available ? available/requested_loss : 1.0;
+                const double turnover=requested_turnover*loss_scale;
+                const double respiration=requested_respiration*loss_scale;
+                const double npp_rate=gross_rate-respiration/ctx.dt_days;
+                const double unconstrained=std::max(0.0,available-respiration-turnover);
                 const double maximum_carbon=
                     effective_area*maximum_density_kg_m2[i];
                 const double updated=std::clamp(
@@ -1009,7 +972,7 @@ public:
     }
 
 private:
-    FieldId temp_,solar_,land_,regolith_,water_,growth_;
+    FieldId temp_,solar_,land_,regolith_,water_,flooded_,inundation_,growth_;
     FieldId fertility_,litter_;
     std::array<FieldId,3> pft_;
     FieldId carbon_,npp_;
@@ -1361,7 +1324,8 @@ void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geography.elevation_m","m",FieldSemantics::Intensive,0.0,-11000.0,9000.0});
     r.register_field({"geography.land_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
     r.register_field({"geology.crust_thickness_m","m",FieldSemantics::Intensive,35'000.0,3'000.0,70'000.0});
-    r.register_field({"geology.crust_density_kg_m3","kg/m3",FieldSemantics::Intensive,2'850.0,2'500.0,3'300.0});
+    r.register_field({"geology.crust_density_kg_m3","kg/m3",FieldSemantics::Intensive,2'850.0,2'500.0,3'300.0,
+        require_field(r,"geology.crust_thickness_m")});
     r.register_field({"geology.continental_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
     r.register_field({"geology.lithosphere_age_ma","Ma",FieldSemantics::Intensive,100.0,0.0,4'500.0});
     r.register_field({"geology.sediment_mass_kg","kg",FieldSemantics::Extensive,0.0,0.0,1.0e30});
@@ -1371,8 +1335,8 @@ void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geology.volcanic_arc_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"geology.collision_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"geology.rift_forcing","1",FieldSemantics::Intensive,0.0,0.0,1.0});
-    r.register_field({"geology.drainage_area_m2","m2",FieldSemantics::Intensive,0.0,0.0,1.0e30});
-    r.register_field({"geology.drainage_discharge_m3_day","m3/day",FieldSemantics::Intensive,0.0,0.0,1.0e30});
+    r.register_field({"geology.drainage_area_m2","m2",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"geology.drainage_discharge_m3_day","m3/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
 }
 
 void GeographyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
@@ -1426,8 +1390,6 @@ void ClimateModule::initialize(WorldState& world, const FieldRegistry& r) {
 }
 
 void EcologyModule::register_fields(FieldRegistry& r) {
-    r.register_field({"hydrology.soil_water_m3","m3",FieldSemantics::Extensive,0.0,0.0,1.0e30});
-    r.register_field({"hydrology.runoff_m3_day","m3/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_fertility","1",FieldSemantics::Intensive,0.25,0.0,1.0});
     r.register_field({"ecology.litter_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.grass_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
@@ -1438,7 +1400,6 @@ void EcologyModule::register_fields(FieldRegistry& r) {
 }
 void EcologyModule::register_stores(StateStoreRegistry& stores, const FieldRegistry&) { stores.emplace<CohortStore>(); }
 void EcologyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
-    s.add(std::make_unique<HydrologySystem>(r));
     s.add(std::make_unique<SoilSystem>(r));
     s.add(std::make_unique<VegetationSystem>(r));
     s.add(std::make_unique<FaunaSystem>(r));
@@ -1449,7 +1410,6 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
     const auto land=require_field(r,"geography.land_fraction");
     const auto temp=require_field(r,"climate.surface_temperature_k");
     const auto regolith=require_field(r,"geology.regolith_thickness_m");
-    const auto water=require_field(r,"hydrology.soil_water_m3");
     const auto fertility=require_field(r,"ecology.soil_fertility");
     const auto litter=require_field(r,"ecology.litter_carbon_kg");
     const std::array<FieldId,3> pft{
@@ -1477,10 +1437,6 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
         const double suitability=std::exp(
             -std::pow((fs.get(c,temp)-291.0)/24.0,2.0)
         );
-        const double initial_water=
-            effective*
-            soil_water_capacity_depth_m(regolith_depth)*
-            0.45;
         const double initial_carbon=
             effective*4.0*suitability*
             (0.25+0.75*soil_fertility);
@@ -1499,7 +1455,6 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
         const double pft_score_sum=
             pft_score[0]+pft_score[1]+pft_score[2];
 
-        fs.set(c,water,initial_water);
         fs.set(c,fertility,soil_fertility);
         double pft_total=0.0;
         for (std::size_t i=0;i<pft.size();++i) {

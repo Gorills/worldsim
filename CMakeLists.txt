@@ -15,6 +15,7 @@ add_library(worldsim
     src/tectonics.cpp
     src/terrain.cpp
     src/geology.cpp
+    src/hydrology.cpp
     src/fields.cpp
     src/state.cpp
     src/simulation.cpp
@@ -51,6 +52,10 @@ if(WORLDSIM_BUILD_CLI)
   target_link_libraries(worldsim_visual_dump PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_visual_dump)
 
+  add_executable(worldsim_hydrology_dump apps/worldsim_hydrology_dump.cpp)
+  target_link_libraries(worldsim_hydrology_dump PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_hydrology_dump)
+
   add_executable(worldsim_geology_benchmark apps/worldsim_geology_benchmark.cpp)
   target_link_libraries(worldsim_geology_benchmark PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_geology_benchmark)
@@ -68,6 +73,16 @@ if(WORLDSIM_BUILD_TESTS)
   worldsim_enable_warnings(worldsim_fauna_v2_tests)
   add_test(NAME worldsim_fauna_v2_tests COMMAND worldsim_fauna_v2_tests)
 
+  add_executable(worldsim_audit_tests tests/audit_tests.cpp)
+  target_link_libraries(worldsim_audit_tests PRIVATE worldsim worldsim_c)
+  worldsim_enable_warnings(worldsim_audit_tests)
+  add_test(NAME worldsim_audit_tests COMMAND worldsim_audit_tests)
+
+  add_executable(worldsim_hydrology_tests tests/hydrology_tests.cpp)
+  target_link_libraries(worldsim_hydrology_tests PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_hydrology_tests)
+  add_test(NAME worldsim_hydrology_tests COMMAND worldsim_hydrology_tests)
+
   add_executable(worldsim_sanitizer_smoke tests/sanitizer_smoke.cpp)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_sanitizer_smoke)
@@ -81,6 +96,10 @@ if(WORLDSIM_BUILD_TESTS)
         --height 32
         --output ${CMAKE_BINARY_DIR}/visual-smoke
     )
+  endif()
+  if(TARGET worldsim_hydrology_dump)
+    add_test(NAME worldsim_hydrology_dump_smoke COMMAND worldsim_hydrology_dump
+      --days 3 --level 1 --output ${CMAKE_BINARY_DIR}/hydrology-smoke)
   endif()
   if(TARGET worldsim_geology_benchmark)
     add_test(

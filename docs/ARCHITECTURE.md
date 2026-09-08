@@ -57,11 +57,22 @@ The current world cover does not require a 2:1 balance constraint: the resolver 
 
 **Intensive** quantities describe local state independent of represented area. They copy on refinement and use area-weighted aggregation on coarsening. Examples: temperature, humidity ratio, fertility index.
 
+An intensive descriptor may set `coarsen_weight` to an already registered, strictly positive, area-averaged intensive field. Restriction then uses `sum(area * weight * value) / sum(area * weight)`. Crust density uses crust thickness, preserving both column volume and mass when heterogeneous children merge. Refinement still copies intensive values. Numeric defaults/bounds and this aggregation rule participate in the schema hash.
+
 Not every future variable is correctly modeled by these two semantics. A new state store is appropriate when aggregation needs domain rules: price distributions, legal ownership, epidemic compartments, armies, trade networks, political actors, etc. The core provides `IStateStore::on_refine/on_coarsen` specifically for this reason.
 
 ### Structured stores
 
 `CohortStore` demonstrates non-field state. Fauna is represented by cohorts rather than one object per animal. Its LOD hooks split counts on refinement and merge compatible lineages on coarsening while preserving total count. Runtime movement must go through `CohortStore::transfer_count()` rather than mutating `Cohort::cell`: the store debits the source, merges an already-present compatible lineage/species/group at the target when possible, and keeps the spatial `by_cell_` index coherent.
+
+`HydrologyStore` owns surface-water reservoirs on the initial uniform base-level
+cover. This persistent graph retains bed geometry, lake sills, volume and
+integrated discharge across active-cover changes. Snow, soil and shallow
+groundwater remain extensive adaptive fields. Transfers aggregate to reference
+nodes and projections split back by area; focus does not refine river geometry.
+Physical geology contributes bed/land-area increments, while LOD surface
+reconstruction contributes none. See `HYDROLOGY.md` for the domain resolution,
+reservoir closures and conservation boundary.
 
 Future structured stores should own their aggregation semantics rather than encoding them as arbitrary fields.
 
@@ -126,7 +137,7 @@ Production domains should introduce typed command payloads and typed event schem
 
 ## 8. Snapshots
 
-Snapshot version 15 contains:
+Snapshot version 17 contains:
 
 - magic header and format version;
 - field schema hash;
@@ -142,7 +153,9 @@ Primitive values use explicit little-endian encoding and IEEE-754 floats. Native
 
 A snapshot is rejected if the field schema, simulation config, seed, store set, store version, cell cover, or framing is incompatible. After store chunks are loaded, spatial stores validate that their state references the reconstructed active cover; the core field store additionally rejects invalid/non-finite/out-of-bounds values.
 
-Snapshot v15 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, version 12 the coast-to-basin geology model before living-soil ecology, version 13 the living-soil model before persistent grass/shrub/tree functional-type pools, and version 14 the Flora-v1 model before habitat-selected fauna redistribution. Versions 2 through 14 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
+Loading stages a new world and calls each module's `register_stores()` for that world; these hooks must only register in the supplied registry and must not cache world/store references. All payloads and spatial references are validated before committing the replacement. A rejected load preserves the live world, focus, commands and events. A successful load invalidates previously retained world/store references. Command counts are bounded by available bytes; numeric commands/events/focus and command sequence uniqueness are validated.
+
+Snapshot v17 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, version 12 the coast-to-basin geology model before living-soil ecology, version 13 the living-soil model before persistent grass/shrub/tree functional-type pools, and version 14 the Flora-v1 model before habitat-selected fauna redistribution. Version 15 predates volume-weighted crust restriction, oceanic buoyancy response, corrected seasons and bounded vegetation losses. Version 16 predates basin hydrology, its persistent routing graph and integrated cross-domain water fluxes. Versions 2 through 16 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
 
 ## 9. Why magic does not contaminate the core
 

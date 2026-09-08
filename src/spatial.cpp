@@ -61,7 +61,12 @@ Vec3d CubeSphereTopology::face_uv_to_xyz(std::uint8_t face, double u, double v) 
 }
 
 std::tuple<std::uint8_t,double,double> CubeSphereTopology::xyz_to_face_uv(Vec3d p) {
-    p=normalized(p);
+    const double scale=std::max({std::abs(p.x),std::abs(p.y),std::abs(p.z)});
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || !(scale>0.0))
+        throw std::invalid_argument("direction must be finite and non-zero");
+    // Face ratios are scale-invariant. Divide components directly to support
+    // both subnormal and very large finite directions without norm overflow.
+    p={p.x/scale,p.y/scale,p.z/scale};
     const double ax=std::abs(p.x), ay=std::abs(p.y), az=std::abs(p.z);
     if (ax>=ay && ax>=az) {
         if (p.x>=0.0) return {0,p.y/p.x,p.z/p.x};

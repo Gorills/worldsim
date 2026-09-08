@@ -37,6 +37,43 @@ func _initialize() -> void:
         quit(6)
         return
 
+    for key in ["hydrology.snow_water_m3", "hydrology.groundwater_m3",
+                "hydrology.surface_water_m3", "hydrology.river_discharge_m3_day",
+                "hydrology.flooded_fraction"]:
+        var water_values := sim.get_field_values(key)
+        if water_values.size() != packet["positions"].size():
+            push_error("Hydrology field is missing or misaligned: %s" % key)
+            quit(23)
+            return
+        for water_value in water_values:
+            if not is_finite(water_value) or water_value < 0.0:
+                push_error("Hydrology field contains invalid state: %s" % key)
+                quit(24)
+                return
+
+    # A diagnostic elevation map must read the current adaptive world. A seed-only
+    # TerrainGenerator silently hides geological evolution and field commands.
+    sim.set_focus_direction(Vector3(1.0, 0.2, 0.3))
+    sim.step_hours(1)
+    var adaptive_packet := sim.get_render_packet()
+    var elevation := sim.get_field_values("geography.elevation_m")
+    for i in range(elevation.size()):
+        sim.schedule_field_impulse(
+            adaptive_packet["cell_id_hi"][i], adaptive_packet["cell_id_lo"][i],
+            "geography.elevation_m", 1234.0 - elevation[i]
+        )
+    sim.step_hours(1)
+    var authoritative_map := sim.sample_terrain_equirectangular(16, 8)
+    if authoritative_map.size() != 16 * 8:
+        push_error("Authoritative elevation map is missing")
+        quit(21)
+        return
+    for value in authoritative_map:
+        if absf(value - 1234.0) > 0.01:
+            push_error("Elevation map ignores authoritative adaptive geography")
+            quit(22)
+            return
+
     sim.initialize_terrain_world(42)
     if not sim.get_last_error().is_empty():
         push_error("Terrain world init failed: %s" % sim.get_last_error())

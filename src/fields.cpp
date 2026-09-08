@@ -2,6 +2,7 @@
 #include "worldsim/state.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <stdexcept>
 
@@ -11,7 +12,19 @@ FieldId FieldRegistry::register_field(FieldDescriptor descriptor) {
     if (frozen_) throw std::runtime_error("field registry is frozen");
     if (descriptor.key.empty()) throw std::invalid_argument("field key is empty");
     if (by_key_.contains(descriptor.key)) throw std::runtime_error("duplicate field: "+descriptor.key);
-    if (descriptor.min_value>descriptor.max_value) throw std::invalid_argument("invalid field bounds");
+    if (std::isnan(descriptor.min_value) || std::isnan(descriptor.max_value) ||
+        descriptor.min_value>descriptor.max_value) throw std::invalid_argument("invalid field bounds");
+    if (!std::isfinite(descriptor.default_value) ||
+        descriptor.default_value<descriptor.min_value || descriptor.default_value>descriptor.max_value)
+        throw std::invalid_argument("invalid field default");
+    if (descriptor.semantics!=FieldSemantics::Intensive && descriptor.semantics!=FieldSemantics::Extensive)
+        throw std::invalid_argument("invalid field semantics");
+    if (descriptor.coarsen_weight) {
+        const auto& weight=this->descriptor(*descriptor.coarsen_weight);
+        if (descriptor.semantics!=FieldSemantics::Intensive ||
+            weight.semantics!=FieldSemantics::Intensive || !(weight.min_value>0.0) || weight.coarsen_weight)
+            throw std::invalid_argument("coarsening weight must be a positive area-averaged intensive field");
+    }
     const FieldId id=static_cast<FieldId>(descriptors_.size());
     by_key_.emplace(descriptor.key,id);
     descriptors_.push_back(std::move(descriptor));
@@ -35,6 +48,11 @@ std::uint64_t FieldRegistry::schema_hash() const {
         h^=fnv1a64(d.key); h*=1099511628211ULL;
         h^=fnv1a64(d.unit); h*=1099511628211ULL;
         h^=static_cast<std::uint64_t>(d.semantics); h*=1099511628211ULL;
+        for (double value:{d.default_value,d.min_value,d.max_value}) {
+            h^=std::bit_cast<std::uint64_t>(value); h*=1099511628211ULL;
+        }
+        h^=d.coarsen_weight ? static_cast<std::uint64_t>(*d.coarsen_weight)+1U : 0U;
+        h*=1099511628211ULL;
     }
     return h;
 }
@@ -102,6 +120,7 @@ void FieldStore::on_refine(CellId parent, std::span<const CellId> children, cons
 
 void FieldStore::on_coarsen(std::span<const CellId> children, CellId parent, const CubeSphereTopology& topology) {
     std::vector<double> parent_values(registry_.size(),0.0);
+    std::vector<double> weights(registry_.size(),0.0);
     double area_sum=0.0;
     for (CellId child:children) {
         const auto it=index_.find(child);
@@ -110,13 +129,15 @@ void FieldStore::on_coarsen(std::span<const CellId> children, CellId parent, con
         const double area=topology.area_m2(child);
         area_sum+=area;
         for (FieldId f=0;f<static_cast<FieldId>(registry_.size());++f) {
-            const auto sem=registry_.descriptor(f).semantics;
-            parent_values[f]+=sem==FieldSemantics::Extensive ? columns_[f][slot] : columns_[f][slot]*area;
+            const auto& descriptor=registry_.descriptor(f);
+            const double weight=descriptor.coarsen_weight ? area*columns_[*descriptor.coarsen_weight][slot] : area;
+            weights[f]+=weight;
+            parent_values[f]+=descriptor.semantics==FieldSemantics::Extensive ? columns_[f][slot] : columns_[f][slot]*weight;
         }
     }
     if (!(area_sum>0.0)) throw std::runtime_error("coarsening zero-area cells");
     for (FieldId f=0;f<static_cast<FieldId>(registry_.size());++f)
-        if (registry_.descriptor(f).semantics==FieldSemantics::Intensive) parent_values[f]/=area_sum;
+        if (registry_.descriptor(f).semantics==FieldSemantics::Intensive) parent_values[f]/=weights[f];
 
     // Removal swaps dense slots, so resolve each child by CellId each time.
     for (CellId child:children) on_remove_cell(child);

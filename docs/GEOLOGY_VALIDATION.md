@@ -62,6 +62,8 @@ The authoritative simulation surface is no longer regenerated directly from `Ter
 
 The daily geology system advances these fields using simulation elapsed time. Continental convergence stores shortening as crustal thickening; continental divergence thins crust and progressively reduces the persistent continental fraction; once breakup crosses into an oceanic regime, divergence renews young thin crust instead of continuing unlimited continental thinning. Convergent boundary segments classify crust on both sides of the nearest plate boundary. Mixed ocean-continent segments preferentially subduct the more oceanic side, producing a compact trench there and an inland-offset volcanic arc on the overriding continental side; similar-crust pairs use deterministic pair-stable polarity as a fallback. Broad collision forcing is enabled only when both sides of the segment are continental, preventing an ocean-continent margin from being misclassified from the continental side alone. Surface elevation is then derived from crustal buoyancy/isostasy, oceanic thermal age, sediment load, boundary response and bounded meso-scale roughness. A short-range neighbor coupling approximates lithospheric flexure without claiming a full elastic/viscoelastic plate solver.
 
+Crust thickness is area-averaged on coarsening; density is thickness-and-area weighted. Thus `sum(area * thickness * density)` is preserved across LOD even for heterogeneous crust. The oceanic branch also includes buoyancy relative to the 7 km / 2950 kg/m3 reference column, so stored crust thickness and density affect both oceanic and continental relief. Protected bedrock that cannot be eroded at the 3 km crust floor does not consume regolith availability.
+
 Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
 
 - Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
@@ -175,3 +177,16 @@ The v1 model now has enough state to make process-level assertions about crustal
 - supercontinent-cycle plate reconstruction.
 
 Those are fidelity extensions rather than missing closure in the current terrain-causality loop. New benchmark gates should be added only when the model gains a corresponding explicit physical contract.
+
+### Basin hydrology coupling (epoch 17)
+
+In the default full world, hydrology now supplies **integrated routed water**
+from persistent surface reservoirs. Geology consumes that volume divided by
+its actual accumulated interval; it does not accumulate local runoff a second
+time. Drainage area and discharge diagnostics are extensive allocations from
+the stable reference network to active leaves. Terrain-only and external
+runoff-only worlds retain the reduced downhill accumulation described above.
+Sediment still uses the existing downhill transport closure; a coupled
+suspended-sediment/advection solver is outside this slice. Physical elevation
+and land-fraction changes update hydrological geometry conservatively; LOD
+surface reconstruction alone does not change lake sills. See `HYDROLOGY.md`.

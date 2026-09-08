@@ -53,7 +53,7 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 - `set_focus_direction(direction)` / `set_focus_projected(east_m, north_m)` / `clear_focus()`
 - `sample_terrain_height(east_m, north_m)`
 - `sample_terrain_patch(center_east_m, center_north_m, spacing_m, resolution)`
-- `sample_terrain_equirectangular(width, height)`
+- `sample_terrain_equirectangular(width, height)` for current authoritative elevation at active-cell resolution
 - `sample_tectonics_equirectangular(width, height)`
 - `get_tick()`
 - `get_render_packet()`
@@ -64,6 +64,8 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 - `get_last_error()`
 
 All public adapter methods catch C++ exceptions before returning to Godot. Errors are reported with `UtilityFunctions::push_error()` and retained in `get_last_error()`.
+
+Walking height and patch sampling remain a static procedural preview. They do not reflect evolving geological fields.
 
 For global-map diagnostics, `sample_tectonics_equirectangular()` returns aligned `plate_id`, legacy signed `forcing`, terrain-driving `uplift_forcing` and `divergence_forcing`, `crust_affinity`, and `macro_elevation_m` arrays. These arrays are debug adapter data only; they do not become authoritative Godot-owned state.
 
@@ -104,6 +106,6 @@ The scene is intentionally terrain-only. There is no rendered water, atmosphere,
 
 The native adapter only derives from `godot::Node`; Godot rendering classes are instantiated from GDScript. `godot/build_profile.json` therefore enables `Node` plus `OS`: `OS` is not used by WorldSim directly, but is required by the handwritten `godot-cpp` core source `src/core/print_string.cpp`. The profile still avoids generation/compilation of unrelated engine classes and materially reduces cold CI cost.
 
-For repeat builds, GitHub Actions uses `mozilla-actions/sccache-action@v0.0.11` with `SCCACHE_GHA_ENABLED=true` and `CMAKE_CXX_COMPILER_LAUNCHER=sccache`, matching the mechanism used by the upstream `godot-cpp` 10.0.0-rc2 CMake CI. The workflow builds only the `worldsim_godot` target rather than rebuilding tests and CLI in the Godot job.
+The current workflow builds only the `worldsim_godot` target in the Godot job. It relies on the feature build profile and does not configure a compiler-cache service.
 
 The integration job then downloads/caches the exact Godot 4.7.2 Linux editor and verifies its SHA-256. A standalone headless editor `--import` pass is best-effort because `godot-cpp` upstream CI documents that this editor-import process can abort after generating `.godot`. The mandatory gate is `res://ci_smoke.gd`, which loads the extension at runtime, creates `WorldSimulationNode`, advances the simulation, and checks returned data.

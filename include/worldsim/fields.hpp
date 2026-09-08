@@ -23,6 +23,9 @@ struct FieldDescriptor {
     double default_value{};
     double min_value{-std::numeric_limits<double>::infinity()};
     double max_value{ std::numeric_limits<double>::infinity()};
+    // Optional positive intensive weight for restriction (e.g. thickness for
+    // volume-weighted crust density). Refinement still copies the value.
+    std::optional<FieldId> coarsen_weight{};
 };
 
 class FieldRegistry {

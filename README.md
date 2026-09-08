@@ -1,6 +1,6 @@
 # WorldSim
 
-WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, climate/weather, regolith-aware hydrology, living-soil fertility/detritus, grass/shrub/tree plant functional types with local dispersal and competition, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
+WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, climate/weather, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus, grass/shrub/tree plant functional types with local dispersal and competition, cohort fauna with local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
 
 This repository is **not** claiming that the included climate/ecology equations are a scientifically calibrated Earth model. They are deliberately replaceable domain implementations used to exercise the production architecture: spatial hierarchy, conservation across LOD, scheduling, state stores, snapshots, commands, events, engine boundaries, and module extension.
 
@@ -39,9 +39,23 @@ ctest --preset dev
 
 Or run `scripts/build_core.sh` / `scripts/build_core.ps1`.
 
+## Inspect basin hydrology
+
+```bash
+./out/dev/worldsim_hydrology_dump --days 730 --level 2 --adaptive --output out/hydrology
+python3 scripts/plot_hydrology.py out/hydrology
+```
+
+The C++ executable exports daily water budgets, a monitored catchment/reach
+history, reference nodes and map samples. The optional plotting script requires
+Matplotlib/NumPy and writes `history.png` and `maps.png`. New hydrology fields
+also pass through the existing C ABI/Godot field introspection. River geometry
+stays at the initial base level when the active simulation cover refines;
+see [the hydrology contract](docs/HYDROLOGY.md).
+
 ## Continuous integration
 
-GitHub Actions deliberately separates the fast simulation-core job from the Godot integration job. The Godot job uses the same `sccache` compiler-cache mechanism as upstream `godot-cpp` CMake CI and a feature build profile (`godot/build_profile.json`) so cold builds generate only the C++ wrappers actually used by the adapter. It then runs a headless smoke test with pinned Godot 4.7.2.
+GitHub Actions deliberately separates the fast simulation-core job from the Godot integration job. The Godot job uses a feature build profile (`godot/build_profile.json`) so cold builds generate only the C++ wrappers actually used by the adapter. It then runs a headless smoke test with pinned Godot 4.7.2.
 
 The regular CI builds only the Linux Godot integration. Cross-platform packaging should be a release workflow rather than multiplying every pull-request build.
 

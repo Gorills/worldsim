@@ -372,17 +372,17 @@ void test_migration_resolves_refined_neighbor_region() {
     cohorts.validate_active_cover(sim->world().active_cells());
 }
 
-void test_snapshot_epoch_v15() {
+void test_snapshot_epoch_current() {
     auto sim=make_default_simulation(6060);
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{15},
-        "fauna v2 did not advance authoritative snapshot epoch to v15"
+        snapshot[8]==std::byte{17},
+        "unexpected authoritative snapshot epoch"
     );
 
     auto legacy=snapshot;
-    legacy[8]=std::byte{14};
+    legacy[8]=std::byte{16};
     bool rejected=false;
     try {
         auto restored=make_default_simulation(6060);
@@ -390,7 +390,7 @@ void test_snapshot_epoch_v15() {
     } catch (const std::runtime_error&) {
         rejected=true;
     }
-    check(rejected,"snapshot v14 was accepted by fauna v2");
+    check(rejected,"snapshot v16 was accepted by the corrected model");
 
     auto restored=make_default_simulation(6060);
     restored->load_snapshot(snapshot);
@@ -407,7 +407,7 @@ int main() {
         test_indexed_transfer_conserves_population();
         test_uniform_habitat_selection();
         test_migration_resolves_refined_neighbor_region();
-        test_snapshot_epoch_v15();
+        test_snapshot_epoch_current();
         std::cout << "fauna_v2_tests: OK\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

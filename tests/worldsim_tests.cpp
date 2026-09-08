@@ -300,7 +300,7 @@ void test_determinism_and_snapshot() {
         std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5},
         std::uint8_t{6},std::uint8_t{7},std::uint8_t{8},std::uint8_t{9},
         std::uint8_t{10},std::uint8_t{11},std::uint8_t{12},
-        std::uint8_t{13}
+        std::uint8_t{13},std::uint8_t{14},std::uint8_t{15},std::uint8_t{16}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -550,7 +550,7 @@ void test_living_soil_ecology_contracts() {
         "geology.regolith_thickness_m"
     );
     const auto water=*thin_soil->fields().find("hydrology.soil_water_m3");
-    const auto runoff=*thin_soil->fields().find("hydrology.runoff_m3_day");
+    const auto drainage=*thin_soil->fields().find("hydrology.drainage_since_soil_m3");
     const double effective_area=
         thin_soil->world().topology().area_m2(hydrology_cell)*
         thin_soil->world().stores().get<FieldStore>().get(
@@ -568,8 +568,8 @@ void test_living_soil_ecology_contracts() {
     thin_soil->step(6);
     deep_soil->step(6);
     check(
-        thin_fs.get(hydrology_cell,runoff)>
-        deep_fs.get(hydrology_cell,runoff)+
+        thin_fs.get(hydrology_cell,drainage)>
+        deep_fs.get(hydrology_cell,drainage)+
             0.05*effective_area,
         "thin and deep regolith retained nearly the same storm water"
     );

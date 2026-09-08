@@ -2,6 +2,10 @@
 
 This file distinguishes what was actually executed from architectural intent.
 
+## Current audit
+
+The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
+
 ## Core test coverage
 
 `worldsim_tests` covers:
@@ -14,7 +18,7 @@ This file distinguishes what was actually executed from architectural intent.
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 14);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 15);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -137,3 +141,13 @@ Actually verified in that run:
 - The actual `res://main.tscn` then launched headlessly with `--language ru` and exited successfully after two iterations, exercising the viewer GDScript, project input map, Theme resource, and registered gettext resources at runtime.
 
 The standalone editor `--import` process still aborts during teardown in this environment and remains intentionally best-effort, as documented above; the mandatory runtime smoke and actual scene launch both pass.
+
+## Basin hydrology (2026-09-08)
+
+The new domain implementation and its modeling limits are documented in
+[HYDROLOGY.md](HYDROLOGY.md). Validation includes seven hydrology process groups,
+full-core CTest, sanitizer runs, Godot field introspection and a 730-day
+full-world adaptive-cover diagnostic. The latter closes the land-water budget
+with maximum relative residual 2.70362e-14. Reference-grid river geometry is
+independent of camera refinement; this does not establish spatial convergence
+of an adaptive hydraulic solver. Snapshot epoch 17 is current.

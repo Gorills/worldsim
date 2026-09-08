@@ -1,5 +1,6 @@
 #include "worldsim/simulation.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/hydrology.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -83,7 +84,8 @@ void Scheduler::run(Tick tick, SystemContext& ctx) {
 Simulation::Simulation(std::uint64_t seed, SimulationConfig config): seed_(seed),config_(config) {
     if (config_.base_level>config_.max_level) throw std::invalid_argument("base_level > max_level");
     if (config_.max_level>CellId::kMaxLevel) throw std::invalid_argument("max_level too high");
-    if (!(config_.tick_seconds>0.0)) throw std::invalid_argument("tick_seconds must be positive");
+    if (!std::isfinite(config_.tick_seconds) || !(config_.tick_seconds/86400.0>0.0))
+        throw std::invalid_argument("tick_seconds must be finite and positive in simulation days");
 }
 
 void Simulation::add_module(std::unique_ptr<ISimModule> module) {
@@ -204,6 +206,8 @@ bool Simulation::update_lod() {
 
 void Simulation::step(Tick ticks) {
     if (!built_) throw std::runtime_error("simulation not built");
+    if (ticks>std::numeric_limits<Tick>::max()-world_->tick())
+        throw std::invalid_argument("simulation tick overflow");
     for (Tick i=0;i<ticks;++i) {
         if (update_lod())
             for (auto& module:modules_) module->on_spatial_cover_changed(*world_,fields_);
@@ -218,7 +222,7 @@ void Simulation::set_focus(Vec3d direction) {
     const double length=std::hypot(direction.x,direction.y,direction.z);
     if (!std::isfinite(length) || !(length>0.0))
         throw std::invalid_argument("focus vector must be finite and non-zero");
-    focus_=direction*(1.0/length);
+    focus_=Vec3d{direction.x/length,direction.y/length,direction.z/length};
 }
 void Simulation::clear_focus() { focus_.reset(); }
 
@@ -226,6 +230,9 @@ void Simulation::schedule_field_impulse(Tick tick, CellId cell, FieldId field, d
     if (!built_) throw std::runtime_error("simulation not built");
     (void)fields_.descriptor(field);
     if (!cell.valid()) throw std::invalid_argument("invalid command cell");
+    if (!std::isfinite(delta)) throw std::invalid_argument("command delta must be finite");
+    if (next_sequence_==std::numeric_limits<std::uint64_t>::max())
+        throw std::runtime_error("command sequence exhausted");
     commands_.push_back({tick,next_sequence_++,cell,field,delta});
 }
 void Simulation::schedule_field_impulse(Tick tick, CellId cell, std::string_view field_key, double delta) {
@@ -239,7 +246,7 @@ std::vector<std::byte> Simulation::save_snapshot() const {
     BinaryWriter w;
     const std::array<char,8> magic{'W','S','I','M','S','N','A','P'};
     for (char c:magic) w.pod(c);
-    w.pod<std::uint32_t>(15); // versioned, little-endian wire format
+    w.pod<std::uint32_t>(17); // versioned, little-endian wire format
     w.pod(fields_.schema_hash());
     w.pod(seed_);
     w.pod(config_.base_level);
@@ -276,22 +283,14 @@ std::vector<std::byte> Simulation::save_snapshot() const {
     return w.take();
 }
 
-void Simulation::restore_active_cells(std::vector<CellId> cells) {
-    // Normalize the current cover back to the uniform base before reconstructing the snapshot
-    // cover. This makes restore independent of the LOD state that existed immediately before load.
-    clear_focus();
-    for (int level=config_.max_level;level>config_.base_level;--level) {
-        std::set<CellId> parents;
-        for (CellId c:world_->active_cells()) if (c.level()==level) parents.insert(c.parent());
-        for (CellId p:parents) world_->coarsen(p);
-    }
-
+void Simulation::restore_active_cells(WorldState& world, const std::vector<CellId>& cells) const {
+    // Reconstruct only in a newly staged world, starting from its uniform base.
     std::set<CellId> desired(cells.begin(),cells.end());
     bool progress=true;
     while (progress) {
         progress=false;
         std::vector<CellId> refine_list;
-        for (CellId active:world_->active_cells()) {
+        for (CellId active:world.active_cells()) {
             bool has_descendant=false;
             for (CellId d:desired) {
                 CellId p=d;
@@ -300,9 +299,9 @@ void Simulation::restore_active_cells(std::vector<CellId> cells) {
             }
             if (has_descendant) refine_list.push_back(active);
         }
-        for (CellId c:refine_list) { world_->refine(c); progress=true; }
+        for (CellId c:refine_list) { world.refine(c); progress=true; }
     }
-    if (world_->active_cells()!=desired) throw std::runtime_error("snapshot active-cell cover is invalid");
+    if (world.active_cells()!=desired) throw std::runtime_error("snapshot active-cell cover is invalid");
 }
 
 void Simulation::load_snapshot(std::span<const std::byte> data) {
@@ -310,7 +309,7 @@ void Simulation::load_snapshot(std::span<const std::byte> data) {
     BinaryReader r(data);
     const std::array<char,8> expected{'W','S','I','M','S','N','A','P'};
     for (char c:expected) if (r.pod<char>()!=c) throw std::runtime_error("invalid snapshot magic");
-    if (r.pod<std::uint32_t>()!=15) throw std::runtime_error("unsupported snapshot version");
+    if (r.pod<std::uint32_t>()!=17) throw std::runtime_error("unsupported snapshot version");
     if (r.pod<std::uint64_t>()!=fields_.schema_hash()) throw std::runtime_error("snapshot field schema mismatch");
     const auto snap_seed=r.pod<std::uint64_t>();
     if (snap_seed!=seed_) throw std::runtime_error("snapshot seed mismatch");
@@ -326,24 +325,31 @@ void Simulation::load_snapshot(std::span<const std::byte> data) {
     if (has_focus>1U) throw std::runtime_error("invalid snapshot focus flag");
     if (has_focus==1U) {
         Vec3d f{r.pod<double>(),r.pod<double>(),r.pod<double>()};
-        if (norm(f)==0.0) throw std::runtime_error("invalid zero snapshot focus");
+        const double length=std::hypot(f.x,f.y,f.z);
+        if (!std::isfinite(length) || !(length>0.0)) throw std::runtime_error("invalid snapshot focus");
         snap_focus=f;
     }
 
     const auto snap_next_sequence=r.pod<std::uint64_t>();
     const auto command_count=r.pod<std::uint64_t>();
+    if (command_count>r.remaining()/36U) throw std::runtime_error("snapshot command count exceeds payload");
     std::vector<FieldImpulseCommand> snap_commands;
+    std::set<std::uint64_t> command_sequences;
     snap_commands.reserve(static_cast<std::size_t>(command_count));
     for (std::uint64_t i=0;i<command_count;++i) {
         FieldImpulseCommand c;
         c.tick=r.pod<Tick>(); c.sequence=r.pod<std::uint64_t>(); c.cell=CellId(r.pod<std::uint64_t>());
         c.field=r.pod<FieldId>(); c.delta=r.pod<double>();
         if (!c.cell.valid()) throw std::runtime_error("snapshot contains invalid command cell");
+        if (!std::isfinite(c.delta)) throw std::runtime_error("snapshot contains invalid command delta");
+        if (c.sequence>=snap_next_sequence || !command_sequences.insert(c.sequence).second)
+            throw std::runtime_error("snapshot contains invalid command sequence");
         (void)fields_.descriptor(c.field);
         snap_commands.push_back(c);
     }
 
     const auto cell_count=r.pod<std::uint64_t>();
+    if (cell_count>r.remaining()/8U) throw std::runtime_error("snapshot cell count exceeds payload");
     std::vector<CellId> cells; cells.reserve(static_cast<std::size_t>(cell_count));
     for (std::uint64_t i=0;i<cell_count;++i) {
         CellId cell(r.pod<std::uint64_t>());
@@ -353,12 +359,14 @@ void Simulation::load_snapshot(std::span<const std::byte> data) {
     }
 
     const auto event_count=r.pod<std::uint64_t>();
+    if (event_count>r.remaining()/36U) throw std::runtime_error("snapshot event count exceeds payload");
     std::vector<SimulationEvent> snap_events; snap_events.reserve(static_cast<std::size_t>(event_count));
     for (std::uint64_t i=0;i<event_count;++i) {
         SimulationEvent e;
         e.tick=r.pod<Tick>(); e.type=r.string(); e.cell=CellId(r.pod<std::uint64_t>());
         e.subject=r.pod<std::uint64_t>(); e.magnitude=r.pod<double>();
         if (!e.cell.valid()) throw std::runtime_error("snapshot contains invalid event cell");
+        if (!std::isfinite(e.magnitude)) throw std::runtime_error("snapshot contains invalid event magnitude");
         snap_events.push_back(std::move(e));
     }
 
@@ -381,22 +389,29 @@ void Simulation::load_snapshot(std::span<const std::byte> data) {
     if (std::set<CellId>(cells.begin(),cells.end()).size()!=cells.size())
         throw std::runtime_error("snapshot contains duplicate active cells");
 
-    // Reconstruct the legal adaptive cover while the current stores still match the current cover,
-    // then install the exact serialized store payloads.
-    restore_active_cells(cells);
-    for (const auto& [key,store]:world_->stores().all()) {
+    // All potentially throwing work targets a separate world. A failed store
+    // load/cover validation must not clear or partially replace the live state.
+    auto staged=std::make_unique<WorldState>(seed_);
+    staged->stores().emplace<FieldStore>(fields_);
+    for (auto& module:modules_) module->register_stores(staged->stores(),fields_);
+    staged->initialize_cover(config_.base_level);
+    restore_active_cells(*staged,cells);
+    if (staged->stores().all().size()!=chunks.size())
+        throw std::runtime_error("staged snapshot state-store set mismatch");
+    for (const auto& [key,store]:staged->stores().all()) {
         const auto& chunk=chunks.at(key);
         BinaryReader sr(chunk.payload);
         store->load(sr,chunk.version);
         if (sr.remaining()!=0) throw std::runtime_error("snapshot store chunk has trailing bytes: "+key);
     }
-    for (const auto& [key,store]:world_->stores().all()) {
+    for (const auto& [key,store]:staged->stores().all()) {
         (void)key;
-        store->validate_active_cover(world_->active_cells());
+        store->validate_active_cover(staged->active_cells());
     }
 
-    world_->set_tick(snap_tick);
-    world_->replace_pending_events(std::move(snap_events));
+    staged->set_tick(snap_tick);
+    staged->replace_pending_events(std::move(snap_events));
+    world_.swap(staged);
     focus_=snap_focus;
     commands_=std::move(snap_commands);
     next_sequence_=snap_next_sequence;
@@ -407,6 +422,7 @@ std::unique_ptr<Simulation> make_default_simulation(std::uint64_t seed, Simulati
     sim->add_module(std::make_unique<GeographyModule>());
     sim->add_module(std::make_unique<ClimateModule>());
     sim->add_module(std::make_unique<MagicModule>());
+    sim->add_module(std::make_unique<HydrologyModule>());
     sim->add_module(std::make_unique<EcologyModule>());
     sim->build();
     return sim;

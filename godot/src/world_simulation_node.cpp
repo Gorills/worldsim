@@ -203,7 +203,10 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_equirectangular(std::int6
         const int w=static_cast<int>(width);
         const int h=static_cast<int>(height);
         out.resize(w*h);
-        const worldsim::TerrainGenerator terrain(sim_->world().seed());
+        const auto& world=sim_->world();
+        const auto& fields=world.stores().get<worldsim::FieldStore>();
+        const auto elevation=sim_->fields().find("geography.elevation_m");
+        if (!elevation) throw std::runtime_error("geography elevation field is missing");
 
         // Sample pixel centers so the equirectangular texture contains neither a
         // duplicated +/-180 degree column nor exact pole singularities.
@@ -220,12 +223,17 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_equirectangular(std::int6
                     cos_lat*std::sin(longitude),
                     sin_lat
                 };
-                out.set(y*w+x,static_cast<float>(terrain.sample_direction(direction).elevation_m));
+                // A diagnostic map displays the active simulation cover exactly.
+                // Query a finest-level region and resolve its active ancestor;
+                // regenerating seed terrain here hides all geological evolution.
+                const auto region=world.topology().from_direction(direction,worldsim::CellId::kMaxLevel);
+                const auto parts=world.resolve_active_cover(region);
+                out.set(y*w+x,static_cast<float>(fields.get(parts.front().cell,*elevation)));
             }
         }
         last_error_.clear();
-    } catch (const std::exception& e) { report_error(e.what()); }
-    catch (...) { report_error("unknown C++ exception in sample_terrain_equirectangular"); }
+    } catch (const std::exception& e) { report_error(e.what()); return {}; }
+    catch (...) { report_error("unknown C++ exception in sample_terrain_equirectangular"); return {}; }
     return out;
 }
 

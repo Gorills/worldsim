@@ -421,7 +421,13 @@ double GeologyModel::surface_elevation_m(
         state.crust_thickness_m*
         (kMantleDensityKgM3-state.crust_density_kg_m3)/
         kMantleDensityKgM3;
-    const double oceanic=ocean_floor_elevation_m(state.lithosphere_age_ma);
+    // The age-depth curve describes a reference oceanic column. Persistent
+    // thickening/thinning and density changes must also affect oceanic relief.
+    const double oceanic_buoyancy_anomaly=(
+        state.crust_thickness_m*(kMantleDensityKgM3-state.crust_density_kg_m3)-
+        7'000.0*(kMantleDensityKgM3-2'950.0)
+    )/kMantleDensityKgM3;
+    const double oceanic=ocean_floor_elevation_m(state.lithosphere_age_ma)+oceanic_buoyancy_anomaly;
     double elevation=lerp(oceanic,isostatic_continent,continental_weight);
 
     const double area=std::max(1.0,cell_area_m2);
@@ -646,7 +652,7 @@ ErosionBudget GeologyModel::erode(
     state.crust_thickness_m-=budget.crust_thickness_removed_m;
     state.regolith_thickness_m=std::max(
         0.0,
-        state.regolith_thickness_m-erosion_depth_m
+        state.regolith_thickness_m-sediment_removed_depth-budget.crust_thickness_removed_m
     );
     return budget;
 }

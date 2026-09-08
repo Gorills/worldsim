@@ -8,7 +8,7 @@ The ecology pipeline now follows this scheduler order when the default modules a
 
 ```text
 climate.surface
-    -> ecology.hydrology
+    -> hydrology.balance
     -> geology.evolution
     -> ecology.soil
     -> ecology.vegetation
@@ -21,7 +21,7 @@ This ordering gives geology the current terrestrial runoff, gives soil the curre
 
 `hydrology.soil_water_m3` remains an extensive water stock, but its local storage capacity is no longer a fixed water depth on every land cell. The capacity depth rises from a small fractured-substrate store toward a bounded developed-soil store as `geology.regolith_thickness_m` increases.
 
-The exact WorldSim closure is an engineering approximation for the coarse cells. It does not resolve soil texture, hydraulic conductivity, horizons, groundwater or an unsaturated-flow profile.
+The exact WorldSim closure is an engineering approximation for the coarse cells. It does not resolve soil texture, horizons, aquifer pressure or an unsaturated-flow profile. Basin hydrology now adds a reduced regolith-dependent infiltration rate and a shallow groundwater reservoir; see `HYDROLOGY.md`.
 
 Landlab's soil-moisture component provides the relevant modeling precedent: root-zone moisture, runoff/leakage and vegetation water stress are treated as linked ecosystem state, and the component exposes root depth, porosity and field-capacity parameters rather than assuming one universal water bucket.
 
@@ -69,7 +69,7 @@ The representation follows the large-scale simplification used by dynamic global
 
 ### Vegetation and fauna coupling
 
-Total vegetation NPP remains limited by living-soil fertility, temperature, solar forcing, root-zone water and magic growth forcing, but production and turnover are now resolved per functional type. Turnover returns carbon to litter.
+Total vegetation NPP remains limited by living-soil fertility, temperature, solar forcing, root-zone water and magic growth forcing, but production and turnover are now resolved per functional type. Turnover returns carbon to litter. Respiration and turnover are jointly limited by available carbon before committing the step, and NPP reports realized respiration. This keeps the isolated vegetation budget closed even when a long step would otherwise overdraw the pool; it does not imply that the large-step nonlinear ecosystem trajectory is accurate.
 
 The reduced herbivore cohorts preferentially consume grass, then shrubs, with a smaller tree forage contribution. Fauna removes carbon from the same PFT pools and then recomputes total vegetation, preventing the aggregate field from drifting away from functional-type state. A fraction of consumed plant carbon returns to litter, and a bounded estimate of killed wet biomass returns as carcass carbon. Cohort body mass is still not a conserved carbon store.
 
@@ -110,7 +110,7 @@ The dedicated `worldsim_fauna_v2_tests` suite checks the new movement contract:
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- snapshot epoch 15 is authoritative for Fauna v2, version 14 is rejected, and the current snapshot round-trips exactly.
+- snapshot epoch 17 includes basin hydrology, version 16 is rejected, and the current snapshot round-trips exactly.
 
 ## Explicitly unsupported ecology claims
 
@@ -118,10 +118,10 @@ The current ecology slice does **not** yet provide:
 
 - explicit nitrogen, phosphorus or other elemental nutrient conservation;
 - microbial biomass, soil horizons, texture classes or soil chemistry;
-- groundwater and vadose-zone flow;
+- spatial aquifer-pressure and vadose-zone flow;
 - species-level plant physiology, explicit seed banks, long-distance dispersal kernels or evolutionary adaptation;
 - species-specific physiology, genetics or evolution;
-- explicit wildfire, storm/flood mortality, grazing-driven state transitions or other disturbance regimes;
+- explicit wildfire, storm damage, grazing-driven state transitions or species-specific disturbance regimes (reduced inundation mortality is implemented);
 - individual trajectories, home ranges, movement memory, explicit barriers, long-distance dispersal or seasonal migration;
 - aquatic food webs;
 - disease, parasites or decomposer cohorts;
@@ -129,3 +129,16 @@ The current ecology slice does **not** yet provide:
 - Earth-calibrated productivity, decomposition or carrying-capacity parameters.
 
 These are future domain slices. Human settlement/population simulation should wait until the non-human biosphere can persist, spread and recover under the same authoritative world contracts.
+
+## Basin-water coupling (epoch 17)
+
+Hydrology samples climate every tick and owns snow, root-zone water, shallow
+groundwater and persistent surface reservoirs. Root-zone percolation,
+capillary return and actual biomass-dependent transpiration share a finite
+water budget. Soil leaching consumes accumulated local drainage since the
+last soil pass, rather than extrapolating the last instantaneous runoff sample.
+Standing water reinfiltrates into unsaturated soil. Terrestrial PFT growth is
+reduced by inundated fraction, and prolonged inundation adds turnover whose
+realized carbon returns to litter through the existing bounded loss budget.
+Fauna responds through the resulting forage changes. No aquatic PFTs/fauna or
+individual drowning model is implied.
