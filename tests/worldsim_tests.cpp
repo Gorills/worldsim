@@ -708,6 +708,57 @@ void test_columnar_field_store_and_cohort_index() {
     check(indexed==4,"cohort spatial index lost refined cohorts");
     check(w.coarsen(p),"cohort-index test coarsen failed");
     check(cs.in_cell(p).size()==1,"cohort spatial index did not merge to parent");
+
+    const CellId target=CellId::make(1,0,0,0);
+    const std::uint64_t source_id=cs.in_cell(p).front().get().id;
+    const double before_total=cs.total_count();
+    const std::uint64_t destination_id=
+        cs.transfer_count(source_id,target,10.0);
+    near(
+        cs.total_count(),
+        before_total,
+        1.0e-15,
+        "indexed cohort transfer changed total population"
+    );
+    check(
+        cs.in_cell(p).size()==1 &&
+        cs.in_cell(target).size()==1,
+        "indexed cohort transfer corrupted spatial lookup"
+    );
+    near(
+        cs.in_cell(p).front().get().count,
+        15.0,
+        1.0e-15,
+        "indexed cohort transfer did not debit source"
+    );
+    near(
+        cs.in_cell(target).front().get().count,
+        10.0,
+        1.0e-15,
+        "indexed cohort transfer did not credit destination"
+    );
+    check(
+        cs.in_cell(target).front().get().id==destination_id,
+        "indexed cohort transfer returned wrong destination id"
+    );
+
+    cs.transfer_count(source_id,target,5.0);
+    check(
+        cs.in_cell(target).size()==1,
+        "repeated transfer duplicated same-lineage destination cohort"
+    );
+    near(
+        cs.in_cell(target).front().get().count,
+        15.0,
+        1.0e-15,
+        "repeated transfer did not merge into destination cohort"
+    );
+    near(
+        cs.total_count(),
+        before_total,
+        1.0e-15,
+        "repeated indexed transfer changed total population"
+    );
 }
 
 void test_c_api() {
