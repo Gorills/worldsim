@@ -432,7 +432,8 @@ double GeologyModel::erosion_rate_m_per_year(
 ) const {
     if (!(downhill_slope>0.0)) return 0.0;
     const double runoff_mm_day=std::max(0.0,runoff_m_per_day)*1'000.0;
-    const double water_factor=std::sqrt(0.05+runoff_mm_day/3.0);
+    if (!(runoff_mm_day>0.0)) return 0.0;
+    const double water_factor=std::sqrt(runoff_mm_day/3.0);
     const double slope_factor=std::pow(
         std::max(0.0,downhill_slope)/0.05,
         1.1
@@ -446,6 +447,30 @@ double GeologyModel::erosion_rate_m_per_year(
         2.0e-4*water_factor*slope_factor*cover_factor,
         0.0,
         5.0e-3
+    );
+}
+
+double GeologyModel::hillslope_transport_rate_m_per_year(
+    double downhill_slope,
+    double regolith_thickness_m
+) const {
+    if (!(downhill_slope>0.0) || !(regolith_thickness_m>0.0))
+        return 0.0;
+
+    // Reduced soil-creep closure: transport grows linearly with local slope
+    // and saturates with available mobile regolith depth. The coefficient is
+    // an engineering rate scale for this coarse analytical model, not an
+    // Earth-calibrated hillslope diffusivity.
+    constexpr double transport_depth_scale_m=1.0;
+    constexpr double creep_rate_scale_m_per_year=1.0e-3;
+    const double mobile_depth_factor=
+        -std::expm1(-regolith_thickness_m/transport_depth_scale_m);
+    return std::clamp(
+        creep_rate_scale_m_per_year*
+        downhill_slope*
+        mobile_depth_factor,
+        0.0,
+        1.0e-3
     );
 }
 
