@@ -196,6 +196,38 @@ void controlled_fire_closes_carbon() {
     );
 }
 
+
+void burn_cap_scales_with_elapsed_time() {
+    const auto run_fixture=[](double dt_days) {
+        auto simulation=make_default_simulation(
+            7010,SimulationConfig{1,1,3'600.0}
+        );
+        clear_and_dry(*simulation);
+        const CellId cell=*simulation->world().active_cells().begin();
+        set_fuel(*simulation,cell);
+        ignite(*simulation,cell,0.50);
+
+        run_fire(*simulation,dt_days);
+        return simulation->world().stores().get<FieldStore>().get(
+            cell,
+            field(*simulation,"ecology.fire_burned_fraction")
+        );
+    };
+
+    const double half_day_burned=run_fixture(0.5);
+    const double full_day_burned=run_fixture(1.0);
+    check(
+        half_day_burned>0.0 && full_day_burned>0.0,
+        "fire timestep fixture did not burn"
+    );
+    near(
+        2.0*half_day_burned,
+        full_day_burned,
+        1.0e-12,
+        "daily fire burn cap did not scale with elapsed time"
+    );
+}
+
 void fuelless_fire_extinguishes() {
     auto simulation=make_default_simulation(
         7002,SimulationConfig{1,1,3'600.0}
@@ -503,6 +535,7 @@ void snapshot_continuation_includes_fire_state() {
 int main() {
     try {
         controlled_fire_closes_carbon();
+        burn_cap_scales_with_elapsed_time();
         fuelless_fire_extinguishes();
         wet_weather_suppresses_fire();
         snow_cover_suppresses_fire();
