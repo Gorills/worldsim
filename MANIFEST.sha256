@@ -34,7 +34,7 @@ f938cafa7025ccce57bab9ef30fae997536f2beed3ec78519630a3864c7dacbb  ./godot/projec
 c536ceddeca6178dce041e8239643d4b81e38aa37dafb487d75ac41509bc1ccd  ./godot/src/world_simulation_node.hpp
 d8b5dda9a2bbd7d02990bead68a0397bdad3b70f07cd4a1d3c463256ad616275  ./include/worldsim/c_api.h
 e370a757df3c72f9a459a01c260f677ea2c56184a709abe49eca4bae0e0b63a6  ./include/worldsim/fields.hpp
-4df6a2653b6fb750a360e1077b80a6316dc0c7fa1974a380dcf4f0305c7e59e0  ./include/worldsim/geology.hpp
+306280e1970e0a8f8c1dd7758714516dff404193e11b031bf989ae5180e73492  ./include/worldsim/geology.hpp
 1b4c93ce70fc4f69d313ad9f0410c95296c47a6ad8979b52135b6ee19b498d90  ./include/worldsim/modules.hpp
 a6971be40fc7ae8d62f0054cf34f7063acd6ceda9b761edc9e4649266dc7f00b  ./include/worldsim/simulation.hpp
 a3fc83cd8338093904351e509d7cb3d4dff0366567812ed51005488a4dd7f19e  ./include/worldsim/spatial.hpp
@@ -49,7 +49,7 @@ e4177de43a7bc5de7adff4eaae549cc01ff8579e87ddda3423b1d81912f1e7e7  ./scripts/buil
 721b3cbd9625ce2a5d0aee02eabb8ae1b2f21a28cecbc425f936fbef8c51fe6a  ./scripts/build_godot.sh
 67cacf982cf38c1574769be4e10011c4c2f7a37a64f573cfdb79aa413a43d194  ./src/c_api.cpp
 d5e60cf13545e2c74627d158c116184be4e46e81df636f973507a8388460c020  ./src/fields.cpp
-5f93109ccb3413713f53563bb681f36d5cdebcfd628145f976567f42732eb94f  ./src/geology.cpp
+7fb5ba2281024eab85cc2a645eb3f9d68b403e4c6efe27764217e477b92cb136  ./src/geology.cpp
 02be57161868e9381dde019cb0f20f04fcef108a05aa268b996e9c525b4aaaf0  ./src/modules.cpp
 2d590dcd052d94dee72753d6771f2b30f7cc7d3da4a7283855ed4a1288e25258  ./src/simulation.cpp
 b6f619be4bb5624d73b1215b3e4b956e1a8a6d1acdb18e070bb1dd7e54fd24ad  ./src/spatial.cpp
@@ -57,6 +57,6 @@ b6f619be4bb5624d73b1215b3e4b956e1a8a6d1acdb18e070bb1dd7e54fd24ad  ./src/spatial.
 1b6959f16b6bc0380a871f62954570d1ce00304cf5cc8b1b600999791dc160a2  ./src/tectonics.cpp
 cd602fa6e0557dbf0a531d7c94f8bdfabb7ae9d5de16d731195a9bdb150b3d00  ./src/terrain.cpp
 5d3a5fcbc6f36c42cf61efffd1dc25c40bd38c8f653fa031d6fd5966ac608fb7  ./tests/sanitizer_smoke.cpp
-4894b20ea783d68b42338454d22983f5b26460219352655962830677ed889388  ./tests/worldsim_tests.cpp
+dcd3dabc0ac396ead561ace52f30d001476f2c940a4a4408b3c20435883a5135  ./tests/worldsim_tests.cpp
 14cea906b991717fb38e14b05d00e2e50c41be8c51cc261381f7d78b9397c414  ./THIRD_PARTY.md
 e9dd8507f4bf0c6f42458e41aea833ad0bd3f6127272335eee9bf4d58541ed67  ./VERSION
