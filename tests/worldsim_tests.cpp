@@ -186,7 +186,9 @@ void test_determinism_and_snapshot() {
     // under the same field schema, so reject them rather than mixing terrain
     // models after a later LOD cover resample.
     check(snap.size()>11,"snapshot header is unexpectedly short");
-    for (std::uint8_t legacy_version:{std::uint8_t{2},std::uint8_t{3},std::uint8_t{4}}) {
+    for (std::uint8_t legacy_version:{
+        std::uint8_t{2},std::uint8_t{3},std::uint8_t{4},std::uint8_t{5}
+    }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
         bool rejected_legacy_snapshot=false;
@@ -834,6 +836,27 @@ void test_tectonic_model_multiseed_robustness() {
           "multi-seed plate areas regressed toward an equal-area partition");
     check(center_spacing_cv_sum*inverse_seed_count>0.10,
           "multi-seed plate centers regressed toward regular spacing");
+
+    // The diversity fix must not trade a regular layout for near-duplicate
+    // seeds. Seed 64 is the first deterministic regression on the previous
+    // unconstrained +/-0.5 rad jitter (minimum center spacing ~3.3 degrees).
+    constexpr std::uint64_t separation_seed_count=256;
+    constexpr double minimum_center_separation_rad=10.0*kPi/180.0;
+    for (std::uint64_t seed=0;seed<separation_seed_count;++seed) {
+        const TectonicModel tectonics(seed);
+        for (std::uint32_t i=0;i<TectonicModel::kPlateCount;++i) {
+            for (std::uint32_t j=i+1;j<TectonicModel::kPlateCount;++j) {
+                const double separation=std::acos(std::clamp(
+                    dot(tectonics.plates()[i].seed_direction,
+                        tectonics.plates()[j].seed_direction),
+                    -1.0,
+                    1.0
+                ));
+                check(separation>minimum_center_separation_rad,
+                      "tectonic plate seeds are pathologically clustered");
+            }
+        }
+    }
 }
 
 void test_authoritative_terrain_tracks_tectonic_macro_relief() {
