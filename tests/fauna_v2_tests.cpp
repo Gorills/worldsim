@@ -575,12 +575,12 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{22},
+        snapshot[8]==std::byte{23},
         "unexpected authoritative snapshot epoch"
     );
 
     auto legacy=snapshot;
-    legacy[8]=std::byte{21};
+    legacy[8]=std::byte{22};
     bool rejected=false;
     try {
         auto restored=make_default_simulation(6060);
@@ -588,7 +588,10 @@ void test_snapshot_epoch_current() {
     } catch (const std::runtime_error&) {
         rejected=true;
     }
-    check(rejected,"snapshot v21 was accepted by the fauna-carbon model");
+    check(
+        rejected,
+        "snapshot v22 was accepted after grazing timestep semantics changed"
+    );
 
     auto restored=make_default_simulation(6060);
     restored->load_snapshot(snapshot);

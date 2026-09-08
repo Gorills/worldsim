@@ -1551,7 +1551,11 @@ public:
 
             const double consumed=std::min(
                 total_demand,
-                weighted_forage*0.025
+                weighted_forage*std::clamp(
+                    0.025*ctx.dt_days,
+                    0.0,
+                    1.0
+                )
             );
             if (weighted_forage>0.0 && consumed>0.0) {
                 for (std::size_t i=0;i<pft_.size();++i) {
