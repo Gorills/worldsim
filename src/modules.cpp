@@ -70,6 +70,10 @@ void write_geology_state(
     fs.set(cell,ids.regolith_thickness,state.regolith_thickness_m);
 }
 
+// Resolve the composite adaptive cover instead of sampling one arbitrary
+// descendant at a coarse/fine interface. Conservative AMR schemes compare
+// area-weighted fine/coarse contributions at such interfaces; the geology
+// transport below uses the same restriction principle for its cell fluxes.
 std::vector<CellId> active_cells_covering_region(
     const WorldState& world,
     CellId region
@@ -286,7 +290,6 @@ public:
         for (CellId cell:ctx.world.active_cells()) {
             const double source_elevation=fs.get(cell,ids_.elevation);
             const Vec3d source_direction=ctx.world.topology().center_unit(cell);
-            CellId downhill=cell;
             double downhill_elevation=source_elevation;
             double downhill_distance_m=1.0;
 
