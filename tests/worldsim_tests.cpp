@@ -1260,7 +1260,7 @@ void test_geology_hillslope_transport_without_runoff() {
     const auto erosion_rate=*sim.fields().find("geology.erosion_rate_m_yr");
     const auto runoff=*sim.fields().find("hydrology.runoff_m3_day");
     auto& fs=sim.world().stores().get<FieldStore>();
-    const GeologyModel geology(sim.seed());
+    const GeologyModel geology(sim.world().seed());
 
     std::map<CellId,double> before;
     double total_before=0.0;
