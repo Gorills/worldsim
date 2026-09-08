@@ -241,10 +241,14 @@ Dictionary WorldSimulationNode::sample_tectonics_equirectangular(std::int64_t wi
         const int h=static_cast<int>(height);
         PackedInt32Array plate_ids;
         PackedFloat32Array forcing;
+        PackedFloat32Array uplift_forcing;
+        PackedFloat32Array divergence_forcing;
         PackedFloat32Array crust_affinity;
         PackedFloat32Array macro_elevation;
         plate_ids.resize(w*h);
         forcing.resize(w*h);
+        uplift_forcing.resize(w*h);
+        divergence_forcing.resize(w*h);
         crust_affinity.resize(w*h);
         macro_elevation.resize(w*h);
         const worldsim::TectonicModel tectonics(sim_->world().seed());
@@ -266,6 +270,8 @@ Dictionary WorldSimulationNode::sample_tectonics_equirectangular(std::int64_t wi
                 const int index=y*w+x;
                 plate_ids.set(index,static_cast<std::int32_t>(sample.plate_id));
                 forcing.set(index,static_cast<float>(sample.boundary_forcing));
+                uplift_forcing.set(index,static_cast<float>(sample.uplift_forcing));
+                divergence_forcing.set(index,static_cast<float>(sample.divergence_forcing));
                 crust_affinity.set(index,static_cast<float>(sample.continental_affinity));
                 macro_elevation.set(index,static_cast<float>(sample.macro_elevation_m));
             }
@@ -275,6 +281,8 @@ Dictionary WorldSimulationNode::sample_tectonics_equirectangular(std::int64_t wi
         out["plate_count"]=static_cast<std::int64_t>(worldsim::TectonicModel::kPlateCount);
         out["plate_id"]=plate_ids;
         out["forcing"]=forcing;
+        out["uplift_forcing"]=uplift_forcing;
+        out["divergence_forcing"]=divergence_forcing;
         out["crust_affinity"]=crust_affinity;
         out["macro_elevation_m"]=macro_elevation;
         last_error_.clear();
