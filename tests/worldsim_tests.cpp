@@ -1069,6 +1069,26 @@ void test_geology_model_process_contracts() {
         sink.sediment_mass_kg;
     const ErosionBudget budget=geology.erode(source,area_m2,2.0);
     geology.deposit(sink,budget.transported_mass_kg());
+
+    GeologyState basin=ocean;
+    basin.sediment_mass_kg=0.0;
+    const double basin_before=geology.surface_elevation_m(
+        basin,
+        most_oceanic,
+        area_m2
+    );
+    geology.deposit(
+        basin,
+        100.0*area_m2*GeologyModel::kSedimentDensityKgM3
+    );
+    const double basin_after=geology.surface_elevation_m(
+        basin,
+        most_oceanic,
+        area_m2
+    );
+    check(basin_after>basin_before,
+          "sediment deposition lowered the basin surface");
+
     const double solid_after=
         source.crust_thickness_m*area_m2*source.crust_density_kg_m3+
         source.sediment_mass_kg+
