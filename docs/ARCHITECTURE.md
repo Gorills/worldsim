@@ -61,7 +61,7 @@ Not every future variable is correctly modeled by these two semantics. A new sta
 
 ### Structured stores
 
-`CohortStore` demonstrates non-field state. Fauna is represented by cohorts rather than one object per animal. Its LOD hooks split counts on refinement and merge compatible lineages on coarsening while preserving total count.
+`CohortStore` demonstrates non-field state. Fauna is represented by cohorts rather than one object per animal. Its LOD hooks split counts on refinement and merge compatible lineages on coarsening while preserving total count. Runtime movement must go through `CohortStore::transfer_count()` rather than mutating `Cohort::cell`: the store debits the source, merges an already-present compatible lineage/species/group at the target when possible, and keeps the spatial `by_cell_` index coherent.
 
 Future structured stores should own their aggregation semantics rather than encoding them as arbitrary fields.
 
@@ -126,7 +126,7 @@ Production domains should introduce typed command payloads and typed event schem
 
 ## 8. Snapshots
 
-Snapshot version 14 contains:
+Snapshot version 15 contains:
 
 - magic header and format version;
 - field schema hash;
@@ -142,7 +142,7 @@ Primitive values use explicit little-endian encoding and IEEE-754 floats. Native
 
 A snapshot is rejected if the field schema, simulation config, seed, store set, store version, cell cover, or framing is incompatible. After store chunks are loaded, spatial stores validate that their state references the reconstructed active cover; the core field store additionally rejects invalid/non-finite/out-of-bounds values.
 
-Snapshot v14 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, version 12 the coast-to-basin geology model before living-soil ecology, and version 13 the living-soil model before persistent grass/shrub/tree functional-type pools and propagule-limited vegetation dynamics. Versions 2 through 13 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
+Snapshot v15 is the current compatibility epoch for authoritative world state. Version 2 may contain the old fixed-continent terrain, version 3 the pre-orogenic tectonic terrain, version 4 the pre-diversification plate layout, version 5 the unconstrained diversified layout, version 6 the minimum-separation static-geography model before persistent geology state, version 7 the first stateful-geology model before sediment mass used burial-dependent compaction, version 8 the compacted-sediment model before fluvial incision was separated from water-independent hillslope creep, version 9 the separated geomorphology model before regolith production became depth-dependent, version 10 the depth-dependent-regolith model before hillslope transport gained critical-slope acceleration, version 11 the critical-slope model before terrestrial drainage terminated at sea level and submerged sediment gained a dedicated marine-routing closure, version 12 the coast-to-basin geology model before living-soil ecology, version 13 the living-soil model before persistent grass/shrub/tree functional-type pools, and version 14 the Flora-v1 model before habitat-selected fauna redistribution. Versions 2 through 14 are rejected because silently accepting them could mix incompatible authoritative world semantics. Long-term save compatibility should be implemented as explicit snapshot migrations. Do not silently deserialize old bytes into a changed model.
 
 ## 9. Why magic does not contaminate the core
 
