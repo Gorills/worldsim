@@ -18,7 +18,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 15);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 16);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -40,6 +40,19 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - regolith production declines exponentially with existing mantle thickness, shuts off for zero continental fraction, and gives timestep-invariant analytical weathering for a stable plate interior;
 - seed-42 convergent-uplift footprint width/contour complexity regression, 64-seed tectonic robustness/diversity sweep, and 256-seed anti-clustering guard;
 - Godot debug-map response arrays and presentation checks for terrain-driving uplift/divergence colors and explicit plate topology outlines.
+
+The Godot headless integration scripts additionally verify that reconstructed
+walking heights respond to authoritative elevation changes, adjacent terrain
+patches share identical boundary samples, adaptive-cover changes advance the
+terrain revision, and refreshed `ArrayMesh` and `HeightMapShape3D` resources use
+the same height array.
+
+`ci_simulation_lab.gd` instantiates the full-world laboratory in Russian, checks
+its 512 x 256 live map, confirms hydrology and ecology fields are selectable,
+switches the scalar layer, inspects a cell, advances one day and verifies that
+selected-field statistics and history update. The lower-level adapter smoke also
+checks generic elevation agreement, extensive-value/area density normalization,
+field inspection and focused LOD-map refinement.
 
 `worldsim_sanitizer_smoke` is a bounded scenario intended for ASan/UBSan builds.
 

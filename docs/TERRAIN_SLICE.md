@@ -4,12 +4,12 @@ This document records the architecture and performance decisions for the first w
 
 ## Scope
 
-The slice intentionally contains only static terrain:
+The slice intentionally contains only terrain presentation:
 
-- deterministic planet-scale crust and tectonic macro relief;
-- bounded sphere-native meso/local procedural detail over that macro relief;
+- stateful planet-scale geological elevation reconstructed from the simulation cover;
+- bounded sphere-native procedural sub-cell detail over that reconstructed macro relief;
 - no rendered or simulated water;
-- no erosion or drainage shaping in the terrain source yet;
+- no rendered rivers or other hydrological surface features;
 - no climate, hydrology, vegetation, fauna, settlements, or other gameplay domains in the Godot terrain scene;
 - a first-person walker over streamed terrain chunks.
 
@@ -19,19 +19,71 @@ The existing full default simulation remains available for kernel/domain tests a
 
 The authoritative spatial model remains the existing cube-sphere hierarchy. No second flat world model is introduced.
 
-`TerrainGenerator` is a deterministic core service keyed by world seed. It owns a `TectonicModel` and can be sampled either from a unit direction on the planet or from local projected meter coordinates. The walking height/patch APIs still sample this static preview. Current authoritative geography instead uses persistent `GeologyModel` state; the walking mesh and collisions do not yet visualize its evolution. The global elevation map reads the actual active geography field, while tectonic debug layers show the seed model.
+`TerrainGenerator` is a deterministic core service keyed by world seed. It owns a `TectonicModel` and can be sampled either from a unit direction on the planet or from local projected meter coordinates. Current authoritative geography uses persistent `GeologyModel` state. The walking height/patch APIs now reconstruct that adaptive `geography.elevation_m` field and retain `TerrainGenerator` only for deterministic sub-cell presentation detail. The global elevation map continues to read the actual active geography field without that detail, while tectonic debug layers show the seed model.
 
 The walking projection is azimuthal-equidistant and centered at 45° N, 70° E, but it is not part of terrain generation. `sample_projected()` converts local walker meters to a unit direction and delegates to `sample_direction()`. The static preview sampler uses `TectonicModel::macro_elevation_m` as its broad hypsometric base. The previous fixed anisotropic continent cap no longer participates in generation. Existing sphere-native FBM remains only as bounded 180 km rolling relief and 900 m local detail, plus a bounded ridged orogenic term modulated by tectonic uplift and continental affinity. Final `land_fraction` is derived from final elevation across a narrow sea-level transition.
 
 A regression samples 1,024 sphere directions and requires procedural preview elevation to correlate above 0.95 with tectonic macro relief while retaining measurable detail and keeping the detail residual below 1.5 km. A separate level-5 cube-sphere integration keeps seed-42 global land coverage in a broad non-degenerate range and preserves dry land at the existing local-walker origin.
 
+### Authoritative walking-surface reconstruction
+
+Simulation LOD and rendering LOD remain separate. At the configured maximum
+simulation level, cells near the seed-42 walker origin are still roughly 59 km
+in characteristic size, while a walking mesh vertex is spaced 8 m apart. Direct
+piecewise-constant sampling would therefore turn the active cover into broad
+terraces. Raising simulation LOD to render resolution would incorrectly make a
+presentation requirement own the authoritative world budget.
+
+The adapter instead evaluates
+
+```text
+render_height(p) = R(geography.elevation_m, p)
+                 + TerrainGenerator(p) - R(TerrainGenerator anchors, p)
+```
+
+`R` is a normalized compact-support reconstruction over virtual cells at the
+configured maximum simulation level. Each virtual-cell value is first resolved
+through `WorldState::resolve_active_cover()`, so a coarse active ancestor or
+active descendants are combined through the existing area-weighted contract.
+The renderer never treats same-level `neighbors4()` results as if they were
+active leaves. Positive normalized weights keep the reconstructed macro surface
+inside the range of its contributing cell values. The second pair of terms is a
+high-pass residual: it preserves deterministic local shape without replacing
+the evolving simulation height with the immutable seed terrain.
+
+The compact weight is the standard Wendland C2 form
+`(1-r)^4 * (1+4r)` for normalized radius `r < 1`. It is a presentation
+reconstruction, not a conservative simulation prolongation: stored cell values,
+mass budgets, erosion routing, snapshots and all other domain consumers remain
+unchanged. Resolving the adaptive cover before reconstruction follows the same
+coarse/fine separation used in established AMR practice:
+
+- H. Wendland (1995), *Piecewise polynomial, positive definite and compactly
+  supported radial functions of minimal degree*:
+  https://doi.org/10.1007/BF02123482
+- Berger & Colella (1989), conservative coarse/fine AMR synchronization:
+  https://doi.org/10.1016/0021-9991(89)90035-1
+
+The adapter exposes a transient terrain revision derived from active cell ids
+and authoritative elevation values. A revision change dirties existing chunks.
+The chunk under the player updates its `ArrayMesh` and `HeightMapShape3D`
+synchronously; remaining visible chunks update at one per frame. Render and
+collision always use the same sampled height array. Godot 4.7 documents the
+relevant mutable height-map data and procedural mesh contracts:
+
+- https://docs.godotengine.org/en/4.7/classes/class_arraymesh.html
+- https://docs.godotengine.org/en/4.7/classes/class_heightmapshape3d.html
+
+The reconstruction cost and dirty-chunk update budget on target player hardware
+remain **NOT VERIFIED** until profiled outside CI.
+
 This follows the same relevant large-planet practice as Demiurge: terrain is a deterministic function of seed plus spherical position, and its macro pipeline is angular/normalized rather than derived from a global flat map. WorldSim uses its own analytical tectonic model and does not copy Demiurge's implementation:
 
 - https://github.com/owenyuwono/demiurge
 
-After simulation-cover refinement/coarsening, derived geography is recomputed from retained geology state through the module lifecycle. The state is not reset to seed terrain. This is separate from the static walker chunk sampler.
+After simulation-cover refinement/coarsening, derived geography is recomputed from retained geology state through the module lifecycle. The state is not reset to seed terrain. The walker reconstruction consumes that derived field without taking ownership of it.
 
-Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain/geology contract changes. Tectonic authority introduced version 3, orogenic shaping version 4, plate-layout diversification version 5, the minimum-separation correction version 6, stateful geological evolution version 7, burial-dependent sediment compaction version 8, separated fluvial/hillslope geomorphology version 9, depth-dependent regolith production version 10, critical-slope hillslope acceleration version 11, and coast-to-basin marine sediment routing version 12. Global snapshot version 13 added persistent living-soil ecology fields; version 14 added persistent grass/shrub/tree functional-type pools and propagule-limited vegetation semantics; version 15 added habitat-selected fauna redistribution. Version 16 corrects crust restriction/buoyancy, seasons and vegetation loss accounting. Versions 2 through 15 are rejected by the current authoritative-world snapshot contract.
+Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain/geology contract changes. Tectonic authority introduced version 3, orogenic shaping version 4, plate-layout diversification version 5, the minimum-separation correction version 6, stateful geological evolution version 7, burial-dependent sediment compaction version 8, separated fluvial/hillslope geomorphology version 9, depth-dependent regolith production version 10, critical-slope hillslope acceleration version 11, and coast-to-basin marine sediment routing version 12. Global snapshot version 13 added persistent living-soil ecology fields; version 14 added persistent grass/shrub/tree functional-type pools and propagule-limited vegetation semantics; version 15 added habitat-selected fauna redistribution. Version 16 corrects crust restriction/buoyancy, seasons and vegetation loss accounting, and version 17 adds persistent basin hydrology. Versions 2 through 16 are rejected by the current authoritative-world snapshot contract.
 
 ## Godot large-world strategy
 
@@ -54,7 +106,7 @@ Current chunk contract:
 - vertex spacing: 8 m;
 - visible radius: 3 chunks;
 - retained radius: 4 chunks;
-- at most one missing chunk is generated per rendered frame;
+- at most one missing or dirty chunk is generated per rendered frame;
 - the chunk under the initial player position is built synchronously before movement starts.
 
 Meshes are regular indexed `ArrayMesh` surfaces. Collision uses `HeightMapShape3D`, which Godot documents as the terrain-specialized alternative to a concave triangle collision shape:
@@ -158,8 +210,8 @@ A spatial bake is intentionally deferred. Plate ownership, crust affinity, and t
 
 ## Known boundaries
 
-- Terrain elevation now uses tectonic macro relief as its authoritative broad basis, but it has no erosion, sediment transport, or drainage shaping yet.
+- Walking terrain now follows reconstructed stateful geology, including its derived erosion/sediment effects at simulation-cell resolution; deterministic sub-cell detail remains presentation-only and is not eroded.
 - "Ocean" currently means generated ocean floor/land mask. No water surface exists in this slice.
 - There is no distant terrain LOD or planetary horizon in the local walker; the global map is a separate 2D inspection tool.
-- Terrain is currently immutable except through changing the world seed/source implementation.
+- Terrain revision and synchronized local mesh/collision refresh are implemented; distant terrain rendering and continuous high-speed streaming are not.
 - Frame-time and GPU performance on target player hardware are NOT VERIFIED by CI; CI can verify build, parsing, headless runtime, terrain API, collision scene resources, and core invariants only.

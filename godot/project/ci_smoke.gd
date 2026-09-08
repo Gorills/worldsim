@@ -51,18 +51,93 @@ func _initialize() -> void:
                 quit(24)
                 return
 
+    var diagnostic_elevation := sim.sample_field_equirectangular(
+        "geography.elevation_m", 16, 8, true
+    )
+    var terrain_elevation := sim.sample_terrain_equirectangular(16, 8)
+    if diagnostic_elevation.size() != terrain_elevation.size():
+        push_error("Generic diagnostic field map has the wrong size")
+        quit(32)
+        return
+    for i in range(diagnostic_elevation.size()):
+        if absf(float(diagnostic_elevation[i]) - float(terrain_elevation[i])) > 0.01:
+            push_error("Generic elevation map disagrees with authoritative terrain map")
+            quit(33)
+            return
+
+    var pixel_latitude := (0.5 - 0.5 / 8.0) * PI
+    var pixel_longitude := (2.0 * 0.5 / 16.0 - 1.0) * PI
+    var pixel_direction := Vector3(
+        cos(pixel_latitude) * cos(pixel_longitude),
+        cos(pixel_latitude) * sin(pixel_longitude),
+        sin(pixel_latitude)
+    )
+    var inspected: Dictionary = sim.inspect_direction(pixel_direction)
+    if (
+        inspected.is_empty() or
+        int(inspected.get("level", -1)) != 4 or
+        float(inspected.get("area_m2", 0.0)) <= 0.0 or
+        !(inspected.get("values", {}) as Dictionary).has("climate.surface_temperature_k")
+    ):
+        push_error("Direction inspector did not return aligned active-cell state")
+        quit(34)
+        return
+
+    var vegetation_density := sim.sample_field_equirectangular(
+        "ecology.vegetation_carbon_kg", 16, 8, true
+    )
+    var inspected_values: Dictionary = inspected["values"]
+    var expected_density := (
+        float(inspected_values["ecology.vegetation_carbon_kg"])
+        / float(inspected["area_m2"])
+    )
+    if absf(float(vegetation_density[0]) - expected_density) > maxf(
+        1.0e-12, absf(expected_density) * 1.0e-6
+    ):
+        push_error("Extensive diagnostic field was not normalized by active-cell area")
+        quit(35)
+        return
+
+    var base_lod := sim.sample_lod_equirectangular(32, 16)
+    for level in base_lod:
+        if level != 4:
+            push_error("Unfocused full world did not start on uniform base LOD")
+            quit(36)
+            return
+
     # A diagnostic elevation map must read the current adaptive world. A seed-only
     # TerrainGenerator silently hides geological evolution and field commands.
     sim.set_focus_direction(Vector3(1.0, 0.2, 0.3))
     sim.step_hours(1)
+    var focused_lod := sim.sample_lod_equirectangular(32, 16)
+    var focused_min_level := 99
+    var focused_max_level := -1
+    for level in focused_lod:
+        focused_min_level = mini(focused_min_level, level)
+        focused_max_level = maxi(focused_max_level, level)
+    if focused_min_level != 4 or focused_max_level <= 4:
+        push_error("LOD diagnostic map did not expose focused refinement")
+        quit(37)
+        return
     var adaptive_packet := sim.get_render_packet()
     var elevation := sim.get_field_values("geography.elevation_m")
+    var render_height_before := sim.sample_terrain_height(0.0, 0.0)
+    var terrain_revision_before := sim.get_terrain_revision()
     for i in range(elevation.size()):
         sim.schedule_field_impulse(
             adaptive_packet["cell_id_hi"][i], adaptive_packet["cell_id_lo"][i],
             "geography.elevation_m", 1234.0 - elevation[i]
         )
     sim.step_hours(1)
+    if sim.get_terrain_revision() <= terrain_revision_before:
+        push_error("Terrain revision did not track an authoritative elevation change")
+        quit(28)
+        return
+    var render_height_after := sim.sample_terrain_height(0.0, 0.0)
+    if absf(render_height_after - render_height_before) < 1.0:
+        push_error("Walking terrain height ignores authoritative geography")
+        quit(29)
+        return
     var authoritative_map := sim.sample_terrain_equirectangular(16, 8)
     if authoritative_map.size() != 16 * 8:
         push_error("Authoritative elevation map is missing")
@@ -91,7 +166,19 @@ func _initialize() -> void:
         push_error("Terrain patch size mismatch: %d" % patch.size())
         quit(9)
         return
-    if sim.sample_terrain_height(0.0, 0.0) <= 0.0:
+    var terrain_origin_height := sim.sample_terrain_height(0.0, 0.0)
+    if absf(float(patch[8 * 17 + 8]) - terrain_origin_height) > 0.01:
+        push_error("Terrain point and patch reconstruction disagree")
+        quit(30)
+        return
+    var left_chunk := sim.sample_terrain_patch(0.0, 0.0, 8.0, 33)
+    var right_chunk := sim.sample_terrain_patch(256.0, 0.0, 8.0, 33)
+    for z in range(33):
+        if absf(float(left_chunk[z * 33 + 32]) - float(right_chunk[z * 33])) > 0.01:
+            push_error("Reconstructed terrain has a chunk seam")
+            quit(31)
+            return
+    if terrain_origin_height <= 0.0:
         push_error("Terrain continent center is not above sea level")
         quit(10)
         return

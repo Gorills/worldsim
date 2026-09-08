@@ -3,9 +3,10 @@
 #
 #   make run     # build GDExtension if needed, then launch godot/project/main.tscn
 #   make map     # build GDExtension if needed, then launch godot/project/world_map.tscn
+#   make lab     # build GDExtension, then launch the full-world simulation lab
 #   make visual  # build core and write the five-seed C++ visual diagnostic suite
 
-.PHONY: help core godot run run-scene map visual geology test
+.PHONY: help core godot run run-scene map lab visual geology test
 
 GODOT ?= godot
 export GODOT
@@ -17,6 +18,7 @@ help:
 		'make run        build GDExtension, then launch main.tscn' \
 		'make run-scene  same as make run' \
 		'make map        build GDExtension, then launch world_map.tscn' \
+		'make lab        build GDExtension, then launch simulation_lab.tscn' \
 		'make visual     build core and generate C++ visual diagnostic suite' \
 		'make geology    build core and run geology plausibility benchmark' \
 		'make test       build kernel and run ctest --preset dev' \
@@ -36,6 +38,9 @@ run run-scene: godot
 
 map: godot
 	SCENE=res://world_map.tscn ./scripts/run_godot.sh
+
+lab: godot
+	SCENE=res://simulation_lab.tscn ./scripts/run_godot.sh
 
 visual: core
 	./out/dev/worldsim_visual_dump --suite --width 512 --height 256 --output out/visual-dump

@@ -10,10 +10,16 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <deque>
 #include <exception>
+#include <limits>
+#include <map>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace worldsim::godot_adapter {
 
@@ -29,6 +35,186 @@ using godot::String;
 using godot::UtilityFunctions;
 using godot::Vector3;
 
+namespace {
+
+constexpr int kTerrainReconstructionRings=5;
+constexpr double kTerrainReconstructionSupportCells=3.0;
+
+struct TerrainReconstructionSource {
+    worldsim::Vec3d direction;
+    double authoritative_elevation_m{};
+    double preview_elevation_m{};
+};
+
+using TerrainStencil=std::vector<TerrainReconstructionSource>;
+using TerrainStencilCache=std::unordered_map<std::uint64_t,TerrainStencil>;
+
+std::vector<worldsim::CellId> reconstruction_cells(
+    const worldsim::CubeSphereTopology& topology,
+    worldsim::CellId center
+) {
+    std::map<worldsim::CellId,int> distances;
+    std::deque<worldsim::CellId> pending;
+    distances.emplace(center,0);
+    pending.push_back(center);
+    while (!pending.empty()) {
+        const worldsim::CellId current=pending.front();
+        pending.pop_front();
+        const int distance=distances.at(current);
+        if (distance>=kTerrainReconstructionRings) continue;
+        for (worldsim::CellId neighbor:topology.neighbors4(current)) {
+            if (!distances.emplace(neighbor,distance+1).second) continue;
+            pending.push_back(neighbor);
+        }
+    }
+
+    std::vector<worldsim::CellId> cells;
+    cells.reserve(distances.size());
+    for (const auto& [cell,distance]:distances) {
+        (void)distance;
+        cells.push_back(cell);
+    }
+    return cells;
+}
+
+TerrainStencil build_terrain_stencil(
+    const worldsim::Simulation& sim,
+    const worldsim::TerrainGenerator& terrain,
+    worldsim::CellId center,
+    std::unordered_map<std::uint64_t,double>& preview_anchor_cache
+) {
+    const auto& world=sim.world();
+    const auto& fields=world.stores().get<worldsim::FieldStore>();
+    const auto elevation=sim.fields().find("geography.elevation_m");
+    if (!elevation)
+        throw std::runtime_error("geography elevation field is missing");
+
+    TerrainStencil stencil;
+    const auto cells=reconstruction_cells(world.topology(),center);
+    stencil.reserve(cells.size());
+    for (worldsim::CellId cell:cells) {
+        double authoritative=0.0;
+        const auto parts=world.resolve_active_cover(cell);
+        for (const worldsim::ActiveCoverPart& part:parts)
+            authoritative+=fields.get(part.cell,*elevation)*part.weight;
+
+        const worldsim::Vec3d direction=world.topology().center_unit(cell);
+        const auto [it,inserted]=preview_anchor_cache.try_emplace(cell.raw(),0.0);
+        if (inserted)
+            it->second=terrain.sample_direction(direction).elevation_m;
+        stencil.push_back({direction,authoritative,it->second});
+    }
+    return stencil;
+}
+
+double reconstructed_terrain_height(
+    const worldsim::Simulation& sim,
+    const worldsim::TerrainGenerator& terrain,
+    worldsim::Vec3d direction,
+    TerrainStencilCache& stencil_cache,
+    std::unordered_map<std::uint64_t,double>& preview_anchor_cache
+) {
+    direction=worldsim::normalized(direction);
+    const auto& topology=sim.world().topology();
+    const std::uint8_t level=sim.config().max_level;
+    const worldsim::CellId center=topology.from_direction(direction,level);
+    auto [it,inserted]=stencil_cache.try_emplace(center.raw());
+    if (inserted)
+        it->second=build_terrain_stencil(sim,terrain,center,preview_anchor_cache);
+
+    const double nominal_cell_angle=(0.5*worldsim::kPi)/static_cast<double>(1U<<level);
+    const double support_angle=std::min(
+        0.75*worldsim::kPi,
+        kTerrainReconstructionSupportCells*nominal_cell_angle
+    );
+    const double support_chord=std::sqrt(2.0-2.0*std::cos(support_angle));
+    double weight_sum=0.0;
+    double authoritative_sum=0.0;
+    double preview_sum=0.0;
+    for (const TerrainReconstructionSource& source:it->second) {
+        const double chord=std::sqrt(std::max(
+            0.0,
+            2.0-2.0*std::clamp(worldsim::dot(direction,source.direction),-1.0,1.0)
+        ));
+        const double radius=chord/support_chord;
+        if (!(radius<1.0)) continue;
+        const double remaining=1.0-radius;
+        const double remaining2=remaining*remaining;
+        const double weight=remaining2*remaining2*(1.0+4.0*radius);
+        weight_sum+=weight;
+        authoritative_sum+=weight*source.authoritative_elevation_m;
+        preview_sum+=weight*source.preview_elevation_m;
+    }
+    if (!(weight_sum>0.0))
+        throw std::runtime_error("terrain reconstruction stencil has no support");
+
+    const double authoritative_macro=authoritative_sum/weight_sum;
+    const double preview_macro=preview_sum/weight_sum;
+    const double preview=terrain.sample_direction(direction).elevation_m;
+    return std::clamp(
+        authoritative_macro+(preview-preview_macro),
+        -11'000.0,
+        9'000.0
+    );
+}
+
+std::uint64_t fingerprint_mix(std::uint64_t hash, std::uint64_t value) {
+    hash^=value+0x9e3779b97f4a7c15ULL+(hash<<6U)+(hash>>2U);
+    return hash;
+}
+
+std::pair<int,int> checked_map_dimensions(
+    std::int64_t width,
+    std::int64_t height,
+    std::string_view map_name
+) {
+    constexpr std::int64_t max_samples=2'097'152;
+    if (width<2 || height<2 || width>max_samples/height)
+        throw std::invalid_argument(
+            std::string(map_name)+
+            " map must be at least 2x2 and contain at most 2097152 samples"
+        );
+    return {static_cast<int>(width),static_cast<int>(height)};
+}
+
+worldsim::Vec3d equirectangular_pixel_direction(
+    int x,
+    int y,
+    int width,
+    int height
+) {
+    const double v=(static_cast<double>(y)+0.5)/static_cast<double>(height);
+    const double latitude=(0.5-v)*worldsim::kPi;
+    const double sin_lat=std::sin(latitude);
+    const double cos_lat=std::cos(latitude);
+    const double u=(static_cast<double>(x)+0.5)/static_cast<double>(width);
+    const double longitude=(2.0*u-1.0)*worldsim::kPi;
+    return {
+        cos_lat*std::cos(longitude),
+        cos_lat*std::sin(longitude),
+        sin_lat
+    };
+}
+
+worldsim::CellId active_cell_at_direction(
+    const worldsim::Simulation& sim,
+    worldsim::Vec3d direction
+) {
+    const auto& world=sim.world();
+    const auto region=world.topology().from_direction(
+        direction,
+        sim.config().max_level
+    );
+    const auto parts=world.resolve_active_cover(region);
+    if (parts.size()!=1U)
+        throw std::runtime_error(
+            "point query unexpectedly resolved to multiple active cells"
+        );
+    return parts.front().cell;
+}
+
+} // namespace
+
 WorldSimulationNode::WorldSimulationNode() {
     initialize(1);
 }
@@ -43,11 +229,30 @@ void WorldSimulationNode::_bind_methods() {
     ClassDB::bind_method(godot::D_METHOD("projected_to_direction","east_m","north_m"),
                          &WorldSimulationNode::projected_to_direction);
     ClassDB::bind_method(godot::D_METHOD("get_tick"),&WorldSimulationNode::get_tick);
+    ClassDB::bind_method(godot::D_METHOD("get_terrain_revision"),&WorldSimulationNode::get_terrain_revision);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_height","east_m","north_m"),&WorldSimulationNode::sample_terrain_height);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_patch","center_east_m","center_north_m","spacing_m","resolution"),
                          &WorldSimulationNode::sample_terrain_patch);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_equirectangular","width","height"),
                          &WorldSimulationNode::sample_terrain_equirectangular);
+    ClassDB::bind_method(
+        godot::D_METHOD(
+            "sample_field_equirectangular",
+            "field_key",
+            "width",
+            "height",
+            "normalize_extensive"
+        ),
+        &WorldSimulationNode::sample_field_equirectangular
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD("sample_lod_equirectangular","width","height"),
+        &WorldSimulationNode::sample_lod_equirectangular
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD("inspect_direction","direction"),
+        &WorldSimulationNode::inspect_direction
+    );
     ClassDB::bind_method(godot::D_METHOD("sample_preview_terrain_equirectangular","width","height"),
                          &WorldSimulationNode::sample_preview_terrain_equirectangular);
     ClassDB::bind_method(godot::D_METHOD("sample_tectonics_equirectangular","width","height"),
@@ -77,12 +282,19 @@ void WorldSimulationNode::initialize(std::int64_t seed) {
         cfg.max_level=7;
         cfg.tick_seconds=3600.0;
         sim_=worldsim::make_default_simulation(static_cast<std::uint64_t>(seed),cfg);
+        terrain_preview_=std::make_unique<worldsim::TerrainGenerator>(
+            static_cast<std::uint64_t>(seed)
+        );
+        terrain_revision_=1;
+        terrain_preview_anchor_cache_.clear();
         last_error_.clear();
     } catch (const std::exception& e) {
         sim_.reset();
+        terrain_preview_.reset();
         report_error(e.what());
     } catch (...) {
         sim_.reset();
+        terrain_preview_.reset();
         report_error("unknown C++ exception during WorldSim initialization");
     }
 }
@@ -94,12 +306,19 @@ void WorldSimulationNode::initialize_terrain_world(std::int64_t seed) {
         cfg.max_level=7;
         cfg.tick_seconds=3600.0;
         sim_=worldsim::make_terrain_simulation(static_cast<std::uint64_t>(seed),cfg);
+        terrain_preview_=std::make_unique<worldsim::TerrainGenerator>(
+            static_cast<std::uint64_t>(seed)
+        );
+        terrain_revision_=1;
+        terrain_preview_anchor_cache_.clear();
         last_error_.clear();
     } catch (const std::exception& e) {
         sim_.reset();
+        terrain_preview_.reset();
         report_error(e.what());
     } catch (...) {
         sim_.reset();
+        terrain_preview_.reset();
         report_error("unknown C++ exception during terrain world initialization");
     }
 }
@@ -108,7 +327,11 @@ void WorldSimulationNode::step_hours(std::int64_t hours) {
     try {
         ensure_sim();
         if (hours<0) throw std::invalid_argument("hours must be non-negative");
+        const std::uint64_t before=terrain_surface_fingerprint();
         sim_->step(static_cast<worldsim::Tick>(hours));
+        const std::uint64_t after=terrain_surface_fingerprint();
+        if (before!=after && terrain_revision_<std::numeric_limits<std::int64_t>::max())
+            ++terrain_revision_;
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in step_hours"); }
@@ -168,14 +391,44 @@ std::int64_t WorldSimulationNode::get_tick() const {
     catch (...) { report_error("unknown C++ exception in get_tick"); return 0; }
 }
 
+std::int64_t WorldSimulationNode::get_terrain_revision() const {
+    try {
+        ensure_sim();
+        last_error_.clear();
+        return terrain_revision_;
+    } catch (const std::exception& e) { report_error(e.what()); return 0; }
+    catch (...) { report_error("unknown C++ exception in get_terrain_revision"); return 0; }
+}
+
+std::uint64_t WorldSimulationNode::terrain_surface_fingerprint() const {
+    ensure_sim();
+    const auto elevation=sim_->fields().find("geography.elevation_m");
+    if (!elevation) throw std::runtime_error("geography elevation field is missing");
+    const auto& fields=sim_->world().stores().get<worldsim::FieldStore>();
+    std::uint64_t hash=0x243f6a8885a308d3ULL;
+    for (worldsim::CellId cell:sim_->world().active_cells()) {
+        hash=fingerprint_mix(hash,cell.raw());
+        hash=fingerprint_mix(hash,std::bit_cast<std::uint64_t>(fields.get(cell,*elevation)));
+    }
+    return hash;
+}
+
 double WorldSimulationNode::sample_terrain_height(double east_m, double north_m) const {
     try {
         ensure_sim();
         if (!std::isfinite(east_m) || !std::isfinite(north_m))
             throw std::invalid_argument("terrain coordinates must be finite");
-        const worldsim::TerrainGenerator terrain(sim_->world().seed());
+        if (!terrain_preview_) throw std::runtime_error("terrain preview is not initialized");
+        TerrainStencilCache stencil_cache;
+        const double height=reconstructed_terrain_height(
+            *sim_,
+            *terrain_preview_,
+            worldsim::TerrainGenerator::projected_to_direction(east_m,north_m),
+            stencil_cache,
+            terrain_preview_anchor_cache_
+        );
         last_error_.clear();
-        return terrain.sample_projected(east_m,north_m).elevation_m;
+        return height;
     } catch (const std::exception& e) { report_error(e.what()); return 0.0; }
     catch (...) { report_error("unknown C++ exception in sample_terrain_height"); return 0.0; }
 }
@@ -196,12 +449,19 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_patch(double center_east_
         const auto n=static_cast<int>(resolution);
         out.resize(n*n);
         const double half=0.5*static_cast<double>(n-1);
-        const worldsim::TerrainGenerator terrain(sim_->world().seed());
+        if (!terrain_preview_) throw std::runtime_error("terrain preview is not initialized");
+        TerrainStencilCache stencil_cache;
         for (int z=0;z<n;++z) {
             for (int x=0;x<n;++x) {
                 const double east=center_east_m+(static_cast<double>(x)-half)*spacing_m;
                 const double north=center_north_m+(static_cast<double>(z)-half)*spacing_m;
-                const double height=terrain.sample_projected(east,north).elevation_m;
+                const double height=reconstructed_terrain_height(
+                    *sim_,
+                    *terrain_preview_,
+                    worldsim::TerrainGenerator::projected_to_direction(east,north),
+                    stencil_cache,
+                    terrain_preview_anchor_cache_
+                );
                 out.set(z*n+x,static_cast<float>(height));
             }
         }
@@ -216,12 +476,7 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_equirectangular(std::int6
     PackedFloat32Array out;
     try {
         ensure_sim();
-        constexpr std::int64_t max_samples=2'097'152;
-        if (width<2 || height<2 || width>max_samples/height)
-            throw std::invalid_argument("global terrain map must be at least 2x2 and contain at most 2097152 samples");
-
-        const int w=static_cast<int>(width);
-        const int h=static_cast<int>(height);
+        const auto [w,h]=checked_map_dimensions(width,height,"global terrain");
         out.resize(w*h);
         const auto& world=sim_->world();
         const auto& fields=world.stores().get<worldsim::FieldStore>();
@@ -231,29 +486,127 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_equirectangular(std::int6
         // Sample pixel centers so the equirectangular texture contains neither a
         // duplicated +/-180 degree column nor exact pole singularities.
         for (int y=0;y<h;++y) {
-            const double v=(static_cast<double>(y)+0.5)/static_cast<double>(h);
-            const double latitude=(0.5-v)*worldsim::kPi;
-            const double sin_lat=std::sin(latitude);
-            const double cos_lat=std::cos(latitude);
             for (int x=0;x<w;++x) {
-                const double u=(static_cast<double>(x)+0.5)/static_cast<double>(w);
-                const double longitude=(2.0*u-1.0)*worldsim::kPi;
-                const worldsim::Vec3d direction{
-                    cos_lat*std::cos(longitude),
-                    cos_lat*std::sin(longitude),
-                    sin_lat
-                };
                 // A diagnostic map displays the active simulation cover exactly.
-                // Query a finest-level region and resolve its active ancestor;
+                // Query a maximum-simulation-level region and resolve its active ancestor;
                 // regenerating seed terrain here hides all geological evolution.
-                const auto region=world.topology().from_direction(direction,worldsim::CellId::kMaxLevel);
-                const auto parts=world.resolve_active_cover(region);
-                out.set(y*w+x,static_cast<float>(fields.get(parts.front().cell,*elevation)));
+                const auto cell=active_cell_at_direction(
+                    *sim_,
+                    equirectangular_pixel_direction(x,y,w,h)
+                );
+                out.set(y*w+x,static_cast<float>(fields.get(cell,*elevation)));
             }
         }
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); return {}; }
     catch (...) { report_error("unknown C++ exception in sample_terrain_equirectangular"); return {}; }
+    return out;
+}
+
+PackedFloat64Array WorldSimulationNode::sample_field_equirectangular(
+    const String& field_key,
+    std::int64_t width,
+    std::int64_t height,
+    bool normalize_extensive
+) const {
+    PackedFloat64Array out;
+    try {
+        ensure_sim();
+        const auto [w,h]=checked_map_dimensions(width,height,"field diagnostic");
+        const std::string key(field_key.utf8().get_data());
+        const auto field=sim_->fields().find(key);
+        if (!field) throw std::invalid_argument("unknown field key: "+key);
+
+        const auto& descriptor=sim_->fields().descriptor(*field);
+        const auto& world=sim_->world();
+        const auto& fields=world.stores().get<worldsim::FieldStore>();
+        const bool density=
+            normalize_extensive &&
+            descriptor.semantics==worldsim::FieldSemantics::Extensive;
+
+        out.resize(w*h);
+        for (int y=0;y<h;++y) {
+            for (int x=0;x<w;++x) {
+                const auto cell=active_cell_at_direction(
+                    *sim_,
+                    equirectangular_pixel_direction(x,y,w,h)
+                );
+                double value=fields.get(cell,*field);
+                if (density) value/=world.topology().area_m2(cell);
+                out.set(y*w+x,value);
+            }
+        }
+        last_error_.clear();
+    } catch (const std::exception& e) { report_error(e.what()); return {}; }
+    catch (...) {
+        report_error("unknown C++ exception in sample_field_equirectangular");
+        return {};
+    }
+    return out;
+}
+
+PackedInt32Array WorldSimulationNode::sample_lod_equirectangular(
+    std::int64_t width,
+    std::int64_t height
+) const {
+    PackedInt32Array out;
+    try {
+        ensure_sim();
+        const auto [w,h]=checked_map_dimensions(width,height,"LOD diagnostic");
+        out.resize(w*h);
+        for (int y=0;y<h;++y) {
+            for (int x=0;x<w;++x) {
+                const auto cell=active_cell_at_direction(
+                    *sim_,
+                    equirectangular_pixel_direction(x,y,w,h)
+                );
+                out.set(y*w+x,static_cast<std::int32_t>(cell.level()));
+            }
+        }
+        last_error_.clear();
+    } catch (const std::exception& e) { report_error(e.what()); return {}; }
+    catch (...) {
+        report_error("unknown C++ exception in sample_lod_equirectangular");
+        return {};
+    }
+    return out;
+}
+
+Dictionary WorldSimulationNode::inspect_direction(const Vector3& direction) const {
+    Dictionary out;
+    try {
+        ensure_sim();
+        const worldsim::Vec3d query{
+            static_cast<double>(direction.x),
+            static_cast<double>(direction.y),
+            static_cast<double>(direction.z)
+        };
+        const auto cell=active_cell_at_direction(*sim_,query);
+        const auto& world=sim_->world();
+        const auto& fields=world.stores().get<worldsim::FieldStore>();
+        const std::uint64_t raw=cell.raw();
+
+        Dictionary values;
+        for (
+            worldsim::FieldId id=0;
+            id<static_cast<worldsim::FieldId>(sim_->fields().size());
+            ++id
+        ) {
+            const auto& descriptor=sim_->fields().descriptor(id);
+            values[String(descriptor.key.c_str())]=fields.get(cell,id);
+        }
+
+        out["cell_id_hi"]=static_cast<std::int64_t>(raw>>32U);
+        out["cell_id_lo"]=static_cast<std::int64_t>(raw&0xffffffffULL);
+        out["level"]=static_cast<std::int64_t>(cell.level());
+        out["area_m2"]=world.topology().area_m2(cell);
+        out["values"]=values;
+        last_error_.clear();
+    } catch (const std::exception& e) { report_error(e.what()); return {}; }
+    catch (...) {
+        report_error("unknown C++ exception in inspect_direction");
+        return {};
+    }
     return out;
 }
 

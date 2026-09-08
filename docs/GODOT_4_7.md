@@ -52,12 +52,16 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 - `step_hours(hours)`
 - `set_focus_direction(direction)` / `set_focus_projected(east_m, north_m)` / `clear_focus()`
 - `projected_to_direction(east_m, north_m)` for presentation-space placement on sphere maps
-- `sample_terrain_height(east_m, north_m)`
-- `sample_terrain_patch(center_east_m, center_north_m, spacing_m, resolution)`
+- `sample_terrain_height(east_m, north_m)` for reconstructed authoritative walking height
+- `sample_terrain_patch(center_east_m, center_north_m, spacing_m, resolution)` for reconstructed authoritative walking chunks
 - `sample_terrain_equirectangular(width, height)` for current authoritative elevation at active-cell resolution
-- `sample_preview_terrain_equirectangular(width, height)` for the static walking terrain overview
+- `sample_field_equirectangular(field_key, width, height, normalize_extensive)` for generic live scalar maps
+- `sample_lod_equirectangular(width, height)` for the active simulation-level map
+- `inspect_direction(direction)` for exact active-cell metadata and raw registered fields
+- `sample_preview_terrain_equirectangular(width, height)` for the immutable seed-terrain diagnostic
 - `sample_tectonics_equirectangular(width, height)`
 - `get_tick()`
+- `get_terrain_revision()` for presentation cache invalidation
 - `get_render_packet()`
 - `get_field_descriptors()`
 - `get_field_values(field_key)`
@@ -67,7 +71,12 @@ and configure with `-DWORLDSIM_FETCH_GODOT_CPP=OFF`.
 
 All public adapter methods catch C++ exceptions before returning to Godot. Errors are reported with `UtilityFunctions::push_error()` and retained in `get_last_error()`.
 
-Walking height and patch sampling remain a static procedural preview. They do not reflect evolving geological fields.
+Walking height and patch sampling reconstruct the current authoritative
+`geography.elevation_m` field and add only the sub-cell residual of the static
+procedural terrain. The resulting point surface is presentation data: the
+simulation cell values remain authoritative, while the procedural residual must
+not be fed back into geology, hydrology, or persistence. The separately named
+`sample_preview_terrain_equirectangular()` API remains the immutable seed preview.
 
 For global-map diagnostics, `sample_tectonics_equirectangular()` returns aligned `plate_id`, legacy signed `forcing`, terrain-driving `uplift_forcing` and `divergence_forcing`, `crust_affinity`, and `macro_elevation_m` arrays. These arrays are debug adapter data only; they do not become authoritative Godot-owned state.
 
@@ -92,9 +101,27 @@ mana_j_m2                demo convenience density
 
 For new domains, use `get_field_descriptors()` and `get_field_values(key)` instead of adding new hard-coded getters.
 
+## Full-world simulation laboratory
+
+`simulation_lab.tscn` initializes `make_default_simulation()` through
+`WorldSimulationNode.initialize()`. Run it with `make lab`. It is deliberately
+separate from the terrain walker and the immutable tectonic viewer.
+
+The laboratory provides play/pause and 1-hour/1-day/30-day steps, a generic
+field selector, exact active-cover equirectangular maps, simulation-LOD coloring,
+an explicit color legend, active-cell min/area-mean/max and p02/p98 statistics,
+authoritative totals for extensive fields, selected-field history, exact-cell
+inspection and explicit focus controls. Extensive fields are colored as value
+per represented square metre while the inspector retains raw stored values.
+
+Each field retains a grow-only percentile color range during a run so a changing
+timestep cannot create a false visual trend by silently shrinking the scale.
+`Reset range` is the explicit rescale operation. See `SIMULATION_LAB.md` for the
+data, interaction, reference and performance contracts.
+
 ## Viewer baseline
 
-The main scene is now a first-person terrain walker backed by the terrain-only simulation factory. It streams regular 256 m terrain chunks around the player, uses `ArrayMesh` for rendering and `HeightMapShape3D` for collision, and bounds foreground work to one missing chunk per rendered frame after the initial player chunk. Chunk triangles use Godot 4.7 clockwise winding so the ground faces +Y; the editor preview environment is not used at runtime, so the scene includes a `WorldEnvironment` with `ProceduralSkyMaterial`.
+The main scene is now a first-person terrain walker backed by the terrain-only simulation factory. It streams regular 256 m terrain chunks around the player, uses `ArrayMesh` for rendering and `HeightMapShape3D` for collision, and bounds foreground work to one missing or dirty chunk per rendered frame after the initial player chunk. The adapter fingerprints the active cell ids and authoritative elevation values around each simulation step; a changed fingerprint advances `get_terrain_revision()`. The chunk under the player is then rebuilt synchronously so visible geometry and collision cannot disagree there, while the rest of the visible set is refreshed under the normal per-frame budget. Chunk triangles use Godot 4.7 clockwise winding so the ground faces +Y; the editor preview environment is not used at runtime, so the scene includes a `WorldEnvironment` with `ProceduralSkyMaterial`.
 
 Logical projected world coordinates remain in 64-bit GDScript scalar values while scene nodes are origin-shifted at a 1,024 m threshold. The stock single-precision Godot build therefore does not need to place scene nodes millions of meters from the origin.
 
@@ -134,10 +161,13 @@ HUD text is localized through gettext PO catalogs (English and Russian) and styl
 ### Walking world map
 
 The walking HUD includes a north-up, whole-sphere equirectangular map in the top
-right. Its 320 x 160 base texture is generated once from the same static preview
-terrain sampled by walking meshes. Color elevation bands, restrained relief
-shading, and a coastline accent preserve legibility at the small display size.
-Latitude/longitude guides are a separate overlay.
+right. Its 320 x 160 base texture is generated once from the initial
+authoritative `geography.elevation_m` cover. It deliberately omits procedural
+sub-cell presentation detail, which is not legible at whole-planet scale. Color
+elevation bands, restrained relief shading, and a coastline accent preserve
+legibility at the small display size. Latitude/longitude guides are a separate
+overlay. The base texture is not regenerated after geological revisions; the
+dedicated global-map scene remains the live exact-cell diagnostic.
 
 The live marker layer converts the walker's 64-bit projected coordinates through
 `TerrainGenerator::projected_to_direction()`, then maps that unit direction to
@@ -165,4 +195,4 @@ The native adapter only derives from `godot::Node`; Godot rendering classes are 
 
 The current workflow builds only the `worldsim_godot` target in the Godot job. It relies on the feature build profile and does not configure a compiler-cache service.
 
-The integration job then downloads/caches the exact Godot 4.7.2 Linux editor and verifies its SHA-256. A standalone headless editor `--import` pass is best-effort because `godot-cpp` upstream CI documents that this editor-import process can abort after generating `.godot`. The mandatory gate is `res://ci_smoke.gd`, which loads the extension at runtime, creates `WorldSimulationNode`, advances the simulation, and checks returned data.
+The integration job then downloads/caches the exact Godot 4.7.2 Linux editor and verifies its SHA-256. A standalone headless editor `--import` pass is best-effort because `godot-cpp` upstream CI documents that this editor-import process can abort after generating `.godot`. The adapter gate is `res://ci_smoke.gd`, which loads the extension at runtime, creates `WorldSimulationNode`, advances the simulation, and checks returned data. Runtime scene gates additionally cover the terrain walker, survey flight, global tectonic map and `res://ci_simulation_lab.gd` full-world diagnostic workflow.

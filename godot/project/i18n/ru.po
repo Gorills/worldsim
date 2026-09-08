@@ -62,3 +62,249 @@ msgstr "Кора"
 
 msgid "MAP_LAYER_MACRO_RELIEF"
 msgstr "Макрорельеф"
+
+msgid "LAB_TITLE"
+msgstr "WORLDSIM — ЛАБОРАТОРИЯ СИМУЛЯЦИИ"
+
+msgid "LAB_SUBTITLE"
+msgstr "Наблюдайте, как меняются и влияют друг на друга системы мира"
+
+msgid "LAB_TIME"
+msgstr "ВРЕМЯ СИМУЛЯЦИИ"
+
+msgid "LAB_QUESTION"
+msgstr "ЧТО ИССЛЕДУЕМ"
+
+msgid "LAB_MODE_OVERVIEW"
+msgstr "Обзор мира"
+
+msgid "LAB_MODE_CLIMATE"
+msgstr "Климат"
+
+msgid "LAB_MODE_WATER"
+msgstr "Водный цикл"
+
+msgid "LAB_MODE_ECOSYSTEM"
+msgstr "Экосистема"
+
+msgid "LAB_MODE_LOD"
+msgstr "Детализация"
+
+msgid "LAB_ADVANCED"
+msgstr "Все поля"
+
+msgid "LAB_INDICATOR"
+msgstr "Показатель"
+
+msgid "LAB_WHAT_TO_WATCH"
+msgstr "ЧТО НУЖНО УВИДЕТЬ"
+
+msgid "LAB_KEY_METRICS"
+msgstr "ТЕКУЩИЕ ЗНАЧЕНИЯ МИРА"
+
+msgid "LAB_RESET"
+msgstr "Пересоздать мир"
+
+msgid "LAB_PLAY"
+msgstr "Запуск"
+
+msgid "LAB_PAUSE"
+msgstr "Пауза"
+
+msgid "LAB_STEP"
+msgstr "Шаг"
+
+msgid "LAB_STEP_HOUR"
+msgstr "1 час"
+
+msgid "LAB_STEP_DAY"
+msgstr "1 день"
+
+msgid "LAB_STEP_MONTH"
+msgstr "30 дней"
+
+msgid "LAB_TICK"
+msgstr "тик: %d   день: %.2f"
+
+msgid "LAB_FIELD"
+msgstr "Поле"
+
+msgid "LAB_RESET_RANGE"
+msgstr "Сбросить шкалу"
+
+msgid "LAB_LAYER_LOD"
+msgstr "core.active_level  [уровень]"
+
+msgid "LAB_UNIT_LEVEL"
+msgstr "уровень"
+
+msgid "LAB_FIELD_ACTIVE_LEVEL"
+msgstr "Активная детализация симуляции"
+
+msgid "LAB_FIELD_ELEVATION"
+msgstr "Высота поверхности"
+
+msgid "LAB_FIELD_LAND"
+msgstr "Доля суши"
+
+msgid "LAB_FIELD_CONTINENTAL"
+msgstr "Континентальная кора"
+
+msgid "LAB_FIELD_TEMPERATURE"
+msgstr "Температура поверхности"
+
+msgid "LAB_FIELD_PRECIPITATION"
+msgstr "Осадки"
+
+msgid "LAB_FIELD_SOLAR"
+msgstr "Солнечный поток"
+
+msgid "LAB_FIELD_WEATHER_ANOMALY"
+msgstr "Погодная аномалия"
+
+msgid "LAB_FIELD_WATER_DEPTH"
+msgstr "Глубина поверхностной воды"
+
+msgid "LAB_FIELD_RIVER_DISCHARGE"
+msgstr "Речной сток"
+
+msgid "LAB_FIELD_SOIL_WATER"
+msgstr "Вода в почве"
+
+msgid "LAB_FIELD_GROUNDWATER"
+msgstr "Грунтовые воды"
+
+msgid "LAB_FIELD_SNOW"
+msgstr "Запас воды в снеге"
+
+msgid "LAB_FIELD_FLOODED"
+msgstr "Доля затопления"
+
+msgid "LAB_FIELD_VEGETATION"
+msgstr "Углерод растительности"
+
+msgid "LAB_FIELD_NPP"
+msgstr "Чистая первичная продукция"
+
+msgid "LAB_FIELD_FERTILITY"
+msgstr "Плодородие почвы"
+
+msgid "LAB_FIELD_GRASS"
+msgstr "Углерод трав"
+
+msgid "LAB_FIELD_TREES"
+msgstr "Углерод деревьев"
+
+msgid "LAB_PURPOSE_OVERVIEW"
+msgstr "Получился ли связный мир с океанами, материками и пригодной для жизни сушей? Сначала изучите рельеф, затем покрытие суши и растительность."
+
+msgid "LAB_DESCRIPTION_OVERVIEW"
+msgstr "Рельеф — основа мира: он разделяет сушу и океан и влияет на климат, сток и жизнь. Нажмите на регион, чтобы увидеть только важные для него значения."
+
+msgid "LAB_PURPOSE_CLIMATE"
+msgstr "Создают ли широта, высота и время правдоподобные зоны тепла и осадков? Делайте шаг по 30 дней, чтобы увидеть сезонное смещение."
+
+msgid "LAB_DESCRIPTION_CLIMATE"
+msgstr "Начните с температуры, затем сравните осадки и солнечный поток. Широкие зоны должны меняться плавно; резкие одиночные швы подозрительны."
+
+msgid "LAB_PURPOSE_WATER"
+msgstr "Переходят ли осадки в почвенную воду, поверхностные запасы и речной сток — без воды над сухим океаном и мгновенных исчезновений?"
+
+msgid "LAB_DESCRIPTION_WATER"
+msgstr "Шагайте по одному дню и сравнивайте глубину воды со стоком. Вода должна собираться по рельефу и реагировать после климатического воздействия."
+
+msgid "LAB_PURPOSE_ECOSYSTEM"
+msgstr "Растёт ли биомасса только там, где это позволяют суша, вода, температура и плодородие? Сначала следите за продукцией, затем за общей массой."
+
+msgid "LAB_DESCRIPTION_ECOSYSTEM"
+msgstr "Углерод растительности меняется медленно. Чистая первичная продукция — более быстрый сигнал: шагайте по 30 дней и сравнивайте её с плодородием и типами растений."
+
+msgid "LAB_PURPOSE_LOD"
+msgstr "Повышается ли детализация симуляции только вокруг выбранного фокуса, а физические величины остаются стабильными при переходах между уровнями?"
+
+msgid "LAB_DESCRIPTION_LOD"
+msgstr "Выберите точку, нажмите «Фокус», затем сделайте шаг в один час. Локально появятся уровни 5–7; уберите фокус и шагните снова для укрупнения."
+
+msgid "LAB_DESCRIPTION_ADVANCED"
+msgstr "Выбрано служебное поле. Его технический ключ и единица видны рядом; смысл определяется модулем-владельцем симуляции."
+
+msgid "LAB_METRIC_MEAN"
+msgstr "СРЕДНЕЕ С УЧЁТОМ ПЛОЩАДИ"
+
+msgid "LAB_METRIC_RANGE"
+msgstr "ПОЛНЫЙ МИН. — МАКС."
+
+msgid "LAB_METRIC_TYPICAL"
+msgstr "ТИПИЧНЫЕ 2% — 98%"
+
+msgid "LAB_METRIC_CELLS"
+msgstr "АКТИВНЫХ ЯЧЕЕК СИМУЛЯЦИИ"
+
+msgid "LAB_METRIC_TOTAL"
+msgstr "АВТОРИТЕТНАЯ СУММА МИРА"
+
+msgid "LAB_STATS"
+msgstr "СТАТИСТИКА АКТИВНОГО ПОКРЫТИЯ"
+
+msgid "LAB_STATS_HEADER"
+msgstr "%s"
+
+msgid "LAB_STATS_RANGE"
+msgstr "мин. / среднее по площади / макс.: %s / %s / %s %s"
+
+msgid "LAB_STATS_PERCENTILES"
+msgstr "p02 / p98: %s / %s"
+
+msgid "LAB_STATS_CELLS"
+msgstr "активных ячеек: %d"
+
+msgid "LAB_STATS_TOTAL"
+msgstr "авторитетная сумма: %s %s"
+
+msgid "LAB_INSPECTOR"
+msgstr "ВЫБРАННОЕ МЕСТО"
+
+msgid "LAB_INSPECTED_CELL"
+msgstr "широта %.2f°  ·  долгота %.2f°  ·  детализация %d"
+
+msgid "LAB_FIELD_COLUMN"
+msgstr "Поле"
+
+msgid "LAB_VALUE_COLUMN"
+msgstr "Значение"
+
+msgid "LAB_UNIT_COLUMN"
+msgstr "Единица"
+
+msgid "LAB_FOCUS"
+msgstr "Фокус на ячейку"
+
+msgid "LAB_CLEAR_FOCUS"
+msgstr "Убрать фокус"
+
+msgid "LAB_HISTORY_TITLE"
+msgstr "ИСТОРИЯ СРЕДНЕГО ПО ПЛОЩАДИ"
+
+msgid "LAB_HISTORY"
+msgstr "%s — ИЗМЕНЕНИЕ ВО ВРЕМЕНИ"
+
+msgid "LAB_HISTORY_INITIAL"
+msgstr "сделайте шаг, чтобы увидеть динамику"
+
+msgid "LAB_HISTORY_DELTA"
+msgstr "изменение %s %s"
+
+msgid "LAB_STATUS_READY"
+msgstr "Мир готов — сид %d. Значения взяты из авторитетной симуляции; суммы нормализуются на м² только для отображения."
+
+msgid "LAB_STATUS_MODE"
+msgstr "Режим диагностики: %s. Переключение видов не изменяет симуляцию."
+
+msgid "LAB_STATUS_ADVANCED"
+msgstr "Симуляция продвинута на %d ч."
+
+msgid "LAB_STATUS_FOCUS_PENDING"
+msgstr "Фокус выбран; адаптивный LOD обновится на следующем тике симуляции."
+
+msgid "LAB_STATUS_CLEAR_PENDING"
+msgstr "Фокус убран; адаптивный LOD укрупнится на следующем тике симуляции."

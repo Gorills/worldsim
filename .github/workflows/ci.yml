@@ -129,3 +129,6 @@ jobs:
           # The macro viewer must build a runtime elevation texture from the same
           # terrain source used by the simulation, not from a separate map generator.
           timeout 60 "$GODOT" --headless --path godot/project --script res://ci_world_map_view.gd
+          # The full-world laboratory must expose live domain fields, time controls,
+          # active-cover statistics/history and exact-cell inspection.
+          timeout 60 "$GODOT" --headless --path godot/project --script res://ci_simulation_lab.gd

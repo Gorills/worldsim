@@ -77,6 +77,11 @@ make run
 
 That builds `libworldsim_godot.so` if needed and starts `godot/project/main.tscn`. You can also open `godot/project/project.godot` in the editor. The current stable maintenance release at project finalization is Godot 4.7.2.
 
+Run `make lab` for the full-world diagnostic laboratory. It exposes every
+registered field as a live scalar map, normalizes extensive fields by active-cell
+area, advances authoritative time, reports active-cover statistics/history and
+inspects exact cells. `make map` remains the immutable seed/tectonic viewer.
+
 ## C++ extension model
 
 ```cpp

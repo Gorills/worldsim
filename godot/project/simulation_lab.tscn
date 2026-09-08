@@ -1,0 +1,547 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource path="res://scripts/simulation_lab.gd" type="Script" id="1"]
+[ext_resource path="res://scripts/simulation_chart.gd" type="Script" id="2"]
+[ext_resource path="res://scripts/simulation_map_overlay.gd" type="Script" id="3"]
+[ext_resource path="res://ui/worldsim_theme.tres" type="Theme" id="4"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mode_pressed"]
+bg_color = Color(0.035, 0.18, 0.24, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.78, 1, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="SimulationLab" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("4")
+script = ExtResource("1")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.006, 0.012, 0.022, 1)
+
+[node name="Simulation" type="WorldSimulationNode" parent="."]
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 18
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="HeaderPanel" type="PanelContainer" parent="Margin/VBox"]
+custom_minimum_size = Vector2(0, 76)
+layout_mode = 2
+
+[node name="HeaderMargin" type="MarginContainer" parent="Margin/VBox/HeaderPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 10
+
+[node name="Header" type="HBoxContainer" parent="Margin/VBox/HeaderPanel/HeaderMargin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Brand" type="VBoxContainer" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Title" type="Label" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header/Brand"]
+layout_mode = 2
+text = "LAB_TITLE"
+theme_override_colors/font_color = Color(0.93, 0.97, 1, 1)
+theme_override_font_sizes/font_size = 25
+
+[node name="Subtitle" type="Label" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header/Brand"]
+layout_mode = 2
+text = "LAB_SUBTITLE"
+theme_override_colors/font_color = Color(0.49, 0.65, 0.78, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="Time" type="VBoxContainer" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="TimeCaption" type="Label" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header/Time"]
+layout_mode = 2
+text = "LAB_TIME"
+theme_override_colors/font_color = Color(0.45, 0.62, 0.75, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="Tick" type="Label" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header/Time"]
+layout_mode = 2
+text = "—"
+theme_override_font_sizes/font_size = 18
+
+[node name="SeedLabel" type="Label" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+layout_mode = 2
+text = "MAP_SEED"
+
+[node name="Seed" type="SpinBox" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+custom_minimum_size = Vector2(118, 42)
+layout_mode = 2
+min_value = -2147483648.0
+max_value = 2147483647.0
+step = 1.0
+value = 42.0
+allow_greater = true
+allow_lesser = true
+
+[node name="Reset" type="Button" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+custom_minimum_size = Vector2(150, 42)
+layout_mode = 2
+text = "LAB_RESET"
+
+[node name="Play" type="Button" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+custom_minimum_size = Vector2(112, 42)
+layout_mode = 2
+toggle_mode = true
+text = "LAB_PLAY"
+
+[node name="Step" type="Button" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+custom_minimum_size = Vector2(92, 42)
+layout_mode = 2
+text = "LAB_STEP"
+
+[node name="StepSize" type="OptionButton" parent="Margin/VBox/HeaderPanel/HeaderMargin/Header"]
+custom_minimum_size = Vector2(120, 42)
+layout_mode = 2
+
+[node name="ModesPanel" type="PanelContainer" parent="Margin/VBox"]
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+
+[node name="ModesMargin" type="MarginContainer" parent="Margin/VBox/ModesPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 7
+
+[node name="Modes" type="HBoxContainer" parent="Margin/VBox/ModesPanel/ModesMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Prompt" type="Label" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+custom_minimum_size = Vector2(166, 0)
+layout_mode = 2
+text = "LAB_QUESTION"
+theme_override_colors/font_color = Color(0.45, 0.65, 0.8, 1)
+
+[node name="Overview" type="Button" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+custom_minimum_size = Vector2(190, 40)
+layout_mode = 2
+toggle_mode = true
+text = "LAB_MODE_OVERVIEW"
+theme_override_colors/font_pressed_color = Color(0.85, 0.97, 1, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_mode_pressed")
+
+[node name="Climate" type="Button" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+custom_minimum_size = Vector2(190, 40)
+layout_mode = 2
+toggle_mode = true
+text = "LAB_MODE_CLIMATE"
+theme_override_colors/font_pressed_color = Color(0.85, 0.97, 1, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_mode_pressed")
+
+[node name="Water" type="Button" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+custom_minimum_size = Vector2(190, 40)
+layout_mode = 2
+toggle_mode = true
+text = "LAB_MODE_WATER"
+theme_override_colors/font_pressed_color = Color(0.85, 0.97, 1, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_mode_pressed")
+
+[node name="Ecosystem" type="Button" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+custom_minimum_size = Vector2(190, 40)
+layout_mode = 2
+toggle_mode = true
+text = "LAB_MODE_ECOSYSTEM"
+theme_override_colors/font_pressed_color = Color(0.85, 0.97, 1, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_mode_pressed")
+
+[node name="Lod" type="Button" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+custom_minimum_size = Vector2(190, 40)
+layout_mode = 2
+toggle_mode = true
+text = "LAB_MODE_LOD"
+theme_override_colors/font_pressed_color = Color(0.85, 0.97, 1, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_mode_pressed")
+
+[node name="Spacer" type="Control" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Advanced" type="CheckButton" parent="Margin/VBox/ModesPanel/ModesMargin/Modes"]
+custom_minimum_size = Vector2(190, 40)
+layout_mode = 2
+text = "LAB_ADVANCED"
+
+[node name="Body" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="MapPanel" type="PanelContainer" parent="Margin/VBox/Body"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MapMargin" type="MarginContainer" parent="Margin/VBox/Body/MapPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="MapContent" type="VBoxContainer" parent="Margin/VBox/Body/MapPanel/MapMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="MapHeading" type="HBoxContainer" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent"]
+layout_mode = 2
+
+[node name="HeadingText" type="VBoxContainer" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapHeading"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="LayerTitle" type="Label" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapHeading/HeadingText"]
+layout_mode = 2
+text = "—"
+theme_override_font_sizes/font_size = 23
+
+[node name="LayerKey" type="Label" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapHeading/HeadingText"]
+layout_mode = 2
+text = "—"
+theme_override_colors/font_color = Color(0.42, 0.6, 0.74, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="FieldLabel" type="Label" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapHeading"]
+layout_mode = 2
+text = "LAB_INDICATOR"
+
+[node name="Field" type="OptionButton" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapHeading"]
+custom_minimum_size = Vector2(330, 42)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="ResetRange" type="Button" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapHeading"]
+custom_minimum_size = Vector2(150, 42)
+layout_mode = 2
+text = "LAB_RESET_RANGE"
+
+[node name="MapDescription" type="Label" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent"]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+text = "—"
+theme_override_colors/font_color = Color(0.68, 0.77, 0.84, 1)
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+
+[node name="MapFrame" type="PanelContainer" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MapFrameMargin" type="MarginContainer" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapFrame"]
+layout_mode = 2
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
+
+[node name="MapAspect" type="AspectRatioContainer" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapFrame/MapFrameMargin"]
+layout_mode = 2
+ratio = 2.0
+stretch_mode = 2
+
+[node name="MapStack" type="Control" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapFrame/MapFrameMargin/MapAspect"]
+layout_mode = 2
+
+[node name="Map" type="TextureRect" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapFrame/MapFrameMargin/MapAspect/MapStack"]
+texture_filter = 1
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Overlay" type="Control" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/MapFrame/MapFrameMargin/MapAspect/MapStack"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("3")
+
+[node name="Legend" type="HBoxContainer" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Minimum" type="Label" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/Legend"]
+custom_minimum_size = Vector2(118, 0)
+layout_mode = 2
+horizontal_alignment = 2
+
+[node name="Gradient" type="TextureRect" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/Legend"]
+custom_minimum_size = Vector2(0, 22)
+texture_filter = 1
+layout_mode = 2
+size_flags_horizontal = 3
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Maximum" type="Label" parent="Margin/VBox/Body/MapPanel/MapMargin/MapContent/Legend"]
+custom_minimum_size = Vector2(118, 0)
+layout_mode = 2
+
+[node name="SidePanel" type="PanelContainer" parent="Margin/VBox/Body"]
+custom_minimum_size = Vector2(540, 0)
+layout_mode = 2
+
+[node name="SideMargin" type="MarginContainer" parent="Margin/VBox/Body/SidePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="Side" type="VBoxContainer" parent="Margin/VBox/Body/SidePanel/SideMargin"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="QuestionTitle" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+layout_mode = 2
+text = "LAB_WHAT_TO_WATCH"
+theme_override_colors/font_color = Color(0.3, 0.78, 1, 1)
+theme_override_font_sizes/font_size = 19
+
+[node name="QuestionText" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+custom_minimum_size = Vector2(0, 76)
+layout_mode = 2
+text = "—"
+theme_override_colors/font_color = Color(0.83, 0.9, 0.96, 1)
+theme_override_font_sizes/font_size = 16
+autowrap_mode = 2
+
+[node name="MetricsTitle" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+layout_mode = 2
+text = "LAB_KEY_METRICS"
+theme_override_colors/font_color = Color(0.48, 0.66, 0.79, 1)
+
+[node name="Metrics" type="GridContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+layout_mode = 2
+columns = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+
+[node name="MeanCard" type="PanelContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics"]
+custom_minimum_size = Vector2(246, 72)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/MeanCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 7
+
+[node name="VBox" type="VBoxContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/MeanCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Value" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/MeanCard/Margin/VBox"]
+layout_mode = 2
+text = "—"
+theme_override_colors/font_color = Color(0.96, 0.8, 0.35, 1)
+theme_override_font_sizes/font_size = 21
+
+[node name="Caption" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/MeanCard/Margin/VBox"]
+layout_mode = 2
+text = "LAB_METRIC_MEAN"
+theme_override_colors/font_color = Color(0.5, 0.64, 0.74, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="RangeCard" type="PanelContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics"]
+custom_minimum_size = Vector2(246, 72)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/RangeCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 7
+
+[node name="VBox" type="VBoxContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/RangeCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Value" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/RangeCard/Margin/VBox"]
+layout_mode = 2
+text = "—"
+theme_override_font_sizes/font_size = 18
+
+[node name="Caption" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/RangeCard/Margin/VBox"]
+layout_mode = 2
+text = "LAB_METRIC_RANGE"
+theme_override_colors/font_color = Color(0.5, 0.64, 0.74, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="PercentileCard" type="PanelContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics"]
+custom_minimum_size = Vector2(246, 72)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/PercentileCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 7
+
+[node name="VBox" type="VBoxContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/PercentileCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Value" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/PercentileCard/Margin/VBox"]
+layout_mode = 2
+text = "—"
+theme_override_font_sizes/font_size = 18
+
+[node name="Caption" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/PercentileCard/Margin/VBox"]
+layout_mode = 2
+text = "LAB_METRIC_TYPICAL"
+theme_override_colors/font_color = Color(0.5, 0.64, 0.74, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="CoverageCard" type="PanelContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics"]
+custom_minimum_size = Vector2(246, 72)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/CoverageCard"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 7
+
+[node name="VBox" type="VBoxContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/CoverageCard/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="Value" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/CoverageCard/Margin/VBox"]
+layout_mode = 2
+text = "—"
+theme_override_font_sizes/font_size = 18
+
+[node name="Caption" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/Metrics/CoverageCard/Margin/VBox"]
+layout_mode = 2
+text = "LAB_METRIC_CELLS"
+theme_override_colors/font_color = Color(0.5, 0.64, 0.74, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="HistoryHeader" type="HBoxContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+layout_mode = 2
+
+[node name="HistoryTitle" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/HistoryHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "LAB_HISTORY_TITLE"
+theme_override_colors/font_color = Color(0.48, 0.66, 0.79, 1)
+
+[node name="HistoryPanel" type="PanelContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+custom_minimum_size = Vector2(0, 150)
+layout_mode = 2
+
+[node name="History" type="Control" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/HistoryPanel"]
+layout_mode = 2
+mouse_filter = 2
+script = ExtResource("2")
+
+[node name="HistorySummary" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+layout_mode = 2
+text = "—"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0.68, 0.78, 0.85, 1)
+theme_override_font_sizes/font_size = 13
+
+[node name="InspectorHeaderRow" type="HBoxContainer" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+layout_mode = 2
+
+[node name="InspectorTitle" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/InspectorHeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "LAB_INSPECTOR"
+theme_override_colors/font_color = Color(0.48, 0.66, 0.79, 1)
+
+[node name="Focus" type="Button" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/InspectorHeaderRow"]
+layout_mode = 2
+text = "LAB_FOCUS"
+
+[node name="ClearFocus" type="Button" parent="Margin/VBox/Body/SidePanel/SideMargin/Side/InspectorHeaderRow"]
+layout_mode = 2
+text = "LAB_CLEAR_FOCUS"
+
+[node name="InspectorHeader" type="Label" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+layout_mode = 2
+text = "—"
+theme_override_colors/font_color = Color(0.78, 0.86, 0.92, 1)
+theme_override_font_sizes/font_size = 14
+
+[node name="Inspector" type="Tree" parent="Margin/VBox/Body/SidePanel/SideMargin/Side"]
+custom_minimum_size = Vector2(0, 154)
+layout_mode = 2
+size_flags_vertical = 3
+hide_root = true
+
+[node name="StatusPanel" type="PanelContainer" parent="Margin/VBox"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+
+[node name="StatusMargin" type="MarginContainer" parent="Margin/VBox/StatusPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 4
+
+[node name="Status" type="Label" parent="Margin/VBox/StatusPanel/StatusMargin"]
+layout_mode = 2
+text = "HUD_STATUS_STARTING"
+theme_override_colors/font_color = Color(0.48, 0.68, 0.8, 1)
+theme_override_font_sizes/font_size = 14

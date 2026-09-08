@@ -62,3 +62,249 @@ msgstr "Crust"
 
 msgid "MAP_LAYER_MACRO_RELIEF"
 msgstr "Macro relief"
+
+msgid "LAB_TITLE"
+msgstr "WORLDSIM — SIMULATION LAB"
+
+msgid "LAB_SUBTITLE"
+msgstr "See how the world's systems change and affect each other"
+
+msgid "LAB_TIME"
+msgstr "SIMULATION TIME"
+
+msgid "LAB_QUESTION"
+msgstr "WHAT TO EXPLORE"
+
+msgid "LAB_MODE_OVERVIEW"
+msgstr "World overview"
+
+msgid "LAB_MODE_CLIMATE"
+msgstr "Climate"
+
+msgid "LAB_MODE_WATER"
+msgstr "Water cycle"
+
+msgid "LAB_MODE_ECOSYSTEM"
+msgstr "Ecosystem"
+
+msgid "LAB_MODE_LOD"
+msgstr "Simulation detail"
+
+msgid "LAB_ADVANCED"
+msgstr "All fields"
+
+msgid "LAB_INDICATOR"
+msgstr "Indicator"
+
+msgid "LAB_WHAT_TO_WATCH"
+msgstr "WHAT TO WATCH"
+
+msgid "LAB_KEY_METRICS"
+msgstr "CURRENT WORLD VALUES"
+
+msgid "LAB_RESET"
+msgstr "Reset world"
+
+msgid "LAB_PLAY"
+msgstr "Play"
+
+msgid "LAB_PAUSE"
+msgstr "Pause"
+
+msgid "LAB_STEP"
+msgstr "Step"
+
+msgid "LAB_STEP_HOUR"
+msgstr "1 hour"
+
+msgid "LAB_STEP_DAY"
+msgstr "1 day"
+
+msgid "LAB_STEP_MONTH"
+msgstr "30 days"
+
+msgid "LAB_TICK"
+msgstr "tick: %d   day: %.2f"
+
+msgid "LAB_FIELD"
+msgstr "Field"
+
+msgid "LAB_RESET_RANGE"
+msgstr "Reset range"
+
+msgid "LAB_LAYER_LOD"
+msgstr "core.active_level  [level]"
+
+msgid "LAB_UNIT_LEVEL"
+msgstr "level"
+
+msgid "LAB_FIELD_ACTIVE_LEVEL"
+msgstr "Active simulation detail"
+
+msgid "LAB_FIELD_ELEVATION"
+msgstr "Surface elevation"
+
+msgid "LAB_FIELD_LAND"
+msgstr "Land fraction"
+
+msgid "LAB_FIELD_CONTINENTAL"
+msgstr "Continental crust"
+
+msgid "LAB_FIELD_TEMPERATURE"
+msgstr "Surface temperature"
+
+msgid "LAB_FIELD_PRECIPITATION"
+msgstr "Precipitation"
+
+msgid "LAB_FIELD_SOLAR"
+msgstr "Solar flux"
+
+msgid "LAB_FIELD_WEATHER_ANOMALY"
+msgstr "Weather anomaly"
+
+msgid "LAB_FIELD_WATER_DEPTH"
+msgstr "Surface water depth"
+
+msgid "LAB_FIELD_RIVER_DISCHARGE"
+msgstr "River discharge"
+
+msgid "LAB_FIELD_SOIL_WATER"
+msgstr "Soil water"
+
+msgid "LAB_FIELD_GROUNDWATER"
+msgstr "Groundwater"
+
+msgid "LAB_FIELD_SNOW"
+msgstr "Snow water"
+
+msgid "LAB_FIELD_FLOODED"
+msgstr "Flooded fraction"
+
+msgid "LAB_FIELD_VEGETATION"
+msgstr "Vegetation carbon"
+
+msgid "LAB_FIELD_NPP"
+msgstr "Net primary production"
+
+msgid "LAB_FIELD_FERTILITY"
+msgstr "Soil fertility"
+
+msgid "LAB_FIELD_GRASS"
+msgstr "Grass carbon"
+
+msgid "LAB_FIELD_TREES"
+msgstr "Tree carbon"
+
+msgid "LAB_PURPOSE_OVERVIEW"
+msgstr "Does the generated world have coherent oceans, continents and habitable land? Compare relief first, then land cover and vegetation."
+
+msgid "LAB_DESCRIPTION_OVERVIEW"
+msgstr "Relief is the foundation: it separates land from ocean and constrains climate, drainage and life. Click a region to inspect only the values relevant to that place."
+
+msgid "LAB_PURPOSE_CLIMATE"
+msgstr "Do latitude, elevation and time produce plausible heat and rainfall patterns? Step by 30 days to reveal seasonal movement."
+
+msgid "LAB_DESCRIPTION_CLIMATE"
+msgstr "Start with temperature, then switch to precipitation and solar flux. Broad belts should move smoothly; isolated hard seams are suspicious."
+
+msgid "LAB_PURPOSE_WATER"
+msgstr "Does precipitation become soil water, surface storage and downstream discharge without appearing over dry oceans or vanishing instantly?"
+
+msgid "LAB_DESCRIPTION_WATER"
+msgstr "Step by one day and compare water depth with discharge. Water should collect in terrain-controlled paths and react after the climate forcing."
+
+msgid "LAB_PURPOSE_ECOSYSTEM"
+msgstr "Does biomass grow only where land, water, temperature and fertility permit it? Watch production before expecting total biomass to move."
+
+msgid "LAB_DESCRIPTION_ECOSYSTEM"
+msgstr "Vegetation carbon changes slowly. Net primary production is the faster signal: step by 30 days and compare it with fertility and plant types."
+
+msgid "LAB_PURPOSE_LOD"
+msgstr "Does simulation detail increase only around the selected focus while physical quantities remain stable across refinement transitions?"
+
+msgid "LAB_DESCRIPTION_LOD"
+msgstr "Click a point, choose Focus, then step one hour. Levels 5–7 should appear locally; Clear focus and step again to observe coarsening."
+
+msgid "LAB_DESCRIPTION_ADVANCED"
+msgstr "Advanced field selected. Its technical key and unit remain visible; interpretation depends on the owning simulation module."
+
+msgid "LAB_METRIC_MEAN"
+msgstr "AREA-WEIGHTED MEAN"
+
+msgid "LAB_METRIC_RANGE"
+msgstr "FULL MIN — MAX"
+
+msgid "LAB_METRIC_TYPICAL"
+msgstr "TYPICAL 2% — 98%"
+
+msgid "LAB_METRIC_CELLS"
+msgstr "ACTIVE SIMULATION CELLS"
+
+msgid "LAB_METRIC_TOTAL"
+msgstr "AUTHORITATIVE WORLD TOTAL"
+
+msgid "LAB_STATS"
+msgstr "ACTIVE-COVER STATISTICS"
+
+msgid "LAB_STATS_HEADER"
+msgstr "%s"
+
+msgid "LAB_STATS_RANGE"
+msgstr "min / area mean / max: %s / %s / %s %s"
+
+msgid "LAB_STATS_PERCENTILES"
+msgstr "p02 / p98: %s / %s"
+
+msgid "LAB_STATS_CELLS"
+msgstr "active cells: %d"
+
+msgid "LAB_STATS_TOTAL"
+msgstr "authoritative total: %s %s"
+
+msgid "LAB_INSPECTOR"
+msgstr "SELECTED PLACE"
+
+msgid "LAB_INSPECTED_CELL"
+msgstr "%.2f° latitude  ·  %.2f° longitude  ·  detail level %d"
+
+msgid "LAB_FIELD_COLUMN"
+msgstr "Field"
+
+msgid "LAB_VALUE_COLUMN"
+msgstr "Value"
+
+msgid "LAB_UNIT_COLUMN"
+msgstr "Unit"
+
+msgid "LAB_FOCUS"
+msgstr "Focus selected"
+
+msgid "LAB_CLEAR_FOCUS"
+msgstr "Clear focus"
+
+msgid "LAB_HISTORY_TITLE"
+msgstr "AREA-MEAN HISTORY"
+
+msgid "LAB_HISTORY"
+msgstr "%s OVER TIME"
+
+msgid "LAB_HISTORY_INITIAL"
+msgstr "step time to build a trend"
+
+msgid "LAB_HISTORY_DELTA"
+msgstr "change %s %s"
+
+msgid "LAB_STATUS_READY"
+msgstr "World ready — seed %d. Values come from the authoritative simulation; totals are normalized per m² only for display."
+
+msgid "LAB_STATUS_MODE"
+msgstr "Diagnostic mode: %s. Changing views does not modify the simulation."
+
+msgid "LAB_STATUS_ADVANCED"
+msgstr "Advanced %d simulation hours."
+
+msgid "LAB_STATUS_FOCUS_PENDING"
+msgstr "Focus selected; adaptive LOD will update on the next simulation tick."
+
+msgid "LAB_STATUS_CLEAR_PENDING"
+msgstr "Focus cleared; adaptive LOD will coarsen on the next simulation tick."

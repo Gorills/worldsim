@@ -32,8 +32,10 @@ const MINIMAP_HEADING_SAMPLE_M := 50000.0
 
 var terrain_material: StandardMaterial3D
 var chunks: Dictionary = {}
+var dirty_chunks: Dictionary = {}
 var pending_chunks: Array[Vector2i] = []
 var current_chunk := Vector2i(0, 0)
+var terrain_revision := 0
 
 # Logical projected coordinates stay in 64-bit GDScript floats. Scene-tree coordinates
 # stay near zero so the stock single-precision Godot build remains stable at world scale.
@@ -57,6 +59,7 @@ func _ready() -> void:
     terrain_material.vertex_color_use_as_albedo = true
     terrain_material.roughness = 0.95
 
+    terrain_revision = sim.get_terrain_revision()
     origin_height_m = sim.sample_terrain_height(0.0, 0.0)
     _create_chunk(Vector2i.ZERO)
     player.position = Vector3(0.0, PLAYER_GROUND_CLEARANCE_M, 0.0)
@@ -85,8 +88,12 @@ func _process(delta: float) -> void:
         sim_focus_elapsed = fmod(sim_focus_elapsed, SIM_FOCUS_INTERVAL)
         var east_m := origin_east_m + float(player.position.x)
         var north_m := origin_north_m + float(player.position.z)
+        var old_origin_height := origin_height_m
+        var old_ground_height := sim.sample_terrain_height(east_m, north_m)
+        var was_grounded := !survey_flight_enabled and player.is_on_floor()
         sim.set_focus_projected(east_m, north_m)
         sim.step_hours(1)
+        _refresh_terrain_revision(old_origin_height, old_ground_height, was_grounded)
 
     status_elapsed += delta
     if status_elapsed >= 0.25:
@@ -250,7 +257,7 @@ func _ground_local_y() -> float:
     return sim.sample_terrain_height(east_m, north_m) - origin_height_m
 
 func _create_world_minimap() -> bool:
-    var heights := sim.sample_preview_terrain_equirectangular(MINIMAP_WIDTH, MINIMAP_HEIGHT)
+    var heights := sim.sample_terrain_equirectangular(MINIMAP_WIDTH, MINIMAP_HEIGHT)
     if heights.size() != MINIMAP_WIDTH * MINIMAP_HEIGHT:
         return false
 
@@ -347,7 +354,7 @@ func _queue_visible_chunks(center: Vector2i) -> void:
                 if maxi(absi(dx), absi(dz)) != ring:
                     continue
                 var coord := center + Vector2i(dx, dz)
-                if !chunks.has(coord):
+                if !chunks.has(coord) or dirty_chunks.has(coord):
                     pending_chunks.push_back(coord)
 
 func _trim_chunks(center: Vector2i) -> void:
@@ -358,9 +365,10 @@ func _trim_chunks(center: Vector2i) -> void:
             var chunk: Node3D = chunks[coord]
             chunk.queue_free()
             chunks.erase(coord)
+            dirty_chunks.erase(coord)
 
 func _create_chunk(coord: Vector2i) -> void:
-    if chunks.has(coord):
+    if chunks.has(coord) and !dirty_chunks.has(coord):
         return
 
     var center_east_m := float(coord.x) * CHUNK_SIZE_M
@@ -375,19 +383,6 @@ func _create_chunk(coord: Vector2i) -> void:
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
 
-    var chunk := Node3D.new()
-    chunk.name = "Chunk_%d_%d" % [coord.x, coord.y]
-    chunk.position = _chunk_local_position(coord)
-    terrain_root.add_child(chunk)
-
-    var mesh_instance := MeshInstance3D.new()
-    mesh_instance.mesh = _build_chunk_mesh(heights)
-    mesh_instance.material_override = terrain_material
-    mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-    chunk.add_child(mesh_instance)
-
-    var body := StaticBody3D.new()
-    var collision := CollisionShape3D.new()
     var shape := HeightMapShape3D.new()
     shape.map_width = CHUNK_RESOLUTION
     shape.map_depth = CHUNK_RESOLUTION
@@ -396,12 +391,68 @@ func _create_chunk(coord: Vector2i) -> void:
     for i in range(heights.size()):
         collision_heights[i] = heights[i] / SAMPLE_SPACING_M
     shape.map_data = collision_heights
-    collision.shape = shape
-    collision.scale = Vector3.ONE * SAMPLE_SPACING_M
-    body.add_child(collision)
-    chunk.add_child(body)
 
-    chunks[coord] = chunk
+    if chunks.has(coord):
+        var existing_chunk: Node3D = chunks[coord]
+        var existing_mesh := existing_chunk.get_node("Mesh") as MeshInstance3D
+        var existing_collision := existing_chunk.get_node("Body/Collision") as CollisionShape3D
+        existing_mesh.mesh = _build_chunk_mesh(heights)
+        existing_collision.shape = shape
+        existing_chunk.position = _chunk_local_position(coord)
+    else:
+        var chunk := Node3D.new()
+        chunk.name = "Chunk_%d_%d" % [coord.x, coord.y]
+        chunk.position = _chunk_local_position(coord)
+        terrain_root.add_child(chunk)
+
+        var mesh_instance := MeshInstance3D.new()
+        mesh_instance.name = "Mesh"
+        mesh_instance.mesh = _build_chunk_mesh(heights)
+        mesh_instance.material_override = terrain_material
+        mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        chunk.add_child(mesh_instance)
+
+        var body := StaticBody3D.new()
+        body.name = "Body"
+        var collision := CollisionShape3D.new()
+        collision.name = "Collision"
+        collision.shape = shape
+        collision.scale = Vector3.ONE * SAMPLE_SPACING_M
+        body.add_child(collision)
+        chunk.add_child(body)
+
+        chunks[coord] = chunk
+
+    dirty_chunks.erase(coord)
+
+func _refresh_terrain_revision(
+    old_origin_height: float,
+    old_ground_height: float,
+    was_grounded: bool
+) -> void:
+    var next_revision := sim.get_terrain_revision()
+    if next_revision == terrain_revision:
+        return
+
+    terrain_revision = next_revision
+    var east_m := origin_east_m + float(player.position.x)
+    var north_m := origin_north_m + float(player.position.z)
+    origin_height_m = sim.sample_terrain_height(origin_east_m, origin_north_m)
+    player.position.y += old_origin_height - origin_height_m
+    if was_grounded:
+        var new_ground_height := sim.sample_terrain_height(east_m, north_m)
+        player.position.y += new_ground_height - old_ground_height
+
+    for key in chunks.keys():
+        var coord: Vector2i = key
+        var chunk: Node3D = chunks[coord]
+        chunk.position = _chunk_local_position(coord)
+        dirty_chunks[coord] = true
+
+    # Keep the collision directly under the player synchronized immediately;
+    # the remaining visible chunks retain the one-update-per-frame budget.
+    _create_chunk(current_chunk)
+    _queue_visible_chunks(current_chunk)
 
 func _build_chunk_mesh(heights: PackedFloat32Array) -> ArrayMesh:
     var vertex_count := CHUNK_RESOLUTION * CHUNK_RESOLUTION
