@@ -58,7 +58,10 @@ GeologyState GeologyModel::initial_state(Vec3d direction, double cell_area_m2) c
     const double lowland=std::exp(-std::pow(preview.elevation_m/2'500.0,2.0));
     const double sediment_thickness=
         80.0+520.0*lowland+260.0*(1.0-affinity);
-    const double sediment_mass=sediment_thickness*cell_area_m2*kSedimentDensityKgM3;
+    const double sediment_mass=sediment_mass_for_thickness_kg(
+        sediment_thickness,
+        cell_area_m2
+    );
 
     const double regolith=std::clamp(
         affinity*(1.0+7.0*lowland),
@@ -182,6 +185,63 @@ double GeologyModel::ocean_floor_elevation_m(double age_ma) const {
     if (age<=70.0)
         return -(2'500.0+350.0*std::sqrt(age));
     return -(6'400.0-3'200.0*std::exp(-age/62.8));
+}
+
+double GeologyModel::sediment_mass_for_thickness_kg(
+    double sediment_thickness_m,
+    double cell_area_m2
+) const {
+    if (!(sediment_thickness_m>0.0) || !(cell_area_m2>0.0))
+        return 0.0;
+
+    const double thickness=sediment_thickness_m;
+    const double compacted_pore_depth=
+        kSedimentSurfacePorosity*
+        (-std::expm1(-kSedimentCompactionPerM*thickness))/
+        kSedimentCompactionPerM;
+    const double solid_depth=std::max(
+        0.0,
+        thickness-compacted_pore_depth
+    );
+    return solid_depth*cell_area_m2*kSedimentDensityKgM3;
+}
+
+double GeologyModel::sediment_column_thickness_m(
+    double sediment_mass_kg,
+    double cell_area_m2
+) const {
+    if (!(sediment_mass_kg>0.0) || !(cell_area_m2>0.0))
+        return 0.0;
+
+    const double solid_depth=
+        sediment_mass_kg/(cell_area_m2*kSedimentDensityKgM3);
+    double lo=solid_depth;
+    double hi=solid_depth/(1.0-kSedimentSurfacePorosity);
+    double thickness=0.5*(lo+hi);
+
+    // Invert the integrated Athy porosity profile. The residual is strictly
+    // monotone because 1-phi(z) stays positive, so the bracketed Newton step
+    // is deterministic and cannot diverge for valid positive mass/area.
+    for (int i=0;i<10;++i) {
+        const double exp_term=std::exp(
+            -kSedimentCompactionPerM*thickness
+        );
+        const double pore_depth=
+            kSedimentSurfacePorosity*(1.0-exp_term)/
+            kSedimentCompactionPerM;
+        const double residual=
+            thickness-pore_depth-solid_depth;
+        if (residual>0.0) hi=thickness;
+        else lo=thickness;
+
+        const double derivative=
+            1.0-kSedimentSurfacePorosity*exp_term;
+        const double newton=thickness-residual/derivative;
+        thickness=(newton>lo && newton<hi)
+            ? newton
+            : 0.5*(lo+hi);
+    }
+    return thickness;
 }
 
 BoundaryFeatureSample GeologyModel::boundary_features(
@@ -322,16 +382,17 @@ double GeologyModel::surface_elevation_m(
     double elevation=lerp(oceanic,isostatic_continent,continental_weight);
 
     const double area=std::max(1.0,cell_area_m2);
-    const double sediment_thickness=
-        state.sediment_mass_kg/(area*kSedimentDensityKgM3);
-    // Sediment adds geometric thickness while its load is partly compensated
-    // isostatically. Accounting for only the load would make deposition lower
-    // the surface, the opposite of basin infill.
-    constexpr double sediment_load_compensation=0.65;
-    elevation+=sediment_thickness*(
-        1.0-sediment_load_compensation*
-        kSedimentDensityKgM3/kMantleDensityKgM3
+    const double sediment_thickness=sediment_column_thickness_m(
+        state.sediment_mass_kg,
+        area
     );
+    // Geometric thickness follows equilibrium burial compaction while load is
+    // tied to conserved solid mass. This prevents equal sediment masses from
+    // creating equal thickness increments at every burial depth.
+    constexpr double sediment_load_compensation=0.65;
+    elevation+=sediment_thickness-
+        sediment_load_compensation*
+        state.sediment_mass_kg/(area*kMantleDensityKgM3);
 
     // Convergent boundaries are asymmetric: the selected subducting side
     // forms a trench, while the overriding side receives an inland-offset
@@ -390,14 +451,24 @@ ErosionBudget GeologyModel::erode(
     ErosionBudget budget;
     if (!(erosion_depth_m>0.0) || !(cell_area_m2>0.0)) return budget;
 
-    const double sediment_depth=
-        state.sediment_mass_kg/(cell_area_m2*kSedimentDensityKgM3);
+    const double sediment_depth=sediment_column_thickness_m(
+        state.sediment_mass_kg,
+        cell_area_m2
+    );
     const double sediment_removed_depth=std::min(
         sediment_depth,
         erosion_depth_m
     );
-    budget.sediment_removed_kg=
-        sediment_removed_depth*cell_area_m2*kSedimentDensityKgM3;
+    // Erosion removes the shallowest part of the equilibrium column. The
+    // remainder decompacts automatically when mass is converted back to
+    // thickness on the next surface query.
+    budget.sediment_removed_kg=std::min(
+        state.sediment_mass_kg,
+        sediment_mass_for_thickness_kg(
+            sediment_removed_depth,
+            cell_area_m2
+        )
+    );
     state.sediment_mass_kg=std::max(
         0.0,
         state.sediment_mass_kg-budget.sediment_removed_kg
