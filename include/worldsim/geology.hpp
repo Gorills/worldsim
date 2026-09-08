@@ -10,6 +10,7 @@ namespace worldsim {
 struct GeologyState {
     double crust_thickness_m{};
     double crust_density_kg_m3{};
+    double continental_fraction{};
     double lithosphere_age_ma{};
     double sediment_mass_kg{};
     double regolith_thickness_m{};
