@@ -17,7 +17,8 @@ static func terrain_color(
     snow_cover_fraction: float,
     flooded_fraction: float,
     fire_active_fraction: float,
-    fire_burned_fraction: float
+    fire_burned_fraction: float,
+    slope: float = 0.0
 ) -> Color:
     if height_m < 0.0:
         var depth_t := clampf(-height_m / 5000.0, 0.0, 1.0)
@@ -27,8 +28,8 @@ static func terrain_color(
         )
 
     var elevation_t := clampf(height_m / 4500.0, 0.0, 1.0)
-    var color := Color(0.34, 0.31, 0.27).lerp(
-        Color(0.62, 0.60, 0.56),
+    var color := Color(0.31, 0.27, 0.21).lerp(
+        Color(0.52, 0.50, 0.47),
         elevation_t
     )
 
@@ -47,16 +48,33 @@ static func terrain_color(
     var vegetation_strength := clampf(
         0.55 * grass + 0.72 * shrub + 0.88 * tree,
         0.0,
-        0.92
+        0.85
     )
     if vegetation_strength > 0.0:
         var weight_sum := grass + shrub + tree
         var vegetation_color := (
-            Color(0.24, 0.43, 0.16) * grass
-            + Color(0.18, 0.34, 0.13) * shrub
-            + Color(0.10, 0.25, 0.09) * tree
+            Color(0.22, 0.42, 0.15) * grass
+            + Color(0.16, 0.31, 0.11) * shrub
+            + Color(0.08, 0.22, 0.07) * tree
         ) / maxf(weight_sum, 0.0001)
         color = color.lerp(vegetation_color, vegetation_strength)
+
+    # Coarse ecology fields do not encode local cliff exposure. Use the rendered
+    # mesh slope only as a presentation cue so steep/high terrain reads as rock
+    # without mutating authoritative surface state.
+    var steepness := clampf((slope - 0.04) / 0.32, 0.0, 1.0)
+    var highland_rock := clampf((height_m - 1800.0) / 2600.0, 0.0, 1.0)
+    var rock_strength := clampf(
+        maxf(0.75 * steepness, 0.65 * highland_rock),
+        0.0,
+        0.82
+    )
+    if rock_strength > 0.0:
+        var rock_color := Color(0.30, 0.29, 0.28).lerp(
+            Color(0.56, 0.55, 0.54),
+            elevation_t
+        )
+        color = color.lerp(rock_color, rock_strength)
 
     var burned := clampf(fire_burned_fraction, 0.0, 1.0)
     if burned > 0.0:
