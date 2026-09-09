@@ -102,11 +102,23 @@ std::pair<double,double> prescribed_wind(
     const double polar_easterly=
         3.0*std::exp(-std::pow((degrees-78.0)/10.0,2.0));
     const double seasonal=2.0*kPi*day/orbital_days;
-    const double east=-5.0+westerly_belt-polar_easterly+
-        1.5*std::sin(3.0*longitude+seasonal)*std::cos(latitude);
+    const double base_east=-5.0+westerly_belt-polar_easterly;
+
+    // Non-divergent planetary wave from
+    // psi = R*A*cos(latitude)^2*sin(2*longitude-seasonal).
+    // The zonal base flow is divergence-free because it depends only on
+    // latitude; deriving the wave from a streamfunction keeps the complete
+    // prescribed horizontal flow divergence-free without a missing vertical
+    // air-mass reservoir.
+    constexpr double wave_amplitude_m_s=0.45;
+    const double phase=2.0*longitude-seasonal;
+    const double cosine=std::cos(latitude);
+    const double sine=std::sin(latitude);
+    const double east=
+        base_east+
+        2.0*wave_amplitude_m_s*cosine*sine*std::sin(phase);
     const double north=
-        0.9*std::sin(2.0*latitude)*std::cos(seasonal)+
-        0.7*std::sin(2.0*longitude-seasonal)*std::cos(latitude);
+        2.0*wave_amplitude_m_s*cosine*std::cos(phase);
     return {east,north};
 }
 
@@ -630,21 +642,9 @@ void ClimateStore::advance_moisture(double dt_days) {
             nodes_[link.a].atmospheric_water_m3/nodes_[link.a].area_m2;
         const double density_b=
             nodes_[link.b].atmospheric_water_m3/nodes_[link.b].area_m2;
-        // Lax-Wendroff face state for conservative second-order
-        // advection on each uniform-grid link. The climate substep bounds the
-        // link CFL below one; clamp defensively for distorted cube-face links.
-        const double cfl=std::clamp(
-            std::abs(velocity)*seconds/link.distance_m,
-            0.0,
-            1.0
-        );
-        const double face_density=
-            0.5*(density_a+density_b)+
-            0.5*cfl*
-                (velocity>=0.0 ? density_a-density_b
-                               : density_b-density_a);
-        const double advective=
-            velocity*link.interface_m*seconds*face_density;
+        const double advective=velocity>=0.0
+            ? velocity*link.interface_m*seconds*density_a
+            : velocity*link.interface_m*seconds*density_b;
         const double diffusive=
             moisture_diffusivity_m2_s*
             (density_a-density_b)/link.distance_m*
