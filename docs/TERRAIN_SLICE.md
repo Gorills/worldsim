@@ -166,10 +166,12 @@ lower ambient energy with a warm directional light. Nested distant rings do not
 cast shadow maps: rendered CI frames exposed a dark clipmap-boundary seam when
 overlapping LODs were allowed to shadow one another. Terrain materials therefore
 render unshaded vertex colors and the shared surface presentation applies the
-directional hillshade explicitly. On distant rings the hillshade blends toward a
-common neutral value within three grid steps of both inner and outer LOD
-boundaries. This keeps sun-facing and lee slopes distinct without reintroducing
-normal-lighting or shadow discontinuities across clipmap seams.
+directional hillshade explicitly. Coarse-to-fine rebuilds persist each ring's
+terrain normals; the final two rows of a fine ring morph those normals onto the
+same coarser grid used by the existing positional transition. Slope rock cues and
+hillshade are then derived from the morphed normal, so adjacent rings agree at
+their shared boundary instead of hiding the discontinuity with a neutral color
+band.
 
 A separate visual-only sea-level surface uses the exact same spherical sample
 directions at elevation 0 m. It is opaque in this first slice to stay on the
