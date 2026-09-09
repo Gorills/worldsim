@@ -119,11 +119,14 @@ walking chunks remain the only physics terrain:
 The walker now also renders visual-only nested spherical terrain rings. Every
 ring is a 33 x 33 regular grid, sample spacing doubles from 64 m through
 16,384 m, and the outer half-extent therefore grows from 1.024 km to
-262.144 km. All heights still come from the same reconstructed authoritative
-terrain adapter. The adapter converts the sampled sphere directions to a
-player-local tangent frame in double precision before returning float scene
-coordinates, so the stock single-precision Godot scene tree never stores
-planet-radius coordinates.
+262.144 km. Heights come from the same reconstructed terrain adapter used by
+walking collision. The regional baseline remains authoritative geology; the
+adapter then adds deterministic presentation-only orography below the adaptive
+cell scale in convergent dry-land belts. That visual/collision relief is bounded,
+sphere-native and never mutates simulation fields, conserved stores or snapshots.
+The adapter converts the sampled sphere directions to a player-local tangent
+frame in double precision before returning float scene coordinates, so the stock
+single-precision Godot scene tree never stores planet-radius coordinates.
 
 Coarse-to-fine updates morph the final two fine-grid rows onto bilinear samples
 of the next coarser ring. Exact shared outer/inner boundaries therefore meet
@@ -257,7 +260,7 @@ A spatial bake is intentionally deferred. Plate ownership, crust affinity, and t
 
 ## Known boundaries
 
-- Walking terrain follows reconstructed stateful geology, while surface color and near decorative vegetation project authoritative climate/hydrology/ecology state through the separate [living-surface contract](LIVING_SURFACE.md); deterministic sub-cell terrain and vegetation placement remain presentation-only.
+- Walking terrain follows reconstructed stateful geology. Convergent dry-land belts additionally receive bounded deterministic sub-cell orographic peaks for traversable/rendered mountain relief; this does not change authoritative geography fields or snapshots. Surface color and near decorative vegetation project authoritative climate/hydrology/ecology state through the separate [living-surface contract](LIVING_SURFACE.md).
 - The walker has a visual sea-level surface but no river/lake surface geometry, wave simulation, shoreline foam, refraction, or water collision.
 - Distant terrain is spherical and extends to roughly 262 km from the viewer; it is visual-only and uses progressively coarser samples.
 - Terrain revision and synchronized local mesh/collision refresh remain immediate; distant terrain revision refresh is intentionally throttled and continuous fastest-tier survey-flight quality is not verified.
