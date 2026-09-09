@@ -39,6 +39,15 @@ public:
                                                                   double center_north_m,
                                                                   double spacing_m,
                                                                   std::int64_t resolution) const;
+    [[nodiscard]] godot::Dictionary sample_terrain_visual_patch(
+        double center_east_m,
+        double center_north_m,
+        double spacing_m,
+        std::int64_t resolution,
+        double origin_east_m,
+        double origin_north_m,
+        double origin_height_m
+    ) const;
     [[nodiscard]] godot::PackedFloat32Array sample_terrain_equirectangular(std::int64_t width,
                                                                             std::int64_t height) const;
     [[nodiscard]] godot::PackedFloat64Array sample_field_equirectangular(

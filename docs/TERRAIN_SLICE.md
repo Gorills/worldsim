@@ -104,17 +104,35 @@ The initial shift threshold is 1,024 m, comfortably inside the range where Godot
 
 ## Terrain streaming
 
-The first implementation deliberately avoids a general clipmap/CDLOD system.
-
-Current chunk contract:
+Near collision and distant rendering use separate LOD contracts. The existing
+walking chunks remain the only physics terrain:
 
 - chunk size: 256 m;
 - mesh resolution: 33 x 33 vertices;
 - vertex spacing: 8 m;
 - visible radius: 3 chunks;
 - retained radius: 4 chunks;
-- at most one missing or dirty chunk is generated per rendered frame;
+- at most one missing or dirty near chunk is generated per rendered frame;
 - the chunk under the initial player position is built synchronously before movement starts.
+
+The walker now also renders visual-only nested spherical terrain rings. Every
+ring is a 33 x 33 regular grid, sample spacing doubles from 64 m through
+16,384 m, and the outer half-extent therefore grows from 1.024 km to
+262.144 km. All heights still come from the same reconstructed authoritative
+terrain adapter. The adapter converts the sampled sphere directions to a
+player-local tangent frame in double precision before returning float scene
+coordinates, so the stock single-precision Godot scene tree never stores
+planet-radius coordinates.
+
+Coarse-to-fine updates morph the final two fine-grid rows onto bilinear samples
+of the next coarser ring. Exact shared outer/inner boundaries therefore meet
+without a T-junction crack while local detail is retained away from the
+transition. Distant rings have no collision.
+
+A separate visual-only sea-level surface uses the exact same spherical sample
+directions at elevation 0 m. It is opaque in this first slice to stay on the
+fast opaque rendering path; terrain above sea level naturally occludes it while
+negative-elevation terrain becomes ocean floor.
 
 Meshes are regular indexed `ArrayMesh` surfaces. Collision uses `HeightMapShape3D`, which Godot documents as the terrain-specialized alternative to a concave triangle collision shape:
 
@@ -127,13 +145,34 @@ Mesh/physics-resource creation remains on the main thread. Godot does not make t
 
 If profiling later shows that walking-speed terrain cannot meet frame-time targets, generation can be split into CPU sampling and main-thread resource upload. That change is not justified before measurement.
 
-## Why not geometry clipmaps yet?
+## Distant spherical rendering
 
-Geometry clipmaps are a strong fit for very large view distances, flight, and a nearly constant terrain rendering budget. The established GPU Gems implementation uses nested regular grids centered on the viewer and continuously shifts/refills them:
+The distant renderer follows the geometry-clipmap principle of nested regular
+grids centered around the viewer, while retaining CPU-generated ArrayMesh data
+for this first implementation. GPU Gems describes the established clipmap
+structure as nested regular grids with progressively coarser samples and
+transition regions between levels:
 
 - https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry-clipmaps
 
-That solves a different immediate problem than this slice. At walking speed, fixed local chunks make collision, origin shifting, correctness, and simulation/geography agreement testable with substantially less machinery. A clipmap or another terrain render-LOD scheme should be introduced when distant-horizon requirements or profiling make the trade-off concrete.
+WorldSim deliberately does not move authoritative height generation into a GPU
+height texture. The simulation remains authoritative and the Godot adapter
+continues to reconstruct presentation heights from active simulation state.
+Only the rendering LOD changed.
+
+The Camera3D far plane is 400 km. Non-volumetric environment fog uses Godot
+4.7's depth mode from 35 km to 300 km with aerial perspective, so distant
+terrain fades into the procedural sky instead of terminating at a local flat
+chunk boundary:
+
+- https://docs.godotengine.org/en/4.7/classes/class_camera3d.html
+- https://docs.godotengine.org/en/4.7/classes/class_environment.html
+
+Sampling cost and frame time on target player hardware remain **NOT VERIFIED**.
+The implementation limits work to one distant LOD rebuild per rendered frame,
+recenters every 256 m while walking, uses a much larger threshold during survey
+flight, and throttles simulation-driven distant refreshes to avoid coupling
+hourly simulation steps to full-horizon mesh regeneration.
 
 ## Global map inspection
 
@@ -218,7 +257,7 @@ A spatial bake is intentionally deferred. Plate ownership, crust affinity, and t
 ## Known boundaries
 
 - Walking terrain now follows reconstructed stateful geology, including its derived erosion/sediment effects at simulation-cell resolution; deterministic sub-cell detail remains presentation-only and is not eroded.
-- "Ocean" currently means generated ocean floor/land mask. No water surface exists in this slice.
-- There is no distant terrain LOD or planetary horizon in the local walker; the global map is a separate 2D inspection tool.
-- Terrain revision and synchronized local mesh/collision refresh are implemented; distant terrain rendering and continuous high-speed streaming are not.
+- The walker has a visual sea-level surface but no wave simulation, shoreline foam, refraction, or water collision.
+- Distant terrain is spherical and extends to roughly 262 km from the viewer; it is visual-only and uses progressively coarser samples.
+- Terrain revision and synchronized local mesh/collision refresh remain immediate; distant terrain revision refresh is intentionally throttled and continuous fastest-tier survey-flight quality is not verified.
 - Frame-time and GPU performance on target player hardware are NOT VERIFIED by CI; CI can verify build, parsing, headless runtime, terrain API, collision scene resources, and core invariants only.

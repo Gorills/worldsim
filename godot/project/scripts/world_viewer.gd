@@ -2,6 +2,7 @@ extends Node3D
 
 @onready var sim: WorldSimulationNode = $Simulation
 @onready var terrain_root: Node3D = $Terrain
+@onready var distant_terrain: Node3D = $DistantTerrain
 @onready var player: CharacterBody3D = $Player
 @onready var head: Node3D = $Player/Head
 @onready var status: Label = $HUD/StatusPanel/Margin/VBox/Status
@@ -61,6 +62,13 @@ func _ready() -> void:
 
     terrain_revision = sim.get_terrain_revision()
     origin_height_m = sim.sample_terrain_height(0.0, 0.0)
+    distant_terrain.call(
+        "initialize",
+        sim,
+        origin_east_m,
+        origin_north_m,
+        origin_height_m
+    )
     _create_chunk(Vector2i.ZERO)
     player.position = Vector3(0.0, PLAYER_GROUND_CLEARANCE_M, 0.0)
     walking_collision_mask = player.collision_mask
@@ -111,6 +119,15 @@ func _physics_process(delta: float) -> void:
 
     _maybe_shift_origin()
     _refresh_streaming_center()
+    distant_terrain.call(
+        "set_view_state",
+        origin_east_m + float(player.position.x),
+        origin_north_m + float(player.position.z),
+        origin_east_m,
+        origin_north_m,
+        origin_height_m,
+        survey_flight_enabled
+    )
 
 func _move_walker(input_2d: Vector2, delta: float) -> void:
     var basis := player.global_transform.basis
@@ -435,6 +452,7 @@ func _refresh_terrain_revision(
         return
 
     terrain_revision = next_revision
+    distant_terrain.call("set_terrain_revision", terrain_revision)
     var east_m := origin_east_m + float(player.position.x)
     var north_m := origin_north_m + float(player.position.z)
     origin_height_m = sim.sample_terrain_height(origin_east_m, origin_north_m)
