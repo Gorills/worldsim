@@ -43,9 +43,9 @@ const MOUNTAIN_DEMO_SAMPLE_SPACING_M := 625.0
 const MOUNTAIN_DEMO_RESOLUTION := 65
 const MOUNTAIN_VIEW_MIN_DISTANCE_M := 3_000.0
 const MOUNTAIN_VIEW_MAX_DISTANCE_M := 7_000.0
-const MOUNTAIN_VIEW_MIN_RISE_M := 500.0
-const MOUNTAIN_VIEW_MIN_ANGLE_RAD := deg_to_rad(5.0)
-const MOUNTAIN_VIEW_MIN_SKYLINE_MARGIN_RAD := deg_to_rad(1.0)
+const MOUNTAIN_VIEW_MIN_RISE_M := 450.0
+const MOUNTAIN_VIEW_MIN_ANGLE_RAD := deg_to_rad(7.0)
+const MOUNTAIN_VIEW_MIN_SKYLINE_MARGIN_RAD := deg_to_rad(0.5)
 const MOUNTAIN_SUMMIT_LOCAL_RADIUS := 3
 
 var terrain_material: StandardMaterial3D
@@ -444,9 +444,6 @@ func _select_mountain_demo_spawn() -> bool:
     var view_index := -1
     var target_index := -1
     var best_score := -INF
-    var diagnostic_best_margin := -INF
-    var diagnostic_best_angle_with_margin := -INF
-    var diagnostic_best_rise := -INF
     for summit_index in summit_indices:
         var target_x := summit_index % MOUNTAIN_DEMO_RESOLUTION
         var target_z := floori(
@@ -474,18 +471,6 @@ func _select_mountain_demo_spawn() -> bool:
                 Vector2(float(x), float(z)),
                 Vector2(float(target_x), float(target_z))
             )
-            if rise_m >= 300.0 and elevation_angle >= deg_to_rad(3.0):
-                diagnostic_best_margin = maxf(
-                    diagnostic_best_margin,
-                    skyline_margin
-                )
-                diagnostic_best_rise = maxf(diagnostic_best_rise, rise_m)
-            if skyline_margin >= deg_to_rad(0.5):
-                diagnostic_best_angle_with_margin = maxf(
-                    diagnostic_best_angle_with_margin,
-                    elevation_angle
-                )
-
             if rise_m < MOUNTAIN_VIEW_MIN_RISE_M:
                 continue
             if elevation_angle < MOUNTAIN_VIEW_MIN_ANGLE_RAD:
@@ -495,22 +480,13 @@ func _select_mountain_demo_spawn() -> bool:
 
             # Visible summit separation is primary. Elevation angle breaks ties
             # toward a larger mountain in the first-person frame.
-            var score := skyline_margin + 0.25 * elevation_angle
+            var score := skyline_margin + 0.35 * elevation_angle
             if score > best_score:
                 best_score = score
                 view_index = i
                 target_index = summit_index
 
     if view_index < 0 or target_index < 0:
-        print(
-            "WORLDSIM_MOUNTAIN_PAIR_DIAG summits=%d best_margin_deg=%.2f best_angle_at_margin0_5_deg=%.2f best_rise_m=%.1f"
-            % [
-                summit_indices.size(),
-                rad_to_deg(diagnostic_best_margin),
-                rad_to_deg(diagnostic_best_angle_with_margin),
-                diagnostic_best_rise,
-            ]
-        )
         return false
 
     var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
