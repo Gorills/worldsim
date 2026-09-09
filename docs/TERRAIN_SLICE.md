@@ -145,10 +145,11 @@ so 256 m sampling still covers the visible target range without paying the
 from the same reconstructed terrain adapter used by walking collision. The
 regional baseline remains authoritative geology; the adapter retains the
 deterministic presentation-only 60/28/16 km ridge and summit orography in
-convergent dry-land belts. Summit amplitude is slightly stronger than the broad
-ridge term, using the already-computed 16 km profile rather than adding more
-noise fields. This keeps a readable local summit without restoring the rejected
-crag/gully/spur sampling cost. The visual/collision relief remains bounded,
+convergent dry-land belts. Summit amplitude is slightly stronger than the broad ridge term. A single
+3.2 km, single-octave sphere-native value-noise lookup is transformed into a
+narrow positive ridged term inside the existing mountain gate. This restores
+local ribs and saddles without restoring the rejected multi-FBM crag/gully/spur
+stack; the number of added detail-noise lookups is one per terrain sample. The visual/collision relief remains bounded,
 sphere-native and never mutates simulation fields, conserved stores or
 snapshots. The adapter converts the sampled sphere directions to a
 player-local tangent frame in double precision before returning float scene
@@ -234,10 +235,14 @@ produced severe runtime slowdown in manual testing, so the runtime contract is
 back to 33 x 33. The implementation still limits work to one distant LOD rebuild
 per rendered frame, recenters on 256 m near-chunk transitions while walking,
 uses a much larger threshold during survey flight, and throttles
-simulation-driven distant refreshes. Surface-only revisions use cached terrain
-geometry instead of re-running reconstructed-height sampling, preventing hourly
-ecology/climate changes from repeatedly entering the expensive terrain/collision
-path.
+simulation-driven distant refreshes. Surface-only revisions use cached terrain geometry instead of re-running
+reconstructed-height sampling, preventing hourly ecology/climate changes from
+repeatedly entering the expensive terrain/collision path. The rendered CI gate
+also records a fixed 60-frame llvmpipe proxy plus forced near-terrain and
+surface-only refresh timings. The accepted pass must remain at or above 12 proxy
+FPS, at or below 20 ms for a forced near rebuild and at or below 8 ms for a
+surface-only refresh; these are regression bounds, not target-hardware FPS
+claims.
 
 ## Global map inspection
 
