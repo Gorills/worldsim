@@ -151,7 +151,7 @@ double reconstructed_terrain_height(
 
     const double authoritative_macro=authoritative_sum/weight_sum;
     const double preview_macro=preview_sum/weight_sum;
-    const double preview=terrain.sample_direction(direction).elevation_m;
+    const double preview=terrain.sample_visual_direction(direction).elevation_m;
     return std::clamp(
         authoritative_macro+(preview-preview_macro),
         -11'000.0,
@@ -965,7 +965,12 @@ PackedFloat32Array WorldSimulationNode::sample_preview_terrain_equirectangular(
                     cos_lat*std::sin(longitude),
                     sin_lat
                 };
-                out.set(y*w+x,static_cast<float>(terrain.sample_direction(direction).elevation_m));
+                out.set(
+                    y*w+x,
+                    static_cast<float>(
+                        terrain.sample_visual_direction(direction).elevation_m
+                    )
+                );
             }
         }
         last_error_.clear();
