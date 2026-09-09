@@ -688,7 +688,9 @@ func _create_chunk(coord: Vector2i) -> void:
         existing_mesh.mesh = _build_chunk_mesh(
             heights,
             surface,
-            normal_heights
+            normal_heights,
+            center_east_m,
+            center_north_m
         )
         existing_collision.shape = shape
         existing_chunk.position = _chunk_local_position(coord)
@@ -704,7 +706,9 @@ func _create_chunk(coord: Vector2i) -> void:
         mesh_instance.mesh = _build_chunk_mesh(
             heights,
             surface,
-            normal_heights
+            normal_heights,
+            center_east_m,
+            center_north_m
         )
         mesh_instance.material_override = terrain_material
         mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -782,7 +786,9 @@ func _refresh_terrain_revision(
 func _build_chunk_mesh(
     heights: PackedFloat32Array,
     surface: Dictionary,
-    normal_heights: PackedFloat32Array
+    normal_heights: PackedFloat32Array,
+    center_east_m: float,
+    center_north_m: float
 ) -> ArrayMesh:
     var vertex_count := CHUNK_RESOLUTION * CHUNK_RESOLUTION
     var vertices := PackedVector3Array()
@@ -841,6 +847,12 @@ func _build_chunk_mesh(
                 north_h - south_h
             ).normalized()
 
+            var east_m := center_east_m + (
+                float(x) - 0.5 * float(CHUNK_RESOLUTION - 1)
+            ) * SAMPLE_SPACING_M
+            var north_m := center_north_m + (
+                float(source_z) - 0.5 * float(CHUNK_RESOLUTION - 1)
+            ) * SAMPLE_SPACING_M
             colors[i] = SurfaceVisual.terrain_color(
                 height,
                 float(grass[source_i]),
@@ -852,7 +864,8 @@ func _build_chunk_mesh(
                 float(fire_burned[source_i]),
                 Vector2(normals[i].x, normals[i].z).length()
                 / maxf(normals[i].y, 0.001),
-                SurfaceVisual.relief_light(normals[i])
+                SurfaceVisual.relief_light(normals[i]),
+                SurfaceVisual.terrain_detail(east_m, north_m)
             )
 
     # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is
