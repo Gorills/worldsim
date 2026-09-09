@@ -1659,6 +1659,51 @@ void test_visual_orography_has_local_mountain_prominence() {
         "convergent visual terrain remains a broad plateau at mountain scale"
     );
 
+    constexpr int local_resolution=9;
+    constexpr double local_spacing_m=1'000.0;
+    std::array<double,local_resolution*local_resolution> local_residual{};
+    for (int z=0;z<local_resolution;++z) {
+        for (int x=0;x<local_resolution;++x) {
+            const double east=
+                mountain_east_m+
+                (static_cast<double>(x)-4.0)*local_spacing_m;
+            const double north=
+                mountain_north_m+
+                (static_cast<double>(z)-4.0)*local_spacing_m;
+            const TerrainSample local_authoritative=
+                terrain.sample_projected(east,north);
+            const TerrainSample local_visual=
+                terrain.sample_visual_projected(east,north);
+            local_residual[static_cast<std::size_t>(z*local_resolution+x)]=
+                local_visual.elevation_m-local_authoritative.elevation_m;
+        }
+    }
+    double laplacian_sq_sum=0.0;
+    int laplacian_count=0;
+    for (int z=1;z<local_resolution-1;++z) {
+        for (int x=1;x<local_resolution-1;++x) {
+            const auto at=[&](int sx,int sz) {
+                return local_residual[
+                    static_cast<std::size_t>(sz*local_resolution+sx)
+                ];
+            };
+            const double laplacian=
+                4.0*at(x,z)-
+                at(x-1,z)-
+                at(x+1,z)-
+                at(x,z-1)-
+                at(x,z+1);
+            laplacian_sq_sum+=laplacian*laplacian;
+            ++laplacian_count;
+        }
+    }
+    const double local_curvature_rms=
+        std::sqrt(laplacian_sq_sum/static_cast<double>(laplacian_count));
+    check(
+        local_curvature_rms>20.0,
+        "visual orography lacks multi-kilometre crag/gully curvature"
+    );
+
     const TerrainSample origin_authoritative=terrain.sample_projected(0.0,0.0);
     const TerrainSample origin_visual=terrain.sample_visual_projected(0.0,0.0);
     near(
