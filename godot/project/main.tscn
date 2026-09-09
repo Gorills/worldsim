@@ -6,10 +6,10 @@
 [ext_resource path="res://scripts/distant_terrain.gd" type="Script" id="4"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_world"]
-sky_top_color = Color(0.32, 0.52, 0.78, 1)
-sky_horizon_color = Color(0.72, 0.78, 0.86, 1)
-ground_bottom_color = Color(0.18, 0.16, 0.14, 1)
-ground_horizon_color = Color(0.72, 0.78, 0.86, 1)
+sky_top_color = Color(0.2, 0.39, 0.68, 1)
+sky_horizon_color = Color(0.7, 0.78, 0.88, 1)
+ground_bottom_color = Color(0.12, 0.1, 0.08, 1)
+ground_horizon_color = Color(0.6, 0.66, 0.72, 1)
 
 [sub_resource type="Sky" id="Sky_world"]
 sky_material = SubResource("ProceduralSkyMaterial_world")
@@ -18,10 +18,10 @@ sky_material = SubResource("ProceduralSkyMaterial_world")
 background_mode = 2
 sky = SubResource("Sky_world")
 ambient_light_source = 3
-ambient_light_energy = 0.65
+ambient_light_energy = 0.38
 fog_enabled = true
 fog_mode = 1
-fog_light_color = Color(0.68, 0.74, 0.82, 1)
+fog_light_color = Color(0.64, 0.71, 0.81, 1)
 fog_density = 1.0
 fog_depth_begin = 35000.0
 fog_depth_end = 300000.0
@@ -67,13 +67,15 @@ position = Vector3(0, 0.62, 0)
 current = true
 near = 0.1
 far = 400000.0
+fov = 65.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_world")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-48, -28, 0)
-light_energy = 1.35
+rotation_degrees = Vector3(-48, -32, 0)
+light_color = Color(1, 0.93, 0.84, 1)
+light_energy = 1.55
 shadow_enabled = false
 
 [node name="HUD" type="CanvasLayer" parent="."]
