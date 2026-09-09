@@ -686,7 +686,11 @@ void test_command_routing_across_lod() {
     auto command_before_refine=magic_only();
     auto command_after_refine=magic_only();
     auto no_command=magic_only();
-    const CellId coarse_target=CellId::make(0,4,8,8);
+    const CellId coarse_target=
+        command_before_refine->world().topology().from_direction(
+            {1.0,0.0,0.0},
+            cfg.base_level
+        );
     const Vec3d focus=
         command_before_refine->world().topology().center_unit(
             coarse_target
@@ -767,13 +771,13 @@ void test_command_routing_across_lod() {
             before_fields.get(part.cell,mana),
             after_fields.get(part.cell,mana),
             1.0e-14,
-            "extensive field impulse depends on active LOD"
+            "extensive field impulse depends on refined active LOD"
         );
         near(
             before_fields.get(part.cell,growth),
             after_fields.get(part.cell,growth),
             1.0e-14,
-            "intensive field impulse depends on active LOD"
+            "intensive field impulse depends on refined active LOD"
         );
         near(
             after_fields.get(part.cell,growth)-
@@ -791,6 +795,101 @@ void test_command_routing_across_lod() {
         mana_delta,
         1.0e-12,
         "LOD-routed extensive field impulse lost or duplicated quantity"
+    );
+
+    auto fine_before_coarsen=magic_only();
+    auto fine_after_coarsen=magic_only();
+    auto fine_baseline=magic_only();
+    fine_before_coarsen->set_focus(focus);
+    fine_after_coarsen->set_focus(focus);
+    fine_baseline->set_focus(focus);
+    fine_before_coarsen->step(1);
+    fine_after_coarsen->step(1);
+    fine_baseline->step(1);
+
+    const CellId fine_target=coarse_target.children()[0];
+    check(
+        fine_before_coarsen->world().active_cells().contains(fine_target) &&
+        fine_after_coarsen->world().active_cells().contains(fine_target),
+        "command-routing fixture did not expose fine target cell"
+    );
+
+    fine_before_coarsen->schedule_field_impulse(
+        fine_before_coarsen->world().tick(),
+        fine_target,
+        mana,
+        mana_delta
+    );
+    fine_before_coarsen->schedule_field_impulse(
+        fine_before_coarsen->world().tick(),
+        fine_target,
+        growth,
+        growth_delta
+    );
+    fine_before_coarsen->step(1);
+    fine_before_coarsen->clear_focus();
+    fine_before_coarsen->step(1);
+
+    fine_after_coarsen->schedule_field_impulse(
+        fine_after_coarsen->world().tick(),
+        fine_target,
+        mana,
+        mana_delta
+    );
+    fine_after_coarsen->schedule_field_impulse(
+        fine_after_coarsen->world().tick(),
+        fine_target,
+        growth,
+        growth_delta
+    );
+    fine_after_coarsen->clear_focus();
+    fine_after_coarsen->step(2);
+
+    fine_baseline->clear_focus();
+    fine_baseline->step(2);
+
+    check(
+        fine_before_coarsen->world().active_cells()==
+            fine_after_coarsen->world().active_cells() &&
+        fine_after_coarsen->world().active_cells()==
+            fine_baseline->world().active_cells() &&
+        fine_after_coarsen->world().active_cells().contains(coarse_target),
+        "fine-command histories did not return to the same coarse cover"
+    );
+    const auto& fine_before_fields=
+        fine_before_coarsen->world().stores().get<FieldStore>();
+    const auto& fine_after_fields=
+        fine_after_coarsen->world().stores().get<FieldStore>();
+    const auto& fine_baseline_fields=
+        fine_baseline->world().stores().get<FieldStore>();
+    near(
+        fine_before_fields.get(coarse_target,mana),
+        fine_after_fields.get(coarse_target,mana),
+        1.0e-14,
+        "extensive fine-region impulse depends on coarsening timing"
+    );
+    near(
+        fine_before_fields.get(coarse_target,growth),
+        fine_after_fields.get(coarse_target,growth),
+        1.0e-14,
+        "intensive fine-region impulse depends on coarsening timing"
+    );
+    near(
+        fine_after_fields.get(coarse_target,mana)-
+            fine_baseline_fields.get(coarse_target,mana),
+        mana_delta,
+        1.0e-12,
+        "coarse projection changed extensive fine-region impulse total"
+    );
+    const double fine_area_fraction=
+        fine_after_coarsen->world().topology().area_m2(fine_target)/
+        fine_after_coarsen->world().topology().area_m2(coarse_target);
+    near(
+        fine_after_fields.get(coarse_target,growth)-
+            fine_baseline_fields.get(coarse_target,growth),
+        growth_delta*fine_area_fraction,
+        1.0e-14,
+        "coarse projection did not area-restrict intensive fine-region impulse"
     );
 }
 
