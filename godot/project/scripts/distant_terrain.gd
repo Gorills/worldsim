@@ -7,7 +7,7 @@ const SurfaceVisual = preload("res://scripts/surface_visual.gd")
 # by the next-finer level. Fine outer rows morph onto the coarser grid so the
 # independently generated meshes meet without T-junction cracks.
 
-const LOD_RESOLUTION := 65
+const LOD_RESOLUTION := 33
 const LOD_SPACINGS_M := [
     64.0,
     128.0,
@@ -19,7 +19,8 @@ const LOD_SPACINGS_M := [
     8192.0,
     16384.0,
 ]
-const TERRAIN_INNER_HALF_M := 640.0
+const TERRAIN_INNER_HALF_M := 0.0
+const NEAR_UNDERLAY_DROP_M := 48.0
 const WALK_RECENTER_DISTANCE_M := 256.0
 const SURVEY_RECENTER_DISTANCE_M := 65536.0
 const REVISION_REFRESH_INTERVAL_S := 5.0
@@ -48,6 +49,8 @@ var initialized := false
 
 func initialize(
     sim_node: WorldSimulationNode,
+    initial_center_east_m: float,
+    initial_center_north_m: float,
     initial_origin_east_m: float,
     initial_origin_north_m: float,
     initial_origin_height_m: float
@@ -56,8 +59,8 @@ func initialize(
     origin_east_m = initial_origin_east_m
     origin_north_m = initial_origin_north_m
     origin_height_m = initial_origin_height_m
-    target_center_east_m = initial_origin_east_m
-    target_center_north_m = initial_origin_north_m
+    target_center_east_m = initial_center_east_m
+    target_center_north_m = initial_center_north_m
     queued_center_east_m = target_center_east_m
     queued_center_north_m = target_center_north_m
     terrain_revision = sim.get_terrain_revision()
@@ -216,6 +219,12 @@ func _rebuild_level(level: int) -> void:
         push_error("Distant terrain LOD %d sampling failed: %s" % [level, sim.get_last_error()])
         return
 
+    # Lod0 is a cheap safety underlay below the streamed 8 m near chunks.
+    # It fills temporary streaming holes, then converges back to the exact
+    # sampled terrain at Lod0's outer boundary before the Lod1 handoff.
+    if level == 0:
+        positions = _apply_near_underlay_drop(positions, spacing_m)
+
     if level + 1 < LOD_SPACINGS_M.size():
         var coarse_positions: PackedVector3Array = level_positions[level + 1]
         var coarse_sea_positions: PackedVector3Array = level_sea_positions[level + 1]
@@ -255,6 +264,24 @@ func _rebuild_level(level: int) -> void:
         _ocean_inner_half_m(level),
         false
     )
+
+func _apply_near_underlay_drop(
+    positions: PackedVector3Array,
+    spacing_m: float
+) -> PackedVector3Array:
+    var center := 0.5 * float(LOD_RESOLUTION - 1)
+    var outer_half_m := center * spacing_m
+    for z in range(LOD_RESOLUTION):
+        for x in range(LOD_RESOLUTION):
+            var radius_m := maxf(
+                absf((float(x) - center) * spacing_m),
+                absf((float(z) - center) * spacing_m)
+            )
+            var t := clampf(radius_m / maxf(outer_half_m, 1.0), 0.0, 1.0)
+            var fade := t * t * (3.0 - 2.0 * t)
+            var index := z * LOD_RESOLUTION + x
+            positions[index].y -= NEAR_UNDERLAY_DROP_M * (1.0 - fade)
+    return positions
 
 func _terrain_inner_half_m(level: int) -> float:
     if level == 0:
@@ -408,12 +435,6 @@ func _build_mesh(
         for x in range(LOD_RESOLUTION):
             var index := z * LOD_RESOLUTION + x
             if use_elevation_colors:
-                var east_m := queued_center_east_m + (
-                    float(x) - half_cells
-                ) * spacing_m
-                var north_m := queued_center_north_m + (
-                    float(z) - half_cells
-                ) * spacing_m
                 colors[index] = SurfaceVisual.terrain_color(
                     float(heights[index]),
                     float(grass[index]),
@@ -425,8 +446,7 @@ func _build_mesh(
                     float(fire_burned[index]),
                     Vector2(normals[index].x, normals[index].z).length()
                     / maxf(normals[index].y, 0.001),
-                    SurfaceVisual.relief_light(normals[index]),
-                    SurfaceVisual.terrain_detail(east_m, north_m)
+                    SurfaceVisual.relief_light(normals[index])
                 )
 
     var indices := PackedInt32Array()
