@@ -74,6 +74,19 @@ std::unique_ptr<Simulation> climate_fixture(
     return simulation;
 }
 
+std::unique_ptr<Simulation> geography_climate_fixture(
+    std::uint64_t seed,
+    std::uint8_t level
+) {
+    auto simulation=std::make_unique<Simulation>(
+        seed,SimulationConfig{level,level,86'400.0}
+    );
+    simulation->add_module(std::make_unique<GeographyModule>());
+    simulation->add_module(std::make_unique<ClimateModule>());
+    simulation->build();
+    return simulation;
+}
+
 void run_vegetation(Simulation& simulation) {
     Scheduler scheduler;
     GeographyModule().register_systems(scheduler,simulation.fields());
@@ -491,6 +504,44 @@ void horizontal_heat_transport_is_resolution_consistent() {
     );
 }
 
+void orographic_reference_elevation_is_resolution_consistent() {
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        auto coarse=geography_climate_fixture(seed,2);
+        auto fine=geography_climate_fixture(seed,3);
+        const auto& coarse_store=
+            coarse->world().stores().get<ClimateStore>();
+        const auto& fine_store=
+            fine->world().stores().get<ClimateStore>();
+
+        struct Aggregate {
+            double elevation_area{};
+            double area{};
+        };
+        std::vector<Aggregate> aggregated(coarse_store.nodes().size());
+        for (const ClimateNode& node:fine_store.nodes()) {
+            const std::size_t index=coarse_store.node_index(node.cell);
+            aggregated[index].elevation_area+=
+                node.mean_elevation_m*node.area_m2;
+            aggregated[index].area+=node.area_m2;
+        }
+
+        double maximum_error_m=0.0;
+        for (std::size_t i=0;i<coarse_store.nodes().size();++i) {
+            const double fine_mean=
+                aggregated[i].elevation_area/
+                std::max(1.0,aggregated[i].area);
+            maximum_error_m=std::max(
+                maximum_error_m,
+                std::abs(coarse_store.nodes()[i].mean_elevation_m-fine_mean)
+            );
+        }
+        check(
+            maximum_error_m<1.0e-6,
+            "L2/L3 climate reference orography is not area-consistent"
+        );
+    }
+}
+
 void lod_independent_reference_state() {
     auto coarse=climate_fixture(101,1,2,3'600.0);
     auto focused=climate_fixture(101,1,2,3'600.0);
@@ -704,6 +755,7 @@ int main() {
         snow_burial_suppresses_short_vegetation();
         orographic_precipitation();
         horizontal_heat_transport_is_resolution_consistent();
+        orographic_reference_elevation_is_resolution_consistent();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();
         carbon_cycle_closes_and_forces_climate();
