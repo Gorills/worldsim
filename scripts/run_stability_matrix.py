@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Iterable
 
 COMPARISON_METRICS = (
+    "land_area_m2",
     "veg_ratio_initial",
     "veg_density_kg_m2",
     "grass_share",
@@ -26,9 +27,11 @@ COMPARISON_METRICS = (
     "litter_density_kg_m2",
     "soil_density_kg_m2",
     "mean_npp_PgC_yr",
+    "npp_density_kg_m2_yr",
     "annual_burn_land_fraction",
     "fauna_carbon_ratio",
     "fauna_carbon_PgC",
+    "fauna_carbon_density_kg_m2",
     "mean_fertility",
     "mean_land_temp_k",
     "mean_land_precip_mm_day",
@@ -153,6 +156,20 @@ def numeric(row: dict[str, str], key: str) -> float:
     return value
 
 
+def enrich_row(row: dict[str, str]) -> dict[str, str]:
+    enriched = dict(row)
+    land_area = numeric(enriched, "land_area_m2")
+    if not land_area > 0.0:
+        raise RuntimeError("land_area_m2 must be positive for stability comparison")
+    enriched["npp_density_kg_m2_yr"] = str(
+        numeric(enriched, "mean_npp_PgC_yr") * 1.0e12 / land_area
+    )
+    enriched["fauna_carbon_density_kg_m2"] = str(
+        numeric(enriched, "fauna_carbon_PgC") * 1.0e12 / land_area
+    )
+    return enriched
+
+
 def write_csv(path: Path, rows: Iterable[dict[str, object]], fields: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -223,7 +240,7 @@ def main(argv: list[str]) -> int:
                     continue
 
                 try:
-                    row = read_final_row(csv_path, args.years)
+                    row = enrich_row(read_final_row(csv_path, args.years))
                     for metric in COMPARISON_METRICS:
                         numeric(row, metric)
                 except RuntimeError as exc:
