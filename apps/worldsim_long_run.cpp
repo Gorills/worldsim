@@ -268,16 +268,20 @@ int main(int argc, char** argv) {
         const double initial_carbon=total_planet_carbon_kg(
             world,simulation->fields()
         );
-        const double initial_terrestrial_nitrogen=
-            total_ecology_nitrogen_accounted_kg(
-                world,simulation->fields()
-            );
+        const auto& initial_nitrogen_store=
+            world.stores().get<NitrogenStore>();
         const double initial_planet_nitrogen=
             total_planet_nitrogen_kg(
                 world,simulation->fields()
             );
+        const double initial_global_nitrogen_reservoirs=
+            initial_nitrogen_store.atmospheric_n2_kg()+
+            initial_nitrogen_store.atmospheric_reactive_nitrogen_kg()+
+            initial_nitrogen_store.ocean_dissolved_nitrogen_kg();
+        const double initial_terrestrial_nitrogen=
+            initial_planet_nitrogen-initial_global_nitrogen_reservoirs;
         const double initial_atmospheric_n2=
-            world.stores().get<NitrogenStore>().atmospheric_n2_kg();
+            initial_nitrogen_store.atmospheric_n2_kg();
 
         double previous_burned=sum_field(fields,field.burned_area);
         double temperature_sum=0.0;
@@ -416,21 +420,23 @@ int main(int argc, char** argv) {
                 (carbon-initial_carbon)/
                 std::max(1.0,std::abs(initial_carbon));
             final_carbon_rel_residual=carbon_rel_residual;
-            const double terrestrial_nitrogen=
-                total_ecology_nitrogen_accounted_kg(
-                    world,simulation->fields()
-                );
             const double planet_nitrogen=
                 total_planet_nitrogen_kg(
                     world,simulation->fields()
                 );
+            const auto& nitrogen_store=
+                world.stores().get<NitrogenStore>();
+            const double global_nitrogen_reservoirs=
+                nitrogen_store.atmospheric_n2_kg()+
+                nitrogen_store.atmospheric_reactive_nitrogen_kg()+
+                nitrogen_store.ocean_dissolved_nitrogen_kg();
+            const double terrestrial_nitrogen=
+                planet_nitrogen-global_nitrogen_reservoirs;
             const double planet_nitrogen_rel_residual=
                 (planet_nitrogen-initial_planet_nitrogen)/
                 std::max(1.0,std::abs(initial_planet_nitrogen));
             final_planet_nitrogen_rel_residual=
                 planet_nitrogen_rel_residual;
-            const auto& nitrogen_store=
-                world.stores().get<NitrogenStore>();
             final_vegetation_ratio=
                 vegetation/std::max(1.0,initial_vegetation);
             final_collapsed_area_fraction=
