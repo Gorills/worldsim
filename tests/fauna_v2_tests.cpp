@@ -54,11 +54,15 @@ void clear_fauna(Simulation& sim) {
 
 void clear_plants(Simulation& sim) {
     auto& fields=sim.world().stores().get<FieldStore>();
-    const std::array<FieldId,4> plant_fields{
+    const std::array<FieldId,8> plant_fields{
         *sim.fields().find("ecology.grass_carbon_kg"),
         *sim.fields().find("ecology.shrub_carbon_kg"),
         *sim.fields().find("ecology.tree_carbon_kg"),
-        *sim.fields().find("ecology.vegetation_carbon_kg")
+        *sim.fields().find("ecology.vegetation_carbon_kg"),
+        *sim.fields().find("ecology.grass_nitrogen_kg"),
+        *sim.fields().find("ecology.shrub_nitrogen_kg"),
+        *sim.fields().find("ecology.tree_nitrogen_kg"),
+        *sim.fields().find("ecology.vegetation_nitrogen_kg")
     };
     for (CellId cell:sim.world().active_cells()) {
         for (FieldId field:plant_fields)
@@ -95,11 +99,16 @@ void set_grass_density(
     const auto land=*sim.fields().find("geography.land_fraction");
     const auto grass=*sim.fields().find("ecology.grass_carbon_kg");
     const auto total=*sim.fields().find("ecology.vegetation_carbon_kg");
+    const auto grass_n=*sim.fields().find("ecology.grass_nitrogen_kg");
+    const auto total_n=*sim.fields().find("ecology.vegetation_nitrogen_kg");
     const double effective_area=
         sim.world().topology().area_m2(cell)*fields.get(cell,land);
     const double carbon=density_kg_m2*effective_area;
     fields.set(cell,grass,carbon);
     fields.set(cell,total,carbon);
+    const double nitrogen=carbon/kPlantCarbonNitrogenRatio[0];
+    fields.set(cell,grass_n,nitrogen);
+    fields.set(cell,total_n,nitrogen);
 }
 
 double lineage_count_in_cell(
@@ -490,6 +499,9 @@ void test_fauna_carbon_budget_and_starvation() {
     const SimulationConfig config{1,1,3600.0};
     auto simulation=make_default_simulation(5050,config);
     const double carbon_before=tracked_ecology_carbon(*simulation);
+    const double nitrogen_before=total_ecology_nitrogen_accounted_kg(
+        simulation->world(),simulation->fields()
+    );
     const double respired_before=sum_field(
         *simulation,"ecology.fauna_respired_carbon_kg"
     );
@@ -502,6 +514,14 @@ void test_fauna_carbon_budget_and_starvation() {
         expected_after,
         3.0e-12,
         "coupled daily ecology step did not close tracked carbon"
+    );
+    near(
+        nitrogen_before,
+        total_ecology_nitrogen_accounted_kg(
+            simulation->world(),simulation->fields()
+        ),
+        3.0e-12,
+        "coupled fauna step did not close tracked nitrogen"
     );
     check(
         sum_field(*simulation,"ecology.fauna_respired_carbon_kg")>
@@ -579,7 +599,7 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{30},
+        snapshot[8]==std::byte{31},
         "unexpected authoritative snapshot epoch"
     );
 
