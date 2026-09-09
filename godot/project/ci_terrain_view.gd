@@ -134,94 +134,6 @@ func _process(_delta: float) -> bool:
         quit(53)
         return true
 
-    var best_frame_score := -INF
-    var best_frame_view_x := -1
-    var best_frame_view_z := -1
-    var best_frame_target_x := -1
-    var best_frame_target_z := -1
-    var best_frame_rise_m := 0.0
-    var best_frame_angle := 0.0
-    var best_frame_margin := 0.0
-    for frame_target_z in range(3, 62):
-        for frame_target_x in range(3, 62):
-            var frame_target_index := frame_target_z * 65 + frame_target_x
-            var frame_target_height := float(mountain_probe[frame_target_index])
-            if frame_target_height - mountain_min < 700.0:
-                continue
-            var frame_crest_height := frame_target_height
-            for crest_dz in range(-3, 4):
-                for crest_dx in range(-3, 4):
-                    frame_crest_height = maxf(
-                        frame_crest_height,
-                        float(mountain_probe[
-                            (frame_target_z + crest_dz) * 65
-                            + frame_target_x + crest_dx
-                        ])
-                    )
-            if frame_crest_height - frame_target_height > 150.0:
-                continue
-            for view_dz in range(-8, 9):
-                for view_dx in range(-8, 9):
-                    var frame_view_x := frame_target_x + view_dx
-                    var frame_view_z := frame_target_z + view_dz
-                    if (
-                        frame_view_x < 0 or frame_view_x >= 65
-                        or frame_view_z < 0 or frame_view_z >= 65
-                    ):
-                        continue
-                    var frame_distance_m := Vector2(
-                        float(view_dx) * 625.0,
-                        float(view_dz) * 625.0
-                    ).length()
-                    if frame_distance_m < 2_500.0 or frame_distance_m > 5_000.0:
-                        continue
-                    var frame_view_height := float(
-                        mountain_probe[frame_view_z * 65 + frame_view_x]
-                    )
-                    if frame_view_height < 0.0:
-                        continue
-                    var frame_rise_m := frame_target_height - frame_view_height
-                    if frame_rise_m < 450.0:
-                        continue
-                    var frame_angle := atan2(
-                        frame_rise_m,
-                        maxf(frame_distance_m, 1.0)
-                    )
-                    var frame_margin := float(scene.call(
-                        "_mountain_skyline_margin",
-                        mountain_probe,
-                        Vector2(float(frame_view_x), float(frame_view_z)),
-                        Vector2(float(frame_target_x), float(frame_target_z))
-                    ))
-                    if frame_margin < 0.0:
-                        continue
-                    var frame_score := (
-                        frame_margin
-                        + 0.80 * frame_angle
-                        + 0.00004 * frame_rise_m
-                    )
-                    if frame_score > best_frame_score:
-                        best_frame_score = frame_score
-                        best_frame_view_x = frame_view_x
-                        best_frame_view_z = frame_view_z
-                        best_frame_target_x = frame_target_x
-                        best_frame_target_z = frame_target_z
-                        best_frame_rise_m = frame_rise_m
-                        best_frame_angle = frame_angle
-                        best_frame_margin = frame_margin
-    print(
-        "WORLDSIM_CHEAP_FRAME_DIAG view=[%d,%d] target=[%d,%d] rise=%.1f angle=%.2f margin=%.2f"
-        % [
-            best_frame_view_x,
-            best_frame_view_z,
-            best_frame_target_x,
-            best_frame_target_z,
-            best_frame_rise_m,
-            rad_to_deg(best_frame_angle),
-            rad_to_deg(best_frame_margin),
-        ]
-    )
-
     var mountain_half := 32.0
     var view_x := roundi(
         (spawn_east_m - 5_573_000.0) / 625.0 + mountain_half
@@ -265,7 +177,7 @@ func _process(_delta: float) -> bool:
         Vector2(float(target_x), float(target_z))
     ))
 
-    if mountain_view_distance_m < 3_000.0 or mountain_view_distance_m > 7_100.0:
+    if mountain_view_distance_m < 2_500.0 or mountain_view_distance_m > 5_000.0:
         push_error(
             "Mountain viewpoint distance escaped the presentation range: %.2f km"
             % (mountain_view_distance_m / 1000.0)
@@ -279,14 +191,14 @@ func _process(_delta: float) -> bool:
         )
         quit(59)
         return true
-    if best_elevation_angle < deg_to_rad(8.0):
+    if best_elevation_angle < deg_to_rad(15.0):
         push_error(
             "Mountain viewpoint lacks visible angular relief: %.2f degrees"
             % rad_to_deg(best_elevation_angle)
         )
         quit(59)
         return true
-    if best_skyline_margin < 0.0:
+    if best_skyline_margin < deg_to_rad(0.5):
         push_error(
             "Fixed mountain summit is hidden by foreground skyline: margin=%.2f degrees"
             % rad_to_deg(best_skyline_margin)
