@@ -33,7 +33,10 @@ make stability
 ```
 
 The default matrix is 100 coupled years for seeds `0,42,999` at uniform
-levels `1,2`. Override it without changing the harness, for example:
+levels `2,3`. Level 2 is the minimum quantitative baseline: the initial
+level-1/2 probe showed up to 65.7% represented-land-area aliasing, so level 1
+remains useful for bounded engineering smoke but not convergence claims.
+Override the matrix without changing the harness, for example:
 
 ```bash
 STABILITY_YEARS=20 STABILITY_SEEDS=42 STABILITY_LEVELS=2,3 make stability
@@ -59,7 +62,7 @@ represented terrestrial area; total NPP/fauna carbon and their per-land-area
 densities are both retained so those effects are not conflated.
 
 Regular PR CI runs a short two-year coupled smoke for seeds `0,42,999` at
-levels `1,2` and uploads the complete matrix artifact. That verifies
+levels `2,3` and uploads the complete matrix artifact. That verifies
 orchestration, multi-seed execution and both resolutions, but it is **not**
 100-year release evidence. Release/model-calibration work should run the
 longer matrix explicitly and include a selected higher-resolution comparison.
@@ -106,10 +109,50 @@ conditions is violated at the end of the requested run:
 These thresholds catch the failures found in the September 2026 audit. They
 are not an Earth calibration, a proof of equilibrium or a promise that every
 seed and resolution is converged. The CTest smoke exercises ten coupled years
-at level 1 plus a one-year no-fauna acceptance regression. PR CI additionally
+at level 2 plus a one-year level-2 no-fauna acceptance regression. PR CI additionally
 runs the short matrix described above. Release evidence should still cover the
 full multi-seed matrix, at least one 100-year run, and a higher-resolution
 comparison.
+
+## Resolution-convergence correction — 2026-09-09
+
+The first level-2/3 matrix isolated a real climate discretization error rather
+than only geography aliasing. On seed 0, represented land area differed by just
+0.5%, yet after two coupled years vegetation density differed by 45.2% and NPP
+per land area by 49.6%. A separate flat 50/50 land/ocean climate fixture removed
+geology, hydrology, ecology, fire and fauna from the comparison and measured a
+3.521772 K mean absolute L2-versus-aggregated-L3 temperature difference.
+
+The cause was horizontal heat exchange: every neighboring climate-node pair
+used the same fixed relaxation fraction regardless of center distance or shared
+interface. Refining the climate reference grid therefore changed effective
+lateral heat diffusivity with cell size. Heat exchange now uses a conservative
+finite-volume conductance based on a fixed effective diffusivity, symmetric
+areal heat capacity, physical shared-interface length and center distance. The
+pair transfer remains antisymmetric and analytically bounded by pair
+equilibrium.
+
+The same flat fixture now measures 0.261492 K L2/L3 mean absolute temperature
+difference. The two-year three-seed coupled matrix changed as follows (maximum
+adjacent-level relative delta):
+
+- vegetation density: 45.2% -> 10.3%;
+- vegetation retention ratio: 41.2% -> 3.7%;
+- NPP per represented land area: 49.6% -> 11.7%;
+- fauna carbon ratio: 8.8% -> 1.7%;
+- mean land precipitation: 14.9% -> 8.2%.
+
+Represented land area still differs by up to 18.9% between levels 2 and 3 for
+the sampled seeds because coarse geography remains cell-center sampled. Total
+stocks/flows therefore retain some structural resolution dependence even when
+their land-normalized process rates are closer. Fire is thresholded and
+path-dependent: a zero-versus-small nonzero burn can still report a 100%
+relative delta, so its absolute burned fraction and longer-run statistics must
+be interpreted separately.
+
+These two-year results are regression evidence for the corrected transport
+operator, not proof of long-run convergence or calibration. The next release
+evidence remains the explicit 100-year multi-seed level-2/3 matrix.
 
 ## Failures found and model changes
 
