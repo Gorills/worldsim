@@ -2,8 +2,9 @@
 
 > Snow-albedo coupling v1 introduced snapshot epoch 21; fauna carbon accounting
 > introduced epoch 22, the grazing-timestep correction introduced epoch 23,
-> the magic forcing timebase correction introduced epoch 24, and the wildfire
-> burn-cap timebase correction raises the current combined-world epoch to 25.
+> the magic forcing timebase correction introduced epoch 24, the wildfire
+> burn-cap timebase correction introduced epoch 25, and the active-fire
+> persistence timebase correction raises the current combined-world epoch to 26.
 > The Soil-carbon-v1 execution record below remains historical evidence for
 > epoch 20.
 
