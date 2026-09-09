@@ -143,7 +143,7 @@ if(WORLDSIM_BUILD_TESTS)
       NAME worldsim_long_run_smoke
       COMMAND worldsim_long_run
         --years 10
-        --level 1
+        --level 2
         --mode coupled
         --assert-stable
         --output ${CMAKE_BINARY_DIR}/long-run-smoke.csv
@@ -152,7 +152,7 @@ if(WORLDSIM_BUILD_TESTS)
       NAME worldsim_long_run_no_fauna_smoke
       COMMAND worldsim_long_run
         --years 1
-        --level 1
+        --level 2
         --mode no-fauna
         --assert-stable
         --output ${CMAKE_BINARY_DIR}/long-run-no-fauna-smoke.csv
