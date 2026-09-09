@@ -64,6 +64,33 @@ The daily geology system advances these fields using simulation elapsed time. Co
 
 Crust thickness is area-averaged on coarsening; density is thickness-and-area weighted. Thus `sum(area * thickness * density)` is preserved across LOD even for heterogeneous crust. The oceanic branch also includes buoyancy relative to the 7 km / 2950 kg/m3 reference column, so stored crust thickness and density affect both oceanic and continental relief. Protected bedrock that cannot be eroded at the 3 km crust floor does not consume regolith availability.
 
+### Coarse coastal area fraction
+
+`geography.land_fraction` is physical terrestrial area, not a display mask:
+climate, hydrology, soil, vegetation, fire and fauna multiply cell area by this
+fraction. The former implementation derived the entire fraction from one
+flexed elevation at the active cell center. The level-2/3 stability comparison
+therefore measured up to 18.9% represented-land-area disagreement across the
+standard seed set even after the climate transport discretization was fixed.
+
+Cells below cube-sphere level 4 now integrate land fraction over the fixed
+level-4 descendants of the same hierarchy region. Each sample reconstructs
+the deterministic initial geology at that subcell and applies the active
+cell's bounded geological-state anomaly plus its flexural elevation offset.
+The support is therefore the same physical sample set for level 2 and level 3,
+while persistent crust/sediment/regolith state remains owned by the active
+simulation cells. Level 4 and finer cells retain the direct center-elevation
+path, so the normal level-4 production baseline pays no extra coastal
+quadrature cost.
+
+The area-weighted restriction follows the same conservation principle as
+AMReX volume-weighted average-down and ESMF destination-area conservative
+normalization: a coarse fractional coverage is an integral over represented
+area, not a reclassification of the entire coarse region from its center.
+
+- AMReX `average_down`: https://amrex-codes.github.io/amrex/doxygen/namespaceamrex.html
+- ESMF conservative destination-area normalization: https://earthsystemmodeling.org/docs/release/ESMF_8_0_1/ESMF_refdoc/node9.html
+
 Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
 
 - Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
