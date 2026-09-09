@@ -67,12 +67,17 @@ func _process(_delta: float) -> bool:
     if heading_uv.is_zero_approx():
         return _fail(18, "Minimap heading arrow has no direction")
 
-    # Five million meters catches regressions where fast travel writes the large
-    # coordinate directly into the single-precision scene tree.
-    player.position.x = 5000000.0 - float(viewer.get("origin_east_m"))
+    # A five-million-meter scene offset catches regressions in origin shifting.
+    # Compare against the exact float value that the stock single-precision scene
+    # tree can represent; a fractional logical origin cannot be losslessly folded
+    # into a large Vector3 component and reconstructed afterward.
+    player.position.x = 5000000.0
+    var expected_shifted_east_m := (
+        float(viewer.get("origin_east_m")) + float(player.position.x)
+    )
     viewer.call("_maybe_shift_origin")
     viewer.call("_refresh_streaming_center")
-    if absf(float(viewer.get("origin_east_m")) - 5000000.0) > 0.01:
+    if absf(float(viewer.get("origin_east_m")) - expected_shifted_east_m) > 0.01:
         return _fail(9, "Logical east coordinate was not preserved")
     if absf(player.position.x) > 0.01:
         return _fail(10, "Player was not recentered after long-distance travel")
