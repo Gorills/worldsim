@@ -509,17 +509,8 @@ int main(int argc, char** argv) {
                 final_vegetation_ratio>4.0 ||
                 final_collapsed_area_fraction>0.25 ||
                 final_worst_component_ratio<0.10 ||
-                (
-                    options.fauna &&
-                    (
-                        final_fauna_carbon_ratio<0.01 ||
-                        final_fauna_carbon_ratio>32.0
-                    )
-                ) ||
-                (
-                    !options.fauna &&
-                    final_fauna_carbon_ratio!=0.0
-                )
+                final_fauna_carbon_ratio<0.01 ||
+                final_fauna_carbon_ratio>32.0
             ) {
                 throw std::runtime_error(
                     "stability acceptance envelope violated"
