@@ -74,14 +74,16 @@ therefore measured up to 18.9% represented-land-area disagreement across the
 standard seed set even after the climate transport discretization was fixed.
 
 Cells below cube-sphere level 4 now integrate land fraction over the fixed
-level-4 descendants of the same hierarchy region. Each sample reconstructs
-the deterministic initial geology at that subcell and applies the active
-cell's bounded geological-state anomaly plus its flexural elevation offset.
-The support is therefore the same physical sample set for level 2 and level 3,
-while persistent crust/sediment/regolith state remains owned by the active
-simulation cells. Level 4 and finer cells retain the direct center-elevation
-path, so the normal level-4 production baseline pays no extra coastal
-quadrature cost.
+level-4 descendants of the same hierarchy region. Their deterministic initial
+surface elevations form a subgrid hypsometric profile; the current authoritative
+flexed center elevation shifts that profile vertically as geology evolves.
+The profile is deterministic from seed + hierarchy cell and is cached inside
+the geology system, so a daily coarse simulation does not regenerate tectonics
+and terrain samples. The support is therefore the same physical sample set for
+level 2 and level 3, while persistent crust/sediment/regolith state remains
+owned by the active simulation cells. Level 4 and finer cells retain the direct
+center-elevation path, so the normal level-4 production baseline pays no extra
+coastal quadrature cost.
 
 The area-weighted restriction follows the same conservation principle as
 AMReX volume-weighted average-down and ESMF destination-area conservative
@@ -90,6 +92,16 @@ area, not a reclassification of the entire coarse region from its center.
 
 - AMReX `average_down`: https://amrex-codes.github.io/amrex/doxygen/namespaceamrex.html
 - ESMF conservative destination-area normalization: https://earthsystemmodeling.org/docs/release/ESMF_8_0_1/ESMF_refdoc/node9.html
+
+Mixed coarse cells no longer use the sign of the center elevation as a
+land/ocean ownership switch. Terrestrial drainage propagates whenever a cell
+owns positive land area and stops at a pure-ocean receiver. Geomorphic
+transport applies terrestrial erosion to the represented land share and the
+reduced marine sediment path to the represented ocean share when the center is
+submerged; both debit the same conservative sediment/crust state before the
+downstream deposit is applied. The center elevation remains the routing/slope
+representative, so this is a fractional-area closure rather than a resolved
+coastline or separate land/ocean bed geometry.
 
 Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
 
