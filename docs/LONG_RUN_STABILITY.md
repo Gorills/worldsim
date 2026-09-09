@@ -17,6 +17,54 @@ the same seed, climate, hydrology, geology, soil and vegetation code; only the
 named disturbance/consumer systems are omitted. Registered fields and stores
 stay identical so CSV schemas remain directly comparable.
 
+## Stability matrix
+
+A single seed/resolution can catch catastrophic drift without showing whether
+the same coupled model behaves consistently across different generated worlds
+or simulation resolutions. The matrix driver runs the existing
+`worldsim_long_run` executable independently for every requested combination;
+it does not introduce a second simulation path:
+
+```bash
+make stability
+```
+
+The default matrix is 100 coupled years for seeds `0,42,999` at uniform
+levels `1,2`. Override it without changing the harness, for example:
+
+```bash
+STABILITY_YEARS=20 STABILITY_SEEDS=42 STABILITY_LEVELS=2,3 make stability
+STABILITY_YEARS=30 STABILITY_MODES=coupled,no-fire,no-fauna make stability
+```
+
+The output directory contains each original yearly case CSV and log plus:
+
+- `matrix.csv`: the final row of every successful case;
+- `resolution.csv`: adjacent-level absolute and symmetric relative deltas for
+  vegetation density/retention, PFT shares, litter, soil carbon, NPP, fire,
+  fauna, fertility, temperature and precipitation;
+- `summary.json`: exact matrix inputs, failures and maximum observed
+  adjacent-level deltas.
+
+The existing `--assert-stable` envelope remains the only acceptance gate.
+Cross-resolution deltas are intentionally diagnostic until a multi-seed
+baseline exists; imposing a percentage threshold before measuring the current
+model would turn an arbitrary number into a false convergence claim.
+
+Regular PR CI runs a short two-year coupled smoke for seeds `0,42,999` at
+levels `1,2` and uploads the complete matrix artifact. That verifies
+orchestration, multi-seed execution and both resolutions, but it is **not**
+100-year release evidence. Release/model-calibration work should run the
+longer matrix explicitly and include a selected higher-resolution comparison.
+
+This experiment-matrix approach follows the same validation direction as
+FireMIP2: standardized scenario definitions and consistent outputs are used to
+separate model behavior from one chosen realization. WorldSim's matrix is much
+smaller and is not an Earth-system intercomparison:
+
+- Hantson et al. (2026), *The Fire Modeling Intercomparison Project phase 2
+  (FireMIP2)*: https://gmd.copernicus.org/articles/19/3989/2026/
+
 ## What the harness reports
 
 Each row is one simulation year. It includes:
@@ -46,13 +94,17 @@ conditions is violated at the end of the requested run:
 - more than 25% of initially vegetated land falls below 10% of its own initial
   density;
 - any connected land component retains less than 10% of its initial biomass;
-- fauna carbon falls below 1% or exceeds 32 times its initialized stock.
+- when fauna is enabled, fauna carbon falls below 1% or exceeds 32 times its
+  initialized stock;
+- when fauna is disabled, any fauna carbon exists at all.
 
 These thresholds catch the failures found in the September 2026 audit. They
 are not an Earth calibration, a proof of equilibrium or a promise that every
 seed and resolution is converged. The CTest smoke exercises ten coupled years
-at level 1; release evidence should additionally cover multiple seeds, at least
-one 100-year run, and a higher-resolution comparison.
+at level 1 plus a one-year no-fauna acceptance regression. PR CI additionally
+runs the short matrix described above. Release evidence should still cover the
+full multi-seed matrix, at least one 100-year run, and a higher-resolution
+comparison.
 
 ## Failures found and model changes
 
