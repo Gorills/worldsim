@@ -30,7 +30,7 @@ constexpr double outgoing_b_w_m2_k=2.0;
 constexpr double horizontal_heat_diffusivity_m2_s=1.5e6;
 constexpr double land_ocean_exchange_days=30.0;
 constexpr double moisture_diffusivity_m2_s=2.0e5;
-constexpr std::uint8_t weather_reference_level=4;
+constexpr std::uint8_t climate_reference_level=4;
 constexpr double lapse_rate_k_m=0.0065;
 constexpr double heat_reference_temperature_k=273.15;
 constexpr double carbon_kg_per_ppm=2.12e12;
@@ -72,6 +72,41 @@ double daily_mean_insolation(double latitude, double day) {
         std::cos(latitude)*std::cos(declination)*std::sin(sunset_angle)
     );
     return std::max(0.0,result);
+}
+
+double latitude_base_temperature_k(
+    const CubeSphereTopology& topology,
+    CellId cell
+) {
+    if (cell.level()>=climate_reference_level) {
+        const double latitude=std::asin(std::clamp(
+            topology.center_unit(cell).z,-1.0,1.0
+        ));
+        return
+            301.0-
+            42.0*std::pow(std::abs(std::sin(latitude)),1.25);
+    }
+
+    double temperature_area=0.0;
+    double represented_area=0.0;
+    const auto accumulate=[&](auto&& self, CellId sample) -> void {
+        if (sample.level()>=climate_reference_level) {
+            const double area=topology.area_m2(sample);
+            temperature_area+=area*latitude_base_temperature_k(
+                topology,sample
+            );
+            represented_area+=area;
+            return;
+        }
+        for (CellId child:sample.children())
+            self(self,child);
+    };
+    accumulate(accumulate,cell);
+    if (!(represented_area>0.0))
+        throw std::runtime_error(
+            "climate latitude reference has zero represented area"
+        );
+    return temperature_area/represented_area;
 }
 
 double saturation_water_depth_m(double temperature_k) {
@@ -319,16 +354,13 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
             );
         const double area=world.topology().area_m2(cell);
         const double land_area=area*fields.get(cell,land);
-        const auto [latitude,longitude]=world.topology().lat_lon_rad(cell);
-        (void)longitude;
         const double elevation_m=fields.get(cell,elevation);
         const double reference_elevation_m=
             fields.get(cell,reference_elevation);
         const double lapse_elevation_m=
             fields.get(cell,lapse_elevation);
         const double base_temperature=std::clamp(
-            301.0-
-            42.0*std::pow(std::abs(std::sin(latitude)),1.25)-
+            latitude_base_temperature_k(world.topology(),cell)-
             std::max(0.0,lapse_elevation_m)*lapse_rate_k_m,
             175.0,
             335.0
@@ -403,7 +435,7 @@ void ClimateStore::rebuild_weather_support() {
         auto& support=weather_support_[i];
         double represented_area=0.0;
         const auto accumulate=[&](auto&& self, CellId sample) -> void {
-            if (sample.level()>=weather_reference_level) {
+            if (sample.level()>=climate_reference_level) {
                 const double area=topology.area_m2(sample);
                 support.push_back({sample,area});
                 represented_area+=area;
