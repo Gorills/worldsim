@@ -637,9 +637,8 @@ void ClimateStore::advance_moisture(double dt_days) {
             moisture_diffusivity_m2_s*
             (density_a-density_b)/link.distance_m*
             link.interface_m*seconds;
-        // Diagnostic-only: isolate local moisture/precipitation
-        // closures from lateral finite-volume transport.
-        const double transfer=0.0*(advective+diffusive);
+        // Diagnostic-only: isolate diffusive moisture transport.
+        const double transfer=diffusive;
         requested[k]=transfer;
         if (transfer>0.0)
             outgoing[link.a]+=transfer;
