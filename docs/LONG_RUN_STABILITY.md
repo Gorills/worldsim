@@ -184,6 +184,46 @@ coastal-area operators, not proof of long-run convergence or calibration. The
 next release evidence remains the explicit 100-year multi-seed level-2/3
 matrix.
 
+### Orographic reference correction — 2026-09-09
+
+The remaining precipitation-resolution diagnostic was traced to climate uplift
+forcing reading the representative cell-center elevation. Geography now
+provides a fixed-support, area-mean orographic reference below level 4 while
+retaining the existing evolving center elevation for geology and thermal lapse
+semantics. A regression-only commit demonstrated that the former L2/L3
+orographic references were not area-consistent.
+
+On the same two-year coupled seeds `0,42,999`, levels `2,3` matrix used for
+the coastal baseline, the final bounded correction changes maximum
+adjacent-level relative deltas as follows:
+
+- mean land precipitation: 21.33% -> **19.25%**;
+- mean total NPP: 26.01% -> **20.77%**;
+- NPP density: 26.39% -> **21.19%**;
+- mean fertility: 24.45% -> **16.62%**;
+- mineral-N density: 25.37% -> **23.78%**;
+- fauna carbon density: 7.65% -> **7.41%**;
+- litter density: 4.12% -> **3.53%**;
+- soil-carbon density: 4.38% -> **4.28%**.
+
+Not every diagnostic improves: vegetation density moves from 23.34% to 23.55%,
+vegetation retention from 16.12% to 16.35%, and mean land temperature from
+0.877% to 0.898%. Those changes are small relative to the primary improvement
+and are retained rather than changing unrelated thermal or ecology closures.
+
+Two broader variants were explicitly rejected during the slice. Reusing the
+area-mean orographic reference for thermal initialization improved temperature
+agreement but worsened NPP density to 29.78% and mineral-N density to 43.41%.
+Changing the capped linear orographic rainout law to a compositional
+exponential closure worsened precipitation to 25.75% and NPP density to
+34.77%. The merged design therefore changes only the verified
+center-sampled-orography failure mode.
+
+The standard PR CI still runs the two-year matrix, and CTest includes its
+existing ten-year level-2 coupled smoke. A fresh 100-year multi-seed L2/L3
+matrix was **not** run for this correction; it remains release evidence rather
+than a claim made by these PR diagnostics.
+
 ## Failures found and model changes
 
 The original initialization assigned up to a 4 kgC/m2 biomass scale before the
