@@ -98,6 +98,8 @@ func _ready() -> void:
     distant_terrain.call(
         "initialize",
         sim,
+        float(current_chunk.x) * CHUNK_SIZE_M,
+        float(current_chunk.y) * CHUNK_SIZE_M,
         origin_east_m,
         origin_north_m,
         origin_height_m
@@ -170,10 +172,15 @@ func _physics_process(delta: float) -> void:
 
     _maybe_shift_origin()
     _refresh_streaming_center()
+    var distant_center_east_m := origin_east_m + float(player.position.x)
+    var distant_center_north_m := origin_north_m - float(player.position.z)
+    if !survey_flight_enabled:
+        distant_center_east_m = float(current_chunk.x) * CHUNK_SIZE_M
+        distant_center_north_m = float(current_chunk.y) * CHUNK_SIZE_M
     distant_terrain.call(
         "set_view_state",
-        origin_east_m + float(player.position.x),
-        origin_north_m - float(player.position.z),
+        distant_center_east_m,
+        distant_center_north_m,
         origin_east_m,
         origin_north_m,
         origin_height_m,
@@ -688,9 +695,7 @@ func _create_chunk(coord: Vector2i) -> void:
         existing_mesh.mesh = _build_chunk_mesh(
             heights,
             surface,
-            normal_heights,
-            center_east_m,
-            center_north_m
+            normal_heights
         )
         existing_collision.shape = shape
         existing_chunk.position = _chunk_local_position(coord)
@@ -786,9 +791,7 @@ func _refresh_terrain_revision(
 func _build_chunk_mesh(
     heights: PackedFloat32Array,
     surface: Dictionary,
-    normal_heights: PackedFloat32Array,
-    center_east_m: float,
-    center_north_m: float
+    normal_heights: PackedFloat32Array
 ) -> ArrayMesh:
     var vertex_count := CHUNK_RESOLUTION * CHUNK_RESOLUTION
     var vertices := PackedVector3Array()
@@ -847,12 +850,6 @@ func _build_chunk_mesh(
                 north_h - south_h
             ).normalized()
 
-            var east_m := center_east_m + (
-                float(x) - 0.5 * float(CHUNK_RESOLUTION - 1)
-            ) * SAMPLE_SPACING_M
-            var north_m := center_north_m + (
-                float(source_z) - 0.5 * float(CHUNK_RESOLUTION - 1)
-            ) * SAMPLE_SPACING_M
             colors[i] = SurfaceVisual.terrain_color(
                 height,
                 float(grass[source_i]),
@@ -864,8 +861,7 @@ func _build_chunk_mesh(
                 float(fire_burned[source_i]),
                 Vector2(normals[i].x, normals[i].z).length()
                 / maxf(normals[i].y, 0.001),
-                SurfaceVisual.relief_light(normals[i]),
-                SurfaceVisual.terrain_detail(east_m, north_m)
+                SurfaceVisual.relief_light(normals[i])
             )
 
     # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is
