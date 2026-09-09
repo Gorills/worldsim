@@ -36,9 +36,45 @@ func _process(_delta: float) -> bool:
     var arrays := mesh.surface_get_arrays(0)
     var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
     var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+    var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
     if verts.size() < 3 or indices.size() < 6:
         push_error("Terrain mesh arrays are too small")
         quit(4)
+        return true
+    if colors.size() != verts.size():
+        push_error("Near terrain does not carry living-surface vertex colors")
+        quit(40)
+        return true
+
+    var viewer_sim := root.get_node("WorldViewer/Simulation") as WorldSimulationNode
+    var tree_values := viewer_sim.get_field_values("ecology.tree_carbon_kg")
+    if tree_values.is_empty():
+        push_error("Walker did not initialize the authoritative ecology modules")
+        quit(41)
+        return true
+
+    var surface_packet := viewer_sim.sample_surface_visual_patch(
+        0.0, 0.0, 8.0, 33
+    )
+    if !_surface_packet_valid(surface_packet, 33 * 33):
+        push_error("Living-surface visual packet is missing or invalid")
+        quit(42)
+        return true
+
+    var trees := terrain.get_node_or_null(
+        "Chunk_0_0/Trees"
+    ) as MultiMeshInstance3D
+    var shrubs := terrain.get_node_or_null(
+        "Chunk_0_0/Shrubs"
+    ) as MultiMeshInstance3D
+    if (
+        trees == null
+        or shrubs == null
+        or trees.multimesh == null
+        or shrubs.multimesh == null
+    ):
+        push_error("Near authoritative vegetation MultiMeshes were not created")
+        quit(43)
         return true
 
     var n0 := _face_normal(verts, indices, 0)
@@ -86,6 +122,14 @@ func _process(_delta: float) -> bool:
         quit(12)
         return true
 
+    var distant_arrays := (distant_terrain.mesh as ArrayMesh).surface_get_arrays(0)
+    var distant_verts: PackedVector3Array = distant_arrays[Mesh.ARRAY_VERTEX]
+    var distant_colors: PackedColorArray = distant_arrays[Mesh.ARRAY_COLOR]
+    if distant_colors.size() != distant_verts.size():
+        push_error("Distant terrain does not carry living-surface vertex colors")
+        quit(44)
+        return true
+
     var sea_arrays := (distant_ocean.mesh as ArrayMesh).surface_get_arrays(0)
     var sea_verts: PackedVector3Array = sea_arrays[Mesh.ARRAY_VERTEX]
     var distant_resolution := 33
@@ -119,12 +163,17 @@ func _process(_delta: float) -> bool:
     # terrain revision must replace both resources under the player immediately.
     var sim := root.get_node("WorldViewer/Simulation") as WorldSimulationNode
     var revision_before := sim.get_terrain_revision()
+    var surface_revision_before := sim.get_surface_revision()
     var mesh_before := mesh_instance.mesh
     var shape_before := collision.shape
     scene.call("_process", 0.25)
     if sim.get_terrain_revision() <= revision_before:
         push_error("Focused adaptive cover did not advance terrain revision")
         quit(8)
+        return true
+    if sim.get_surface_revision() <= surface_revision_before:
+        push_error("Focused adaptive cover did not advance surface revision")
+        quit(45)
         return true
     mesh = mesh_instance.mesh as ArrayMesh
     if mesh == mesh_before or collision.shape == shape_before:
@@ -141,6 +190,33 @@ func _process(_delta: float) -> bool:
         % [aabb.position.y, aabb.end.y, sea_drop_m]
     )
     quit(0)
+    return true
+
+func _surface_packet_valid(surface: Dictionary, expected: int) -> bool:
+    for key in [
+        "grass_density_kg_m2",
+        "shrub_density_kg_m2",
+        "tree_density_kg_m2",
+    ]:
+        var values: PackedFloat32Array = surface.get(key, PackedFloat32Array())
+        if values.size() != expected:
+            return false
+        for value in values:
+            if not is_finite(value) or value < 0.0:
+                return false
+
+    for key in [
+        "snow_cover_fraction",
+        "flooded_fraction",
+        "fire_active_fraction",
+        "fire_burned_fraction",
+    ]:
+        var values: PackedFloat32Array = surface.get(key, PackedFloat32Array())
+        if values.size() != expected:
+            return false
+        for value in values:
+            if not is_finite(value) or value < 0.0 or value > 1.0:
+                return false
     return true
 
 func _face_normal(verts: PackedVector3Array, indices: PackedInt32Array, start: int) -> Vector3:

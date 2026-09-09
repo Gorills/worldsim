@@ -256,8 +256,8 @@ A spatial bake is intentionally deferred. Plate ownership, crust affinity, and t
 
 ## Known boundaries
 
-- Walking terrain now follows reconstructed stateful geology, including its derived erosion/sediment effects at simulation-cell resolution; deterministic sub-cell detail remains presentation-only and is not eroded.
-- The walker has a visual sea-level surface but no wave simulation, shoreline foam, refraction, or water collision.
+- Walking terrain follows reconstructed stateful geology, while surface color and near decorative vegetation project authoritative climate/hydrology/ecology state through the separate [living-surface contract](LIVING_SURFACE.md); deterministic sub-cell terrain and vegetation placement remain presentation-only.
+- The walker has a visual sea-level surface but no river/lake surface geometry, wave simulation, shoreline foam, refraction, or water collision.
 - Distant terrain is spherical and extends to roughly 262 km from the viewer; it is visual-only and uses progressively coarser samples.
 - Terrain revision and synchronized local mesh/collision refresh remain immediate; distant terrain revision refresh is intentionally throttled and continuous fastest-tier survey-flight quality is not verified.
 - Frame-time and GPU performance on target player hardware are NOT VERIFIED by CI; CI can verify build, parsing, headless runtime, terrain API, collision scene resources, and core invariants only.

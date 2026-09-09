@@ -34,11 +34,18 @@ public:
     [[nodiscard]] godot::Vector3 projected_to_direction(double east_m, double north_m) const;
     [[nodiscard]] std::int64_t get_tick() const;
     [[nodiscard]] std::int64_t get_terrain_revision() const;
+    [[nodiscard]] std::int64_t get_surface_revision() const;
     [[nodiscard]] double sample_terrain_height(double east_m, double north_m) const;
     [[nodiscard]] godot::PackedFloat32Array sample_terrain_patch(double center_east_m,
                                                                   double center_north_m,
                                                                   double spacing_m,
                                                                   std::int64_t resolution) const;
+    [[nodiscard]] godot::Dictionary sample_surface_visual_patch(
+        double center_east_m,
+        double center_north_m,
+        double spacing_m,
+        std::int64_t resolution
+    ) const;
     [[nodiscard]] godot::Dictionary sample_terrain_visual_patch(
         double center_east_m,
         double center_north_m,
@@ -86,9 +93,11 @@ private:
     void ensure_sim() const;
     void report_error(const char* message) const;
     [[nodiscard]] std::uint64_t terrain_surface_fingerprint() const;
+    [[nodiscard]] std::uint64_t surface_visual_fingerprint() const;
     std::unique_ptr<worldsim::Simulation> sim_;
     std::unique_ptr<worldsim::TerrainGenerator> terrain_preview_;
     std::int64_t terrain_revision_{1};
+    std::int64_t surface_revision_{1};
     mutable std::unordered_map<std::uint64_t,double> terrain_preview_anchor_cache_;
     mutable std::string last_error_;
 };
