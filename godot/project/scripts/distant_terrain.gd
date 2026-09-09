@@ -7,7 +7,7 @@ const SurfaceVisual = preload("res://scripts/surface_visual.gd")
 # by the next-finer level. Fine outer rows morph onto the coarser grid so the
 # independently generated meshes meet without T-junction cracks.
 
-const LOD_RESOLUTION := 33
+const LOD_RESOLUTION := 65
 const LOD_SPACINGS_M := [
     64.0,
     128.0,
@@ -345,7 +345,8 @@ func _build_mesh(
                     float(snow[index]),
                     float(flooded[index]),
                     float(fire_active[index]),
-                    float(fire_burned[index])
+                    float(fire_burned[index]),
+                    1.0 - clampf(normals[index].y, 0.0, 1.0)
                 )
 
     var indices := PackedInt32Array()
