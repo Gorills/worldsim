@@ -201,11 +201,12 @@ double visual_orographic_relief_m(
         std::max(broad_relief,summit_relief)
     );
     const double local_relief=
-        520.0*
+        460.0*
         land_gate*
         mountain_strength*
         alpine_gate*
-        (1.25*detail_ridge-0.38+0.18*detail_source);
+        detail_ridge*
+        (0.78+0.22*(0.5+0.5*detail_source));
 
     return
         land_gate*
