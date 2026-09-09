@@ -1,5 +1,6 @@
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/planetary_nitrogen.hpp"
 #include "worldsim/soil_nitrogen.hpp"
 #include "worldsim/simulation.hpp"
 
@@ -500,7 +501,7 @@ void test_fauna_carbon_budget_and_starvation() {
     const SimulationConfig config{1,1,3600.0};
     auto simulation=make_default_simulation(5050,config);
     const double carbon_before=tracked_ecology_carbon(*simulation);
-    const double nitrogen_before=total_ecology_nitrogen_accounted_kg(
+    const double nitrogen_before=total_planet_nitrogen_kg(
         simulation->world(),simulation->fields()
     );
     const double respired_before=sum_field(
@@ -518,11 +519,11 @@ void test_fauna_carbon_budget_and_starvation() {
     );
     near(
         nitrogen_before,
-        total_ecology_nitrogen_accounted_kg(
+        total_planet_nitrogen_kg(
             simulation->world(),simulation->fields()
         ),
         3.0e-12,
-        "coupled fauna step did not close tracked nitrogen"
+        "coupled fauna step did not close planetary nitrogen"
     );
     check(
         sum_field(*simulation,"ecology.fauna_respired_carbon_kg")>
