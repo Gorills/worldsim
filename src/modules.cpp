@@ -119,15 +119,11 @@ constexpr std::uint8_t kCoastalReferenceLevel=4;
 GeologyState reconstruct_subcell_geology_state(
     const GeologyModel& geology,
     const GeologyState& current,
-    Vec3d cell_direction,
+    const GeologyState& initial_cell,
     double cell_area_m2,
     Vec3d sample_direction,
     double sample_area_m2
 ) {
-    const GeologyState initial_cell=geology.initial_state(
-        cell_direction,
-        cell_area_m2
-    );
     const GeologyState initial_sample=geology.initial_state(
         sample_direction,
         sample_area_m2
@@ -224,6 +220,10 @@ double coastal_land_fraction(
 
     const Vec3d cell_direction=world.topology().center_unit(cell);
     const double cell_area=world.topology().area_m2(cell);
+    const GeologyState initial_cell=geology.initial_state(
+        cell_direction,
+        cell_area
+    );
     std::vector<CellId> samples{cell};
     while (!samples.empty() &&
            samples.front().level()<kCoastalReferenceLevel) {
@@ -250,7 +250,7 @@ double coastal_land_fraction(
             reconstruct_subcell_geology_state(
                 geology,
                 state,
-                cell_direction,
+                initial_cell,
                 cell_area,
                 sample_direction,
                 sample_area
@@ -557,7 +557,7 @@ public:
                 // Terrestrial drainage terminates at the first submerged receiver.
                 // Marine sediment routing below may continue farther downslope, but
                 // river discharge is not propagated across the ocean floor.
-                if (fs.get(cell,ids_.elevation)<0.0) continue;
+                if (fs.get(cell,ids_.land_fraction)<=0.0) continue;
                 const auto route=routes.find(cell);
                 if (route==routes.end()) continue;
                 for (const FlowTarget& target:route->second.targets) {
@@ -585,18 +585,26 @@ public:
             const double source_elevation=fs.get(cell,ids_.elevation);
             GeologyState& state=states.at(cell);
 
+            const double land_fraction=std::clamp(
+                fs.get(cell,ids_.land_fraction),
+                0.0,
+                1.0
+            );
+            const double ocean_fraction=1.0-land_fraction;
             double transport_rate=0.0;
             double transported_mass=0.0;
-            if (source_elevation<0.0) {
-                // Once sediment crosses sea level, stop applying terrestrial
-                // runoff/hillslope incision. Existing marine sediment can
-                // still move downslope through a sediment-only submarine path.
+
+            // A coarse coastal cell may represent both exposed land and
+            // submerged area even when its center lies on only one side of
+            // sea level. Apply each reduced process to its represented area
+            // share instead of reclassifying the whole cell from the center.
+            if (ocean_fraction>0.0 && source_elevation<0.0) {
                 const double sediment_depth=
                     geology.sediment_column_thickness_m(
                         state.sediment_mass_kg,
                         area
                     );
-                transport_rate=
+                const double marine_rate=
                     geology.marine_sediment_transport_rate_m_per_year(
                         route->second.slope,
                         -source_elevation,
@@ -604,16 +612,20 @@ public:
                     );
                 const double transport_depth=std::min(
                     0.05,
-                    transport_rate*dt_years
-                );
-                transported_mass=geology.entrain_sediment(
+                    marine_rate*dt_years
+                )*ocean_fraction;
+                transported_mass+=geology.entrain_sediment(
                     state,
                     area,
                     transport_depth
                 );
-            } else {
+                transport_rate+=ocean_fraction*marine_rate;
+            }
+
+            if (land_fraction>0.0) {
+                const double land_area=area*land_fraction;
                 const double runoff_m_day=
-                    discharge[cell]/std::max(1.0,area);
+                    discharge[cell]/std::max(1.0,land_area);
                 const double fluvial_erosion_rate=
                     geology.erosion_rate_m_per_year(
                         route->second.slope,
@@ -625,18 +637,19 @@ public:
                         route->second.slope,
                         state.regolith_thickness_m
                     );
-                transport_rate=
+                const double terrestrial_rate=
                     fluvial_erosion_rate+hillslope_transport_rate;
                 const double erosion_depth=std::min(
                     0.05,
-                    transport_rate*dt_years
-                );
+                    terrestrial_rate*dt_years
+                )*land_fraction;
                 const ErosionBudget budget=geology.erode(
                     state,
                     area,
                     erosion_depth
                 );
-                transported_mass=budget.transported_mass_kg();
+                transported_mass+=budget.transported_mass_kg();
+                transport_rate+=land_fraction*terrestrial_rate;
             }
 
             for (const FlowTarget& target:route->second.targets)
