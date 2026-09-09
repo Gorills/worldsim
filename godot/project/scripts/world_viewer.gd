@@ -41,8 +41,12 @@ const MOUNTAIN_DEMO_CENTER_EAST_M := 5_573_000.0
 const MOUNTAIN_DEMO_CENTER_NORTH_M := -1_800_300.0
 const MOUNTAIN_DEMO_SAMPLE_SPACING_M := 625.0
 const MOUNTAIN_DEMO_RESOLUTION := 65
-const MOUNTAIN_VIEW_MIN_DISTANCE_M := 6_000.0
-const MOUNTAIN_VIEW_MAX_DISTANCE_M := 10_000.0
+const MOUNTAIN_VIEW_MIN_DISTANCE_M := 3_000.0
+const MOUNTAIN_VIEW_MAX_DISTANCE_M := 7_000.0
+const MOUNTAIN_VIEW_MIN_RISE_M := 500.0
+const MOUNTAIN_VIEW_MIN_ANGLE_RAD := deg_to_rad(5.0)
+const MOUNTAIN_VIEW_MIN_SKYLINE_MARGIN_RAD := deg_to_rad(1.0)
+const MOUNTAIN_SUMMIT_LOCAL_RADIUS := 3
 
 var terrain_material: StandardMaterial3D
 var tree_mesh: Mesh
@@ -415,42 +419,82 @@ func _select_mountain_demo_spawn() -> bool:
     if heights.size() != MOUNTAIN_DEMO_RESOLUTION * MOUNTAIN_DEMO_RESOLUTION:
         return false
 
-    var max_index := 0
-    for i in range(1, heights.size()):
-        if float(heights[i]) > float(heights[max_index]):
-            max_index = i
+    var patch_min_height_m := float(heights[0])
+    for value in heights:
+        patch_min_height_m = minf(patch_min_height_m, float(value))
 
-    var max_x := max_index % MOUNTAIN_DEMO_RESOLUTION
-    var max_z := floori(float(max_index) / float(MOUNTAIN_DEMO_RESOLUTION))
-    var view_index := -1
-    var best_skyline_margin := -INF
-    for i in range(heights.size()):
-        var x := i % MOUNTAIN_DEMO_RESOLUTION
-        var z := floori(float(i) / float(MOUNTAIN_DEMO_RESOLUTION))
-        var dx_m := float(x - max_x) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
-        var dz_m := float(z - max_z) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
-        var distance_m := Vector2(dx_m, dz_m).length()
-        var height_m := float(heights[i])
-        if (
-            distance_m < MOUNTAIN_VIEW_MIN_DISTANCE_M
-            or distance_m > MOUNTAIN_VIEW_MAX_DISTANCE_M
-            or height_m < 0.0
+    var summit_indices: Array[int] = []
+    for z in range(
+        MOUNTAIN_SUMMIT_LOCAL_RADIUS,
+        MOUNTAIN_DEMO_RESOLUTION - MOUNTAIN_SUMMIT_LOCAL_RADIUS
+    ):
+        for x in range(
+            MOUNTAIN_SUMMIT_LOCAL_RADIUS,
+            MOUNTAIN_DEMO_RESOLUTION - MOUNTAIN_SUMMIT_LOCAL_RADIUS
         ):
-            continue
-        var skyline_margin := _mountain_skyline_margin(
-            heights,
-            Vector2(float(x), float(z)),
-            Vector2(float(max_x), float(max_z))
+            var index := z * MOUNTAIN_DEMO_RESOLUTION + x
+            var height_m := float(heights[index])
+            if height_m < 0.0 or height_m - patch_min_height_m < 700.0:
+                continue
+            if _mountain_is_local_summit(heights, x, z):
+                summit_indices.push_back(index)
+    if summit_indices.is_empty():
+        return false
+
+    var view_index := -1
+    var target_index := -1
+    var best_score := -INF
+    for summit_index in summit_indices:
+        var target_x := summit_index % MOUNTAIN_DEMO_RESOLUTION
+        var target_z := floori(
+            float(summit_index) / float(MOUNTAIN_DEMO_RESOLUTION)
         )
-        if skyline_margin > best_skyline_margin:
-            best_skyline_margin = skyline_margin
-            view_index = i
-    if view_index < 0 or best_skyline_margin <= 0.0:
+        var target_height_m := float(heights[summit_index])
+        for i in range(heights.size()):
+            var x := i % MOUNTAIN_DEMO_RESOLUTION
+            var z := floori(float(i) / float(MOUNTAIN_DEMO_RESOLUTION))
+            var dx_m := float(x - target_x) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+            var dz_m := float(z - target_z) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+            var distance_m := Vector2(dx_m, dz_m).length()
+            var height_m := float(heights[i])
+            if (
+                distance_m < MOUNTAIN_VIEW_MIN_DISTANCE_M
+                or distance_m > MOUNTAIN_VIEW_MAX_DISTANCE_M
+                or height_m < 0.0
+            ):
+                continue
+
+            var rise_m := target_height_m - height_m
+            if rise_m < MOUNTAIN_VIEW_MIN_RISE_M:
+                continue
+            var elevation_angle := atan2(rise_m, maxf(distance_m, 1.0))
+            if elevation_angle < MOUNTAIN_VIEW_MIN_ANGLE_RAD:
+                continue
+
+            var skyline_margin := _mountain_skyline_margin(
+                heights,
+                Vector2(float(x), float(z)),
+                Vector2(float(target_x), float(target_z))
+            )
+            if skyline_margin < MOUNTAIN_VIEW_MIN_SKYLINE_MARGIN_RAD:
+                continue
+
+            # Visible summit separation is primary. Elevation angle breaks ties
+            # toward a larger mountain in the first-person frame.
+            var score := skyline_margin + 0.25 * elevation_angle
+            if score > best_score:
+                best_score = score
+                view_index = i
+                target_index = summit_index
+
+    if view_index < 0 or target_index < 0:
         return false
 
     var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
     var view_x := view_index % MOUNTAIN_DEMO_RESOLUTION
     var view_z := floori(float(view_index) / float(MOUNTAIN_DEMO_RESOLUTION))
+    var target_x := target_index % MOUNTAIN_DEMO_RESOLUTION
+    var target_z := floori(float(target_index) / float(MOUNTAIN_DEMO_RESOLUTION))
     origin_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
         float(view_x) - half
     ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
@@ -458,11 +502,33 @@ func _select_mountain_demo_spawn() -> bool:
         float(view_z) - half
     ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
     mountain_target_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
-        float(max_x) - half
+        float(target_x) - half
     ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
     mountain_target_north_m = MOUNTAIN_DEMO_CENTER_NORTH_M + (
-        float(max_z) - half
+        float(target_z) - half
     ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    return true
+
+func _mountain_is_local_summit(
+    heights: PackedFloat32Array,
+    x: int,
+    z: int
+) -> bool:
+    var center_height_m := float(
+        heights[z * MOUNTAIN_DEMO_RESOLUTION + x]
+    )
+    for dz in range(-MOUNTAIN_SUMMIT_LOCAL_RADIUS, MOUNTAIN_SUMMIT_LOCAL_RADIUS + 1):
+        for dx in range(-MOUNTAIN_SUMMIT_LOCAL_RADIUS, MOUNTAIN_SUMMIT_LOCAL_RADIUS + 1):
+            if dx == 0 and dz == 0:
+                continue
+            var neighbor_height_m := float(
+                heights[
+                    (z + dz) * MOUNTAIN_DEMO_RESOLUTION
+                    + x + dx
+                ]
+            )
+            if neighbor_height_m > center_height_m:
+                return false
     return true
 
 func _mountain_patch_height_bilinear(
