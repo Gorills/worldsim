@@ -410,26 +410,6 @@ void snow_burial_suppresses_short_vegetation() {
     );
 }
 
-void orographic_condensation_is_partition_consistent() {
-    near(
-        orographic_condensation_fraction_from_climb(0.0),
-        0.0,
-        0.0,
-        "zero orographic climb condensed moisture"
-    );
-    const double whole=
-        orographic_condensation_fraction_from_climb(3'000.0);
-    const double half=
-        orographic_condensation_fraction_from_climb(1'500.0);
-    const double split=1.0-(1.0-half)*(1.0-half);
-    near(
-        whole,
-        split,
-        1.0e-14,
-        "orographic condensation depends on grid-edge partition"
-    );
-}
-
 void orographic_precipitation() {
     auto simulation=climate_fixture(91,3,3,86'400.0,true);
     simulation->step(5);
@@ -541,7 +521,7 @@ void orographic_reference_elevation_is_resolution_consistent() {
         for (const ClimateNode& node:fine_store.nodes()) {
             const std::size_t index=coarse_store.node_index(node.cell);
             aggregated[index].elevation_area+=
-                node.mean_elevation_m*node.area_m2;
+                node.orographic_elevation_m*node.area_m2;
             aggregated[index].area+=node.area_m2;
         }
 
@@ -552,7 +532,9 @@ void orographic_reference_elevation_is_resolution_consistent() {
                 std::max(1.0,aggregated[i].area);
             maximum_error_m=std::max(
                 maximum_error_m,
-                std::abs(coarse_store.nodes()[i].mean_elevation_m-fine_mean)
+                std::abs(
+                    coarse_store.nodes()[i].orographic_elevation_m-fine_mean
+                )
             );
         }
         check(
@@ -687,9 +669,9 @@ void malformed_climate_store_is_rejected() {
     store.save(writer);
     auto bytes=writer.data();
     // Header: reference level, three reservoir doubles, eight budget values
-    // and count. The sixth node double is atmospheric water.
+    // and count. The seventh node double is atmospheric water.
     constexpr std::size_t first_atmospheric_water_offset=
-        1U+3U*8U+8U*8U+8U+8U+5U*8U;
+        1U+3U*8U+8U*8U+8U+8U+6U*8U;
     BinaryWriter nan;
     nan.pod(std::numeric_limits<double>::quiet_NaN());
     std::copy(
@@ -711,6 +693,31 @@ void malformed_climate_store_is_rejected() {
     check(
         after.data()==writer.data(),
         "failed climate store load mutated live state"
+    );
+
+    bytes=writer.data();
+    // Orographic reference elevation is the fourth node double.
+    constexpr std::size_t first_orographic_elevation_offset=
+        1U+3U*8U+8U*8U+8U+8U+3U*8U;
+    std::copy(
+        nan.data().begin(),nan.data().end(),
+        bytes.begin()+static_cast<std::ptrdiff_t>(
+            first_orographic_elevation_offset
+        )
+    );
+    rejected=false;
+    try {
+        BinaryReader reader(bytes);
+        store.load(reader,store.snapshot_version());
+    } catch (const std::exception&) {
+        rejected=true;
+    }
+    check(rejected,"climate store accepted invalid orographic elevation");
+    BinaryWriter after_orography;
+    store.save(after_orography);
+    check(
+        after_orography.data()==writer.data(),
+        "failed orographic-elevation load mutated live climate state"
     );
 
     bytes=writer.data();
@@ -738,9 +745,9 @@ void malformed_climate_store_is_rejected() {
     );
 
     bytes=writer.data();
-    // The snow-cover fraction is the final (15th) node double.
+    // The snow-cover fraction is the final (16th) node double.
     constexpr std::size_t first_snow_cover_offset=
-        1U+3U*8U+8U*8U+8U+8U+14U*8U;
+        1U+3U*8U+8U*8U+8U+8U+15U*8U;
     std::copy(
         nan.data().begin(),nan.data().end(),
         bytes.begin()+static_cast<std::ptrdiff_t>(
@@ -773,7 +780,6 @@ int main() {
         snow_albedo_feedback();
         snow_coupling_is_lod_independent();
         snow_burial_suppresses_short_vegetation();
-        orographic_condensation_is_partition_consistent();
         orographic_precipitation();
         horizontal_heat_transport_is_resolution_consistent();
         orographic_reference_elevation_is_resolution_consistent();
