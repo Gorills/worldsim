@@ -136,7 +136,10 @@ denser grid keeps 512 m sampling out to 16.384 km and 1,024 m sampling out to
 those ranges. Heights come from the same reconstructed terrain adapter used by
 walking collision. The regional baseline remains authoritative geology; the
 adapter then adds deterministic presentation-only orography below the adaptive
-cell scale in convergent dry-land belts. That visual/collision relief is bounded,
+cell scale in convergent dry-land belts. Broad 60/28/16 km ridge and summit fields
+place the mountain mass; an additional signed 7.5/3.2 km crag/gully field is gated
+by that mountain mass to cut local ribs and drainage-like gullies without adding
+generic roughness away from uplift belts. That visual/collision relief is bounded,
 sphere-native and never mutates simulation fields, conserved stores or snapshots.
 The adapter converts the sampled sphere directions to a player-local tangent
 frame in double precision before returning float scene coordinates, so the stock
@@ -285,6 +288,6 @@ A spatial bake is intentionally deferred. Plate ownership, crust affinity, and t
 
 - Walking terrain follows reconstructed stateful geology. Convergent dry-land belts additionally receive bounded deterministic sub-cell orographic peaks for traversable/rendered mountain relief; this does not change authoritative geography fields or snapshots. Surface color and near decorative vegetation project authoritative climate/hydrology/ecology state through the separate [living-surface contract](LIVING_SURFACE.md).
 - The walker has a visual sea-level surface but no river/lake surface geometry, wave simulation, shoreline foam, refraction, or water collision.
-- Distant terrain is spherical and extends to roughly 262 km from the viewer; it is visual-only and uses progressively coarser samples.
+- Distant terrain is spherical and extends to roughly 524 km from the viewer (beyond the 400 km camera far plane); it is visual-only and uses progressively coarser samples.
 - Terrain revision and synchronized local mesh/collision refresh remain immediate; distant terrain revision refresh is intentionally throttled and continuous fastest-tier survey-flight quality is not verified.
 - Frame-time and GPU performance on target player hardware are NOT VERIFIED by CI; CI can verify build, parsing, headless runtime, terrain API, collision scene resources, and core invariants only.
