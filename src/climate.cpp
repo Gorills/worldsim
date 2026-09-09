@@ -30,6 +30,7 @@ constexpr double outgoing_b_w_m2_k=2.0;
 constexpr double horizontal_heat_diffusivity_m2_s=1.5e6;
 constexpr double land_ocean_exchange_days=30.0;
 constexpr double moisture_diffusivity_m2_s=2.0e5;
+constexpr std::uint8_t weather_reference_level=4;
 constexpr double lapse_rate_k_m=0.0065;
 constexpr double heat_reference_temperature_k=273.15;
 constexpr double carbon_kg_per_ppm=2.12e12;
@@ -134,6 +135,37 @@ double capacity_weighted_temperature(const ClimateNode& node) {
         land_capacity*node.land_temperature_k+
         ocean_capacity*node.ocean_temperature_k
     )/capacity;
+}
+
+double stochastic_weather_unit(
+    const CubeSphereTopology& topology,
+    std::uint64_t seed,
+    Tick tick,
+    CellId cell
+) {
+    constexpr std::uint64_t stream=fnv1a64("climate.weather.v2");
+    if (cell.level()>=weather_reference_level)
+        return deterministic_unit(seed,stream,tick,cell.raw());
+
+    double weighted=0.0;
+    double represented_area=0.0;
+    const auto accumulate=[&](auto&& self, CellId sample) -> void {
+        if (sample.level()>=weather_reference_level) {
+            const double area=topology.area_m2(sample);
+            weighted+=
+                area*deterministic_unit(seed,stream,tick,sample.raw());
+            represented_area+=area;
+            return;
+        }
+        for (CellId child:sample.children())
+            self(self,child);
+    };
+    accumulate(accumulate,cell);
+    if (!(represented_area>0.0))
+        throw std::runtime_error(
+            "weather reference support has zero represented area"
+        );
+    return weighted/represented_area;
 }
 
 double shared_edge_length(
@@ -709,12 +741,13 @@ void ClimateStore::advance(
         node.precipitation_m3_day/=dt_days;
 
     const double weather_decay=std::exp(-dt_days/2.0);
+    const CubeSphereTopology topology;
     for (auto& node:nodes_) {
-        const double random=deterministic_unit(
+        const double random=stochastic_weather_unit(
+            topology,
             world.seed(),
-            fnv1a64("climate.weather.v2"),
             world.tick(),
-            node.cell.raw()
+            node.cell
         );
         node.weather_anomaly_k=
             node.weather_anomaly_k*weather_decay+
