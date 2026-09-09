@@ -83,7 +83,13 @@ private:
         Vec3d tangent_b_to_a;
     };
 
+    struct WeatherSample {
+        CellId cell;
+        double area_weight{};
+    };
+
     void rebuild_graph();
+    void rebuild_weather_support();
     void update_snow_cover(const WorldState&, const FieldRegistry&);
     void update_diagnostics(double day);
     void project_surface_exchange(WorldState&, const FieldRegistry&) const;
@@ -95,6 +101,7 @@ private:
     std::vector<ClimateNode> nodes_;
     std::map<CellId,std::size_t> index_;
     std::vector<Link> links_;
+    std::vector<std::vector<WeatherSample>> weather_support_;
     ClimateBudget budget_;
     double ocean_water_m3_{};
     double atmospheric_carbon_kg_{};

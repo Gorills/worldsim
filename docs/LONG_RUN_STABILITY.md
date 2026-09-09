@@ -224,6 +224,42 @@ existing ten-year level-2 coupled smoke. A fresh 100-year multi-seed L2/L3
 matrix was **not** run for this correction; it remains release evidence rather
 than a claim made by these PR diagnostics.
 
+### Stochastic weather support correction — 2026-09-09
+
+The next resolution invariant was stochastic rather than geometric. Weather
+anomalies were generated from `seed + tick + climate-cell id`, so level 2 and
+level 3 received unrelated random forcing over the same physical hierarchy
+regions. A regression-only head failed exactly the new area-aggregate weather
+test while all other CTest entries and Godot integration passed.
+
+The corrected operator keeps the existing level-4 random stream authoritative
+and area-averages those samples for levels 1-3. The fixed support is cached when
+the ClimateStore graph is built. Default level-4 simulations therefore retain
+the former random sequence, while coarse quantitative baselines no longer
+invent a separate weather realization solely because their climate reference
+level changed.
+
+On the same two-year coupled seeds `0,42,999`, levels `2,3` matrix, the
+change is deliberately modest:
+
+- mean land precipitation: 19.2486% -> **19.2057%**;
+- mean total NPP: 20.7725% -> **20.4789%**;
+- NPP density: 21.1858% -> **20.8937%**;
+- mineral-N density: 23.7750% -> **23.6755%**;
+- mean land temperature: 0.8984% -> **0.8956%**.
+
+Vegetation-density and litter-density maxima move by only +0.0016 and +0.0022
+percentage points respectively. The remaining roughly 19% precipitation delta
+therefore cannot be attributed primarily to independent stochastic weather.
+Smooth center-sampled climate operators such as prescribed wind/insolation and
+the nonlinear moisture/condensation discretization remain separate candidates;
+they should be isolated with controlled fixtures rather than tuned from the
+coupled matrix.
+
+The cached fixed-support implementation passed 15/15 CTest, the complete
+six-case stability smoke, visual/geology diagnostics and Godot 4.7 integration.
+A fresh 100-year multi-seed matrix is still not claimed by this slice.
+
 ## Failures found and model changes
 
 The original initialization assigned up to a 4 kgC/m2 biomass scale before the
