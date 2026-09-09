@@ -3,11 +3,18 @@ extends RefCounted
 const GRASS_SATURATION_KG_M2 := 1.8
 const SHRUB_SATURATION_KG_M2 := 3.5
 const TREE_SATURATION_KG_M2 := 9.0
+const RELIEF_LIGHT_DIRECTION := Vector3(-0.43, 0.76, -0.49)
 
 static func cover_from_density(density_kg_m2: float, saturation_kg_m2: float) -> float:
     if saturation_kg_m2 <= 0.0:
         return 0.0
     return clampf(density_kg_m2 / saturation_kg_m2, 0.0, 1.0)
+
+static func relief_light(normal: Vector3) -> float:
+    var n := normal.normalized()
+    var direct := maxf(n.dot(RELIEF_LIGHT_DIRECTION), 0.0)
+    var sky_fill := clampf(n.y, 0.0, 1.0)
+    return clampf(0.70 + 0.28 * direct + 0.08 * sky_fill, 0.70, 1.06)
 
 static func terrain_color(
     height_m: float,
@@ -18,7 +25,8 @@ static func terrain_color(
     flooded_fraction: float,
     fire_active_fraction: float,
     fire_burned_fraction: float,
-    slope: float = 0.0
+    slope: float = 0.0,
+    relief_light_factor: float = 1.0
 ) -> Color:
     if height_m < 0.0:
         var depth_t := clampf(-height_m / 5000.0, 0.0, 1.0)
@@ -28,8 +36,8 @@ static func terrain_color(
         )
 
     var elevation_t := clampf(height_m / 4500.0, 0.0, 1.0)
-    var color := Color(0.31, 0.27, 0.21).lerp(
-        Color(0.52, 0.50, 0.47),
+    var color := Color(0.24, 0.205, 0.15).lerp(
+        Color(0.35, 0.33, 0.30),
         elevation_t
     )
 
@@ -48,14 +56,14 @@ static func terrain_color(
     var vegetation_strength := clampf(
         0.55 * grass + 0.72 * shrub + 0.88 * tree,
         0.0,
-        0.85
+        0.78
     )
     if vegetation_strength > 0.0:
         var weight_sum := grass + shrub + tree
         var vegetation_color := (
-            Color(0.22, 0.42, 0.15) * grass
-            + Color(0.16, 0.31, 0.11) * shrub
-            + Color(0.08, 0.22, 0.07) * tree
+            Color(0.17, 0.31, 0.10) * grass
+            + Color(0.12, 0.24, 0.08) * shrub
+            + Color(0.065, 0.18, 0.055) * tree
         ) / maxf(weight_sum, 0.0001)
         color = color.lerp(vegetation_color, vegetation_strength)
 
@@ -70,8 +78,8 @@ static func terrain_color(
         0.82
     )
     if rock_strength > 0.0:
-        var rock_color := Color(0.20, 0.19, 0.18).lerp(
-            Color(0.52, 0.51, 0.50),
+        var rock_color := Color(0.16, 0.15, 0.14).lerp(
+            Color(0.34, 0.33, 0.32),
             elevation_t
         )
         color = color.lerp(rock_color, rock_strength)
@@ -92,4 +100,10 @@ static func terrain_color(
     if snow > 0.0:
         color = color.lerp(Color(0.91, 0.94, 0.96), 0.92 * snow)
 
-    return color
+    var light_factor := clampf(relief_light_factor, 0.70, 1.06)
+    return Color(
+        color.r * light_factor,
+        color.g * light_factor,
+        color.b * light_factor,
+        color.a
+    )
