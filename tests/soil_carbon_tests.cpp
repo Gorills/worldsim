@@ -327,7 +327,7 @@ void snapshot_epoch_and_continuation() {
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"soil-carbon snapshot header is too short");
     check(
-        snapshot[8]==std::byte{33},
+        snapshot[8]==std::byte{34},
         "unexpected current snapshot epoch"
     );
     auto restored=make_default_simulation(
