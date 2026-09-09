@@ -24,7 +24,10 @@ constexpr double snow_albedo=0.75;
 constexpr double snow_cover_swe_scale_m=0.02;
 constexpr double outgoing_a_w_m2=210.0;
 constexpr double outgoing_b_w_m2_k=2.0;
-constexpr double horizontal_heat_relaxation_days=20.0;
+// Effective lateral heat diffusivity. Calibrated to retain approximately the
+// former 20-day neighbor relaxation at the level-2 cell scale while making
+// transport strength depend on physical link geometry instead of cell count.
+constexpr double horizontal_heat_diffusivity_m2_s=1.5e6;
 constexpr double land_ocean_exchange_days=30.0;
 constexpr double moisture_diffusivity_m2_s=2.0e5;
 constexpr double lapse_rate_k_m=0.0065;
@@ -474,9 +477,6 @@ void ClimateStore::advance_energy(double dt_days) {
     }
 
     std::vector<double> energy_delta(nodes_.size());
-    const double relaxation=-std::expm1(
-        -dt_days/horizontal_heat_relaxation_days
-    );
     for (const Link& link:links_) {
         const double capacity_a=total_capacity(nodes_[link.a]);
         const double capacity_b=total_capacity(nodes_[link.b]);
@@ -485,6 +485,29 @@ void ClimateStore::advance_energy(double dt_days) {
             capacity_weighted_temperature(nodes_[link.a]);
         const double temperature_b=
             capacity_weighted_temperature(nodes_[link.b]);
+
+        // Finite-volume lateral diffusion. The old fixed neighbor-relaxation
+        // fraction made effective diffusivity scale with cell_size^2, so a
+        // refined climate grid transported less heat over the same physical
+        // distance. Use a symmetric areal heat capacity and the actual shared
+        // interface/distance instead. Solving each link's two-reservoir
+        // exchange analytically keeps the transfer conservative and bounded by
+        // the pair equilibrium even for longer climate steps.
+        const double areal_capacity_a=
+            capacity_a/nodes_[link.a].area_m2;
+        const double areal_capacity_b=
+            capacity_b/nodes_[link.b].area_m2;
+        const double areal_capacity=
+            2.0*areal_capacity_a*areal_capacity_b/
+            (areal_capacity_a+areal_capacity_b);
+        const double conductance_w_k=
+            horizontal_heat_diffusivity_m2_s*
+            areal_capacity*
+            link.interface_m/link.distance_m;
+        const double pair_rate_s=
+            conductance_w_k*(1.0/capacity_a+1.0/capacity_b);
+        const double relaxation=
+            -std::expm1(-pair_rate_s*seconds);
         const double equilibrium_transfer=(temperature_a-temperature_b)/(
             1.0/capacity_a+1.0/capacity_b
         );
