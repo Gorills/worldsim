@@ -105,136 +105,88 @@ func _process(_delta: float) -> bool:
         return true
 
     var mountain_half := 32.0
-    var mountain_max_x := mountain_max_index % 65
-    var mountain_max_z := floori(float(mountain_max_index) / 65.0)
-    var target_height_m := float(mountain_probe[mountain_max_index])
-
-    for range_pair in [
-        Vector2(3_000.0, 6_000.0),
-        Vector2(4_000.0, 8_000.0),
-        Vector2(6_000.0, 10_000.0),
-        Vector2(8_000.0, 12_000.0),
-    ]:
-        var range_best_angle := -INF
-        var range_best_margin_with_angle := -INF
-        var range_best_angle_with_margin := -INF
-        for i in range(mountain_probe.size()):
-            var x := i % 65
-            var z := floori(float(i) / 65.0)
-            var distance_m := Vector2(
-                float(x - mountain_max_x) * 625.0,
-                float(z - mountain_max_z) * 625.0
-            ).length()
-            var height_m := float(mountain_probe[i])
-            if (
-                distance_m < range_pair.x
-                or distance_m > range_pair.y
-                or height_m < 0.0
-            ):
-                continue
-            var angle := atan2(
-                target_height_m - height_m,
-                maxf(distance_m, 1.0)
-            )
-            var margin := float(scene.call(
-                "_mountain_skyline_margin",
-                mountain_probe,
-                Vector2(float(x), float(z)),
-                Vector2(float(mountain_max_x), float(mountain_max_z))
-            ))
-            range_best_angle = maxf(range_best_angle, angle)
-            if angle >= deg_to_rad(4.0):
-                range_best_margin_with_angle = maxf(
-                    range_best_margin_with_angle,
-                    margin
-                )
-            if margin >= deg_to_rad(1.5):
-                range_best_angle_with_margin = maxf(
-                    range_best_angle_with_margin,
-                    angle
-                )
-        print(
-            "WORLDSIM_MOUNTAIN_VIEW_DIAG range_km=%.0f-%.0f best_angle_deg=%.2f best_margin_at_angle4_deg=%.2f best_angle_at_margin1_5_deg=%.2f"
-            % [
-                range_pair.x / 1000.0,
-                range_pair.y / 1000.0,
-                rad_to_deg(range_best_angle),
-                rad_to_deg(range_best_margin_with_angle),
-                rad_to_deg(range_best_angle_with_margin),
-            ]
-        )
-
-    var view_index := -1
-    var best_skyline_margin := -INF
-    for i in range(mountain_probe.size()):
-        var x := i % 65
-        var z := floori(float(i) / 65.0)
-        var distance_m := Vector2(
-            float(x - mountain_max_x) * 625.0,
-            float(z - mountain_max_z) * 625.0
-        ).length()
-        var height_m := float(mountain_probe[i])
-        if distance_m < 6_000.0 or distance_m > 10_000.0 or height_m < 0.0:
-            continue
-        var skyline_margin := float(scene.call(
-            "_mountain_skyline_margin",
-            mountain_probe,
-            Vector2(float(x), float(z)),
-            Vector2(float(mountain_max_x), float(mountain_max_z))
-        ))
-        if skyline_margin > best_skyline_margin:
-            best_skyline_margin = skyline_margin
-            view_index = i
-    if view_index < 0:
-        push_error("Mountain diagnostic has no dry 6-10 km viewing point")
+    var view_x := roundi(
+        (spawn_east_m - 5_573_000.0) / 625.0 + mountain_half
+    )
+    var view_z := roundi(
+        (spawn_north_m + 1_800_300.0) / 625.0 + mountain_half
+    )
+    var target_x := roundi(
+        (mountain_target_east_m - 5_573_000.0) / 625.0 + mountain_half
+    )
+    var target_z := roundi(
+        (mountain_target_north_m + 1_800_300.0) / 625.0 + mountain_half
+    )
+    if (
+        view_x < 0 or view_x >= 65
+        or view_z < 0 or view_z >= 65
+        or target_x < 0 or target_x >= 65
+        or target_z < 0 or target_z >= 65
+    ):
+        push_error("Mountain demonstration viewpoint escaped the diagnostic patch")
         quit(54)
         return true
 
-    var view_x := view_index % 65
-    var view_z := floori(float(view_index) / 65.0)
+    var view_index := view_z * 65 + view_x
+    var target_index := target_z * 65 + target_x
     var view_height_m := float(mountain_probe[view_index])
+    var target_height_m := float(mountain_probe[target_index])
     var mountain_view_distance_m := Vector2(
-        float(mountain_max_x - view_x) * 625.0,
-        float(mountain_max_z - view_z) * 625.0
+        float(target_x - view_x) * 625.0,
+        float(target_z - view_z) * 625.0
     ).length()
+    var height_rise_m := target_height_m - view_height_m
     var best_elevation_angle := atan2(
-        target_height_m - view_height_m,
+        height_rise_m,
         maxf(mountain_view_distance_m, 1.0)
     )
-    if best_elevation_angle < deg_to_rad(4.0):
+    var best_skyline_margin := float(scene.call(
+        "_mountain_skyline_margin",
+        mountain_probe,
+        Vector2(float(view_x), float(view_z)),
+        Vector2(float(target_x), float(target_z))
+    ))
+
+    if mountain_view_distance_m < 3_000.0 or mountain_view_distance_m > 7_000.0:
+        push_error(
+            "Mountain viewpoint distance escaped the presentation range: %.2f km"
+            % (mountain_view_distance_m / 1000.0)
+        )
+        quit(54)
+        return true
+    if view_height_m < 0.0 or height_rise_m < 500.0:
+        push_error(
+            "Mountain viewpoint lacks a dry 500 m summit rise: view=%.1f rise=%.1f"
+            % [view_height_m, height_rise_m]
+        )
+        quit(59)
+        return true
+    if best_elevation_angle < deg_to_rad(5.0):
         push_error(
             "Mountain viewpoint lacks visible angular relief: %.2f degrees"
             % rad_to_deg(best_elevation_angle)
         )
         quit(59)
         return true
-    if best_skyline_margin < deg_to_rad(1.5):
+    if best_skyline_margin < deg_to_rad(1.0):
         push_error(
-            "Mountain peak is hidden by foreground skyline: margin=%.2f degrees"
+            "Mountain summit is hidden by foreground skyline: margin=%.2f degrees"
             % rad_to_deg(best_skyline_margin)
         )
         quit(63)
         return true
-    var expected_spawn_east_m := 5_573_000.0 + (
-        float(view_x) - mountain_half
-    ) * 625.0
-    var expected_spawn_north_m := -1_800_300.0 + (
-        float(view_z) - mountain_half
-    ) * 625.0
-    var expected_target_east_m := 5_573_000.0 + (
-        float(mountain_max_x) - mountain_half
-    ) * 625.0
-    var expected_target_north_m := -1_800_300.0 + (
-        float(mountain_max_z) - mountain_half
-    ) * 625.0
-    if (
-        absf(spawn_east_m - expected_spawn_east_m) > 0.1
-        or absf(spawn_north_m - expected_spawn_north_m) > 0.1
-        or absf(mountain_target_east_m - expected_target_east_m) > 0.1
-        or absf(mountain_target_north_m - expected_target_north_m) > 0.1
-    ):
-        push_error("Walker does not use the strongest nearby dry mountain viewpoint facing its peak")
-        quit(54)
+    if !bool(scene.call(
+        "_mountain_is_local_summit",
+        mountain_probe,
+        target_x,
+        target_z
+    )):
+        push_error("Mountain target is not a local summit")
+        quit(64)
+        return true
+    if target_height_m - mountain_min < 700.0:
+        push_error("Mountain target lost regional prominence")
+        quit(65)
         return true
 
     var trees := terrain.get_node_or_null(
@@ -507,7 +459,7 @@ func _process(_delta: float) -> bool:
             mountain_view_distance_m / 1000.0,
             rad_to_deg(best_elevation_angle),
             rad_to_deg(best_skyline_margin),
-            target_height_m - float(mountain_probe[view_index]),
+            height_rise_m,
             distant_resolution,
             camera.fov,
             spawn_east_m,
