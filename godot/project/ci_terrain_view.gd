@@ -108,6 +108,62 @@ func _process(_delta: float) -> bool:
     var mountain_max_x := mountain_max_index % 65
     var mountain_max_z := floori(float(mountain_max_index) / 65.0)
     var target_height_m := float(mountain_probe[mountain_max_index])
+
+    for range_pair in [
+        Vector2(3_000.0, 6_000.0),
+        Vector2(4_000.0, 8_000.0),
+        Vector2(6_000.0, 10_000.0),
+        Vector2(8_000.0, 12_000.0),
+    ]:
+        var range_best_angle := -INF
+        var range_best_margin_with_angle := -INF
+        var range_best_angle_with_margin := -INF
+        for i in range(mountain_probe.size()):
+            var x := i % 65
+            var z := floori(float(i) / 65.0)
+            var distance_m := Vector2(
+                float(x - mountain_max_x) * 625.0,
+                float(z - mountain_max_z) * 625.0
+            ).length()
+            var height_m := float(mountain_probe[i])
+            if (
+                distance_m < range_pair.x
+                or distance_m > range_pair.y
+                or height_m < 0.0
+            ):
+                continue
+            var angle := atan2(
+                target_height_m - height_m,
+                maxf(distance_m, 1.0)
+            )
+            var margin := float(scene.call(
+                "_mountain_skyline_margin",
+                mountain_probe,
+                Vector2(float(x), float(z)),
+                Vector2(float(mountain_max_x), float(mountain_max_z))
+            ))
+            range_best_angle = maxf(range_best_angle, angle)
+            if angle >= deg_to_rad(4.0):
+                range_best_margin_with_angle = maxf(
+                    range_best_margin_with_angle,
+                    margin
+                )
+            if margin >= deg_to_rad(1.5):
+                range_best_angle_with_margin = maxf(
+                    range_best_angle_with_margin,
+                    angle
+                )
+        print(
+            "WORLDSIM_MOUNTAIN_VIEW_DIAG range_km=%.0f-%.0f best_angle_deg=%.2f best_margin_at_angle4_deg=%.2f best_angle_at_margin1_5_deg=%.2f"
+            % [
+                range_pair.x / 1000.0,
+                range_pair.y / 1000.0,
+                rad_to_deg(range_best_angle),
+                rad_to_deg(range_best_margin_with_angle),
+                rad_to_deg(range_best_angle_with_margin),
+            ]
+        )
+
     var view_index := -1
     var best_skyline_margin := -INF
     for i in range(mountain_probe.size()):
