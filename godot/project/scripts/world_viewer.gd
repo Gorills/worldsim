@@ -41,8 +41,8 @@ const MOUNTAIN_DEMO_CENTER_EAST_M := 5_573_000.0
 const MOUNTAIN_DEMO_CENTER_NORTH_M := -1_800_300.0
 const MOUNTAIN_DEMO_SAMPLE_SPACING_M := 625.0
 const MOUNTAIN_DEMO_RESOLUTION := 65
-const MOUNTAIN_VIEW_MIN_DISTANCE_M := 8_000.0
-const MOUNTAIN_VIEW_MAX_DISTANCE_M := 12_000.0
+const MOUNTAIN_VIEW_MIN_DISTANCE_M := 6_000.0
+const MOUNTAIN_VIEW_MAX_DISTANCE_M := 10_000.0
 
 var terrain_material: StandardMaterial3D
 var tree_mesh: Mesh
@@ -422,7 +422,9 @@ func _select_mountain_demo_spawn() -> bool:
 
     var max_x := max_index % MOUNTAIN_DEMO_RESOLUTION
     var max_z := floori(float(max_index) / float(MOUNTAIN_DEMO_RESOLUTION))
+    var target_height_m := float(heights[max_index])
     var view_index := -1
+    var best_elevation_angle := -INF
     for i in range(heights.size()):
         var x := i % MOUNTAIN_DEMO_RESOLUTION
         var z := floori(float(i) / float(MOUNTAIN_DEMO_RESOLUTION))
@@ -436,9 +438,14 @@ func _select_mountain_demo_spawn() -> bool:
             or height_m < 0.0
         ):
             continue
-        if view_index < 0 or height_m < float(heights[view_index]):
+        var elevation_angle := atan2(
+            target_height_m - height_m,
+            maxf(distance_m, 1.0)
+        )
+        if elevation_angle > best_elevation_angle:
+            best_elevation_angle = elevation_angle
             view_index = i
-    if view_index < 0:
+    if view_index < 0 or best_elevation_angle <= 0.0:
         return false
 
     var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
