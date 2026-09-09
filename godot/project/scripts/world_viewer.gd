@@ -711,9 +711,7 @@ func _create_chunk(coord: Vector2i) -> void:
         mesh_instance.mesh = _build_chunk_mesh(
             heights,
             surface,
-            normal_heights,
-            center_east_m,
-            center_north_m
+            normal_heights
         )
         mesh_instance.material_override = terrain_material
         mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
