@@ -4,6 +4,13 @@ This file distinguishes what was actually executed from architectural intent.
 
 ## Current audit
 
+The 2026-09-09 coarse-coastal geography correction additionally passed the
+complete **15/15 CTest** suite, the six-case two-year L2/L3 stability smoke,
+the 64-seed geology plausibility benchmark, and Godot 4.7 Linux integration.
+Its regression-first test failed on the former cell-center coastal semantics;
+the corrected maximum represented-land-area delta across seeds 0, 42 and 999
+is 1.5108%, versus 18.8633% on the immediately preceding current-main smoke.
+
 The 2026-09-08 correctness audit, reproduced failures, design references and actual validation results are recorded in [AUDIT_2026-09-08.md](AUDIT_2026-09-08.md). Its dedicated CTest target is `worldsim_audit_tests`. Climate v2, Wildfire v1, Soil carbon v1 and snow-albedo coupling were implemented after that audit and are recorded in [CLIMATE.md](CLIMATE.md), [FIRE.md](FIRE.md), [SOIL_CARBON.md](SOIL_CARBON.md) and [SNOW_ALBEDO.md](SNOW_ALBEDO.md). Earlier dated records below are historical and do not describe current snapshot compatibility or terrain-viewer authority.
 
 ## Core test coverage
@@ -21,6 +28,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - snapshot continuation including future commands and pending events;
 - rejection of stale authoritative-world snapshot epochs (versions 2 through 33);
 - adaptive LOD stability;
+- focus-only geography refinement conserves represented coastal land area while allowing derived elevation detail;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
 - columnar field-store consistency;
