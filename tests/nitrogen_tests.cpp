@@ -1,5 +1,6 @@
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/planetary_nitrogen.hpp"
 #include "worldsim/soil_carbon.hpp"
 #include "worldsim/soil_nitrogen.hpp"
 
@@ -344,20 +345,93 @@ void vegetation_is_limited_by_finite_nitrogen() {
     );
 }
 
-void coupled_scheduler_closes_tracked_nitrogen() {
+void planetary_reservoirs_close_boundary_and_return_fluxes() {
     auto simulation=make_default_simulation(
         8203,SimulationConfig{1,1,3'600.0}
     );
-    const double before=total_ecology_nitrogen_accounted_kg(
+    const CellId cell=land_cell(*simulation);
+    auto& fields=simulation->world().stores().get<FieldStore>();
+    auto& store=simulation->world().stores().get<NitrogenStore>();
+
+    const FieldId mineral=field(
+        *simulation,"ecology.mineral_nitrogen_kg"
+    );
+    const FieldId litter=field(
+        *simulation,"ecology.litter_nitrogen_kg"
+    );
+    const FieldId fertility=field(
+        *simulation,"ecology.soil_fertility"
+    );
+    const double leached=std::min(10.0,0.10*fields.get(cell,mineral));
+    const double fire_loss=std::min(5.0,0.10*fields.get(cell,litter));
+    check(
+        leached>0.0 && fire_loss>0.0,
+        "planetary nitrogen fixture lacks terrestrial donor stocks"
+    );
+
+    const double before=total_planet_nitrogen_kg(
+        simulation->world(),simulation->fields()
+    );
+    const double ocean_before=store.ocean_dissolved_nitrogen_kg();
+    fields.add(cell,mineral,-leached);
+    fields.add(cell,litter,-fire_loss);
+    fields.set(cell,fertility,0.0);
+    store.advance(
+        simulation->world(),
+        simulation->fields(),
+        leached,
+        fire_loss,
+        1.0
+    );
+
+    near(
+        before,
+        total_planet_nitrogen_kg(
+            simulation->world(),simulation->fields()
+        ),
+        3.0e-15,
+        "planetary nitrogen reservoirs did not close boundary transfers"
+    );
+    check(
+        store.ocean_dissolved_nitrogen_kg()>ocean_before,
+        "terrestrial leaching did not enter the ocean nitrogen reservoir"
+    );
+    check(
+        store.atmospheric_reactive_nitrogen_kg()>0.0,
+        "fire nitrogen did not enter the reactive atmospheric reservoir"
+    );
+    check(
+        store.budget().fixed_from_atmosphere_kg>0.0,
+        "nitrogen scarcity did not trigger atmospheric fixation"
+    );
+    check(
+        store.budget().reactive_deposited_kg>0.0,
+        "reactive atmospheric nitrogen did not redeposit to land"
+    );
+    check(
+        sum_field(*simulation,"ecology.nitrogen_fixation_kg_day")>0.0,
+        "planetary nitrogen system did not expose fixation flux"
+    );
+    check(
+        sum_field(*simulation,"ecology.nitrogen_deposition_kg_day")>0.0,
+        "planetary nitrogen system did not expose deposition flux"
+    );
+}
+
+void coupled_scheduler_closes_planetary_nitrogen() {
+    auto simulation=make_default_simulation(
+        8205,SimulationConfig{1,1,3'600.0}
+    );
+    const double before=total_planet_nitrogen_kg(
         simulation->world(),simulation->fields()
     );
     simulation->step(24U*30U);
-    const double after=total_ecology_nitrogen_accounted_kg(
+    const double after=total_planet_nitrogen_kg(
         simulation->world(),simulation->fields()
     );
     near(
         before,after,2.0e-12,
-        "coupled daily scheduler drifted tracked nitrogen"
+        "coupled daily scheduler drifted planetary nitrogen"
     );
     check(
         sum_field(*simulation,"ecology.nitrogen_uptake_kg_day")>0.0,
@@ -368,6 +442,11 @@ void coupled_scheduler_closes_tracked_nitrogen() {
             *simulation,"ecology.nitrogen_mineralization_kg_day"
         )>0.0,
         "coupled ecology reported no nitrogen mineralization"
+    );
+    check(
+        simulation->world().stores().get<NitrogenStore>()
+            .budget().fixed_from_atmosphere_kg>0.0,
+        "coupled ecology performed no atmospheric nitrogen fixation"
     );
 }
 
@@ -426,7 +505,7 @@ void lod_and_snapshot_preserve_nitrogen() {
     simulation->step(48);
     const auto snapshot=simulation->save_snapshot();
     check(
-        snapshot.size()>11U && snapshot[8]==std::byte{31},
+        snapshot.size()>11U && snapshot[8]==std::byte{32},
         "unexpected nitrogen-cycle snapshot epoch"
     );
     auto restored=make_default_simulation(
@@ -454,7 +533,8 @@ int main() {
         fertility_tracks_finite_mineral_stock();
         soil_system_closes_and_reports_fluxes();
         vegetation_is_limited_by_finite_nitrogen();
-        coupled_scheduler_closes_tracked_nitrogen();
+        planetary_reservoirs_close_boundary_and_return_fluxes();
+        coupled_scheduler_closes_planetary_nitrogen();
         lod_and_snapshot_preserve_nitrogen();
         std::cout<<"nitrogen_tests: OK\n";
         return EXIT_SUCCESS;

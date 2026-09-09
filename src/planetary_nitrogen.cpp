@@ -92,14 +92,6 @@ void NitrogenStore::advance(
     atmospheric_n2_kg_+=denitrified;
     budget_.ocean_denitrified_to_atmosphere_kg+=denitrified;
 
-    const double deposition=
-        atmospheric_reactive_nitrogen_kg_*
-        relaxed_fraction(
-            dt_days,reactive_deposition_timescale_days
-        );
-    atmospheric_reactive_nitrogen_kg_-=deposition;
-    budget_.reactive_deposited_kg+=deposition;
-
     auto& fields=world.stores().get<FieldStore>();
     const FieldId land=required_field(r,"geography.land_fraction");
     const FieldId temperature=required_field(
@@ -145,6 +137,16 @@ void NitrogenStore::advance(
         fixation_request.push_back(request);
         requested_fixation+=request;
     }
+
+    const double deposition=
+        total_land_area>0.0
+            ? atmospheric_reactive_nitrogen_kg_*
+                relaxed_fraction(
+                    dt_days,reactive_deposition_timescale_days
+                )
+            : 0.0;
+    atmospheric_reactive_nitrogen_kg_-=deposition;
+    budget_.reactive_deposited_kg+=deposition;
 
     const double fixation_total=std::min(
         requested_fixation,
