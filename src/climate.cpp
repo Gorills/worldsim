@@ -301,6 +301,8 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
         throw std::runtime_error("climate reference level is not initialized");
     const auto& fields=world.stores().get<FieldStore>();
     const FieldId elevation=required_field(r,"geography.elevation_m");
+    const FieldId reference_elevation=
+        r.find("geography.reference_elevation_m").value_or(elevation);
     const FieldId land=required_field(r,"geography.land_fraction");
     nodes_.clear();
     nodes_.reserve(world.active_cells().size());
@@ -317,10 +319,12 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
         const auto [latitude,longitude]=world.topology().lat_lon_rad(cell);
         (void)longitude;
         const double elevation_m=fields.get(cell,elevation);
+        const double reference_elevation_m=
+            fields.get(cell,reference_elevation);
         const double base_temperature=std::clamp(
             301.0-
             42.0*std::pow(std::abs(std::sin(latitude)),1.25)-
-            std::max(0.0,elevation_m)*lapse_rate_k_m,
+            std::max(0.0,reference_elevation_m)*lapse_rate_k_m,
             175.0,
             335.0
         );
@@ -328,7 +332,7 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
         node.cell=cell;
         node.area_m2=area;
         node.land_area_m2=land_area;
-        node.mean_elevation_m=elevation_m;
+        node.mean_elevation_m=reference_elevation_m;
         node.land_temperature_k=base_temperature;
         node.ocean_temperature_k=base_temperature;
         node.atmospheric_water_m3=
