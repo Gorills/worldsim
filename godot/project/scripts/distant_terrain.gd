@@ -83,11 +83,7 @@ func initialize(
         var terrain_mesh := MeshInstance3D.new()
         terrain_mesh.name = "Terrain"
         terrain_mesh.material_override = terrain_material
-        terrain_mesh.cast_shadow = (
-            GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-            if level <= 3
-            else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-        )
+        terrain_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
         level_node.add_child(terrain_mesh)
 
         var ocean_mesh := MeshInstance3D.new()
@@ -351,7 +347,8 @@ func _build_mesh(
                     float(fire_active[index]),
                     float(fire_burned[index]),
                     Vector2(normals[index].x, normals[index].z).length()
-                    / maxf(normals[index].y, 0.001)
+                    / maxf(normals[index].y, 0.001),
+                    SurfaceVisual.relief_light(normals[index])
                 )
 
     var indices := PackedInt32Array()
