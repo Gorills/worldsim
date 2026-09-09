@@ -410,6 +410,26 @@ void snow_burial_suppresses_short_vegetation() {
     );
 }
 
+void orographic_condensation_is_partition_consistent() {
+    near(
+        orographic_condensation_fraction_from_climb(0.0),
+        0.0,
+        0.0,
+        "zero orographic climb condensed moisture"
+    );
+    const double whole=
+        orographic_condensation_fraction_from_climb(3'000.0);
+    const double half=
+        orographic_condensation_fraction_from_climb(1'500.0);
+    const double split=1.0-(1.0-half)*(1.0-half);
+    near(
+        whole,
+        split,
+        1.0e-14,
+        "orographic condensation depends on grid-edge partition"
+    );
+}
+
 void orographic_precipitation() {
     auto simulation=climate_fixture(91,3,3,86'400.0,true);
     simulation->step(5);
@@ -753,6 +773,7 @@ int main() {
         snow_albedo_feedback();
         snow_coupling_is_lod_independent();
         snow_burial_suppresses_short_vegetation();
+        orographic_condensation_is_partition_consistent();
         orographic_precipitation();
         horizontal_heat_transport_is_resolution_consistent();
         orographic_reference_elevation_is_resolution_consistent();
