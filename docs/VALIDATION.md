@@ -18,7 +18,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 21);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 28);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -61,8 +61,9 @@ field inspection and focused LOD-map refinement.
 magic composition, cumulative energy accounting, closed atmospheric/ocean/land
 water inventory, land/ocean seasonal amplitude and phase, orographic rainfall,
 snow-dependent shortwave absorption, LOD-invariant reference snow cover,
-snow burial of short vegetation, focus-LOD invariance, malformed snow state,
-and snapshot continuation. The
+snow burial of short vegetation, focus-LOD invariance, flat-surface L2/L3
+horizontal-heat-transport consistency, malformed snow state, and snapshot
+continuation. The
 `worldsim_climate_dump_smoke` CTest target exercises the inspectable ledger/map
 export path.
 
@@ -75,7 +76,7 @@ conservation and current snapshot round-trip.
 `worldsim_soil_carbon_tests` covers pure-model and integrated soil-carbon
 closure, bounded short/long steps, temperature/moisture response, staged pool
 transfers, dormant submerged stock, LOD conservation, aggregate reconstruction,
-and current epoch-25 snapshot round-trip and deterministic continuation.
+and current snapshot round-trip and deterministic continuation.
 
 The Soil carbon v1 integration run completed all **12/12** CTest targets.
 ASan, UBSan and float-cast-overflow instrumentation passed the dedicated suite,

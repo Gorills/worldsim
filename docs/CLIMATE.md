@@ -7,7 +7,8 @@
 > evidence for epoch 18. Fauna carbon accounting introduced epoch 22; the
 > grazing-timestep correction introduced epoch 23, the magic forcing
 > timebase correction introduced epoch 24, and the wildfire burn-cap
-> timebase correction introduced epoch 25, the active-fire persistence correction introduced epoch 26, and LOD-invariant field-command routing introduced epoch 27, and the parent-consistent LOD hysteresis correction raises the current combined-world epoch to 28.
+> timebase correction introduced epoch 25, the active-fire persistence correction introduced epoch 26, and LOD-invariant field-command routing introduced epoch 27, the parent-consistent LOD hysteresis correction raised the combined-world epoch to 28,
+and the resolution-aware lateral heat-transport correction raises the current epoch to 29.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 
@@ -91,9 +92,13 @@ C dT/dt = absorbed shortwave - linearized outgoing longwave
 ```
 
 The reduced constants (effective albedo, linear outgoing-longwave response,
-land heat capacity and mixed-layer depth) are engineering parameters. Pairwise
-heat exchange is simultaneous, relaxes toward the two-reservoir equilibrium and
-is exactly antisymmetric before floating-point roundoff. Radiation is an
+land heat capacity, mixed-layer depth and effective lateral heat diffusivity)
+are engineering parameters. Pairwise heat exchange uses a finite-volume
+conductance from the shared-interface length, center distance and symmetric
+areal heat capacity. Each link solves its two-reservoir relaxation analytically,
+so exchange is bounded by pair equilibrium and exactly antisymmetric before
+floating-point roundoff. This replaces the former fixed per-neighbor relaxation
+fraction, whose effective diffusivity changed with cell size. Radiation is an
 external source/sink recorded in a cumulative energy ledger; horizontal
 transport is internal and must not change total stored heat.
 
@@ -182,6 +187,31 @@ The slice is complete only when executable tests demonstrate:
 Broad climatology diagnostics are warnings until explicit calibration targets
 and reference datasets are adopted. Passing conservation and process tests is
 not a claim of modern-Earth accuracy.
+
+## Resolution-aware heat transport — 2026-09-09
+
+The stability matrix added after Climate v2 exposed base-resolution sensitivity
+that focus-LOD invariance tests could not detect: those tests correctly prove
+that refining the active cover does not change the fixed climate reference
+grid, but they do not compare simulations constructed with different reference
+levels.
+
+A flat 50/50 land/ocean fixture run for two years measured a 3.521772 K mean
+absolute temperature difference between level 2 and area-aggregated level 3
+under the former fixed neighbor-relaxation operator. After switching lateral
+heat exchange to geometry-scaled finite-volume conductance, the same deterministic
+fixture measures 0.261492 K. The regression gate is 0.35 K; the pre-fix operator
+therefore fails it by an order of magnitude.
+
+On the full coupled seeds 0, 42 and 999, the two-year L2/L3 maximum NPP-density
+delta fell from 49.6% to 11.7%, vegetation-density delta from 45.2% to 10.3%,
+and fauna-carbon-ratio delta from 8.8% to 1.7%. Geography still contributes up
+to 18.9% represented-land-area difference for these seeds, so this correction
+does not claim complete spatial convergence.
+
+Because the transport operator changes future authoritative state from the same
+snapshot bytes, the combined-world snapshot compatibility epoch advances from
+28 to 29 even though the ClimateStore binary layout remains version 2.
 
 ## Executed evidence — 2026-09-08
 

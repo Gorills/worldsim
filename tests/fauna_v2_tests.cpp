@@ -575,7 +575,7 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{28},
+        snapshot[8]==std::byte{29},
         "unexpected authoritative snapshot epoch"
     );
 

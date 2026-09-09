@@ -71,7 +71,7 @@ make stability
 ```
 
 This runs the existing long-run simulation over the default coupled matrix
-(seeds `0,42,999`, levels `1,2`, 100 years) and writes per-case histories,
+(seeds `0,42,999`, levels `2,3`, 100 years) and writes per-case histories,
 a final-case matrix, adjacent-resolution deltas and a JSON summary to
 `out/stability-matrix`. The Python 3 driver only orchestrates the existing C++
 `worldsim_long_run` executable; model behavior and acceptance remain in the
