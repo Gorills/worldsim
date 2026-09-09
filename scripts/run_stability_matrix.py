@@ -38,7 +38,11 @@ COMPARISON_METRICS = (
     "mean_land_precip_mm_day",
     "atmospheric_co2_ppm",
     "planet_carbon_rel_residual",
-    "tracked_nitrogen_rel_residual",
+    "terrestrial_nitrogen_ratio_initial",
+    "atmospheric_n2_ratio_initial",
+    "ocean_dissolved_nitrogen_PgN",
+    "nitrogen_fixation_PgN",
+    "planet_nitrogen_rel_residual",
 )
 
 VALID_MODES = (
