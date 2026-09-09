@@ -175,13 +175,46 @@ double visual_orographic_relief_m(
     const double summit_relief=
         summit_profile*(0.35+0.65*ridge);
 
+    // Restore kilometre-scale ribs and gullies with one single-octave value
+    // noise lookup instead of the rejected multi-FBM crag/gully/spur stack.
+    // The expensive broad 60/28/16 km fields above already place the mountain;
+    // this term only breaks smooth uplifted faces into local alpine structure.
+    const double detail_frequency=kEarthRadiusM/6'500.0;
+    const double detail_source=value_noise3(
+        seed,
+        fnv1a64("terrain.visual.orography.detail"),
+        p.x*detail_frequency,
+        p.y*detail_frequency,
+        p.z*detail_frequency
+    );
+    const double detail_ridge=std::pow(
+        std::clamp(
+            (1.0-std::abs(detail_source)-0.08)/0.92,
+            0.0,
+            1.0
+        ),
+        4.0
+    );
+    const double alpine_gate=smoothstep(
+        0.12,
+        0.58,
+        std::max(broad_relief,summit_relief)
+    );
+    const double local_relief=
+        520.0*
+        land_gate*
+        mountain_strength*
+        alpine_gate*
+        (1.25*detail_ridge-0.38+0.18*detail_source);
+
     return
         land_gate*
         mountain_strength*
         (
             1'800.0*broad_relief+
             2'050.0*summit_relief
-        );
+        )+
+        local_relief;
 }
 
 } // namespace
