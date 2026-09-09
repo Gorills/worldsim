@@ -18,7 +18,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 28);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 30);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
@@ -26,7 +26,7 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 - cohort spatial index consistency and count-conserving indexed redistribution;
 - non-negative/finiteness ecology invariants;
 - regolith-aware soil-water storage: thin substrate produces less root-zone storage and more runoff than deep regolith under the same forcing;
-- living-soil coupling: fertility limits NPP, vegetation turnover creates litter, and litter-rich soil feeds back toward higher reduced fertility;
+- nitrogen-limited living soil: carbon decomposition mineralizes tracked organic N, finite mineral N limits plant production, turnover recycles plant N, and runoff enters an explicit leaching ledger;
 - adaptive-cover adjacency: coarse/fine neighbor regions resolve to deterministic active leaves with area-normalized weights that close to one;
 - flora v1: PFT carbon sums to aggregate vegetation, sterile worlds remain sterile without propagules, neighbor recruitment colonizes suitable empty habitat, and woody canopy suppresses grass under otherwise matched conditions;
 - fauna v3: food-paid growth, trophic biomass bounds, herbivore forage
@@ -118,7 +118,16 @@ Reference mismatches are emitted as warnings rather than CTest failures because 
 
 ## Ecology validation scope
 
-The default ecology now has persistent fast/slow soil carbon, a living-soil substrate, propagule-limited grass/shrub/tree functional types, and reduced habitat-selected fauna redistribution across the shared adaptive-cover adjacency contract. Executable contracts and explicit limitations are documented in `docs/ECOLOGY_VALIDATION.md` and `docs/SOIL_CARBON.md`. The fertility field remains an index rather than a claimed nitrogen/phosphorus mass budget, and fauna movement is population redistribution rather than an individual trajectory model.
+The default ecology now has persistent fast/slow soil carbon, tracked
+litter/soil/mineral/vegetation nitrogen with finite-N plant limitation,
+propagule-limited grass/shrub/tree functional types, and reduced
+habitat-selected fauna redistribution across the shared adaptive-cover adjacency
+contract. Executable contracts and explicit limitations are documented in
+`docs/ECOLOGY_VALIDATION.md`, `docs/SOIL_CARBON.md` and
+`docs/NITROGEN_CYCLE.md`. Fertility is a diagnostic of mineral-N density;
+phosphorus, atmospheric N chemistry and persistent fauna N are not modeled.
+Fauna movement remains population redistribution rather than an individual
+trajectory model.
 
 
 ## Pre-fix geology plausibility baseline — 2026-09-08

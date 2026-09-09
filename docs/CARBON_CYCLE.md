@@ -98,8 +98,10 @@ snapshot continuation.
 
 Snapshot epoch 30 is the first combined-world format with authoritative carbon
 reservoirs. `ClimateStore` state version 3 serializes both carbon reservoirs
-and the cumulative CO2 forcing-energy ledger. Older combined snapshots are
-rejected until an explicit migration exists.
+and the cumulative CO2 forcing-energy ledger. Nitrogen cycle v1 later advances
+the combined-world epoch to 31 without changing the ClimateStore v3 binary
+layout. Older combined snapshots are rejected until an explicit migration
+exists.
 
 ## Explicit limits
 
@@ -111,7 +113,9 @@ Not modeled in v1:
 - explicit surface/deep ocean boxes or circulation;
 - marine primary production/export;
 - land-use emissions or a human emissions driver;
-- nitrogen/phosphorus coupling;
+- phosphorus coupling; the current ecology has a separate reduced terrestrial
+  nitrogen cycle, but this carbon store does not model atmospheric nitrogen or
+  flexible C:N biogeochemistry;
 - Earth-calibrated sink fractions or transient climate response.
 
 Those are future bounded slices. The current contract is conservation first:

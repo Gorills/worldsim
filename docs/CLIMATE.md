@@ -8,7 +8,7 @@
 > grazing-timestep correction introduced epoch 23, the magic forcing
 > timebase correction introduced epoch 24, and the wildfire burn-cap
 > timebase correction introduced epoch 25, the active-fire persistence correction introduced epoch 26, and LOD-invariant field-command routing introduced epoch 27, the parent-consistent LOD hysteresis correction raised the combined-world epoch to 28,
-the resolution-aware lateral heat-transport correction raised it to 29, and Carbon cycle v1 raises the current combined-world epoch to 30. Carbon-cycle state and assumptions are documented separately in `CARBON_CYCLE.md`.
+the resolution-aware lateral heat-transport correction raised it to 29, Carbon cycle v1 raised it to 30, and Nitrogen cycle v1 raises the current combined-world epoch to 31. Carbon-cycle state and assumptions are documented separately in `CARBON_CYCLE.md`; nitrogen state is documented in `NITROGEN_CYCLE.md`.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 
@@ -215,7 +215,9 @@ Because the transport operator changes future authoritative state from the same
 snapshot bytes, the combined-world snapshot compatibility epoch advanced from
 28 to 29 even though that correction kept the ClimateStore binary layout at
 version 2. Carbon cycle v1 subsequently changes the store layout to version 3
-and advances the combined-world epoch to 30.
+and advances the combined-world epoch to 30. Nitrogen cycle v1 subsequently
+changes the field schema and authoritative ecology continuation state, raising
+the current combined-world epoch to 31.
 
 ## Executed evidence — 2026-09-08
 
