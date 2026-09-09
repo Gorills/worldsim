@@ -6,12 +6,18 @@
 #   make lab     # build GDExtension, then launch the full-world simulation lab
 #   make visual  # build core and write the five-seed C++ visual diagnostic suite
 #   make climate # build core and run the two-year climate diagnostic
-#   make longrun # build core and run the 100-year stability diagnostic
+#   make longrun # build core and run the 100-year seed-42 stability diagnostic
+#   make stability # run the multi-seed/resolution stability matrix
 
-.PHONY: help core godot run run-scene map lab visual geology climate longrun test
+.PHONY: help core godot run run-scene map lab visual geology climate longrun stability test
 
 GODOT ?= godot
 export GODOT
+
+STABILITY_YEARS ?= 100
+STABILITY_SEEDS ?= 0,42,999
+STABILITY_LEVELS ?= 1,2
+STABILITY_MODES ?= coupled
 
 help:
 	@printf '%s\n' \
@@ -24,7 +30,8 @@ help:
 		'make visual     build core and generate C++ visual diagnostic suite' \
 		'make geology    build core and run geology plausibility benchmark' \
 		'make climate    build core and run two-year climate diagnostics' \
-		'make longrun    build core and run a 100-year level-2 stability diagnostic' \
+		'make longrun    build core and run a 100-year level-2 seed-42 diagnostic' \
+		'make stability  build core and run the multi-seed/resolution stability matrix' \
 		'make test       build kernel and run ctest --preset dev' \
 		'' \
 		'Override the editor with GODOT=/path/to/godot'
@@ -57,6 +64,16 @@ climate: core
 
 longrun: core
 	./out/dev/worldsim_long_run --years 100 --level 2 --seed 42 --output out/long-run/seed42-coupled.csv
+
+stability: core
+	python3 scripts/run_stability_matrix.py \
+		--binary ./out/dev/worldsim_long_run \
+		--years $(STABILITY_YEARS) \
+		--seeds $(STABILITY_SEEDS) \
+		--levels $(STABILITY_LEVELS) \
+		--modes $(STABILITY_MODES) \
+		--assert-stable \
+		--output out/stability-matrix
 
 test:
 	cmake --preset dev
