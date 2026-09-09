@@ -263,8 +263,6 @@ func _morph_outer_transition(
     coarse_positions: PackedVector3Array
 ) -> PackedVector3Array:
     var center := floori(float(LOD_RESOLUTION - 1) * 0.5)
-    var half_cells := float(LOD_RESOLUTION - 1) * 0.5
-    var outer_half_m := half_cells * spacing_m
     for z in range(LOD_RESOLUTION):
         for x in range(LOD_RESOLUTION):
             var ring := maxi(absi(x - center), absi(z - center))
@@ -331,6 +329,8 @@ func _build_mesh(
         fire_active = surface["fire_active_fraction"]
         fire_burned = surface["fire_burned_fraction"]
 
+    var half_cells := float(LOD_RESOLUTION - 1) * 0.5
+    var outer_half_m := half_cells * spacing_m
     for z in range(LOD_RESOLUTION):
         for x in range(LOD_RESOLUTION):
             var index := z * LOD_RESOLUTION + x
