@@ -238,6 +238,16 @@ void controlled_fire_closes_carbon() {
     );
     near(
         fields.get(
+            cell,field(*simulation,"ecology.fire_nitrogen_emission_kg_day")
+        ),
+        fields.get(
+            cell,field(*simulation,"ecology.fire_emitted_nitrogen_kg")
+        ),
+        1.0e-15,
+        "fire nitrogen rate disagrees with its one-day cumulative ledger"
+    );
+    near(
+        fields.get(
             cell,field(*simulation,"ecology.vegetation_carbon_kg")
         ),
         fields.get(

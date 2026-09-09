@@ -203,6 +203,9 @@ void soil_system_closes_and_reports_fluxes() {
     const double before=total_ecology_nitrogen_accounted_kg(
         simulation->world(),simulation->fields()
     );
+    const double leached_before=fields.get(
+        cell,field(*simulation,"ecology.nitrogen_leached_kg")
+    );
     run_system(*simulation,"ecology.soil",1.0);
     const double after=total_ecology_nitrogen_accounted_kg(
         simulation->world(),simulation->fields()
@@ -218,8 +221,18 @@ void soil_system_closes_and_reports_fluxes() {
     check(
         fields.get(
             cell,field(*simulation,"ecology.nitrogen_leached_kg")
-        )>0.0,
+        )>leached_before,
         "soil drainage did not enter the nitrogen leaching ledger"
+    );
+    near(
+        fields.get(
+            cell,field(*simulation,"ecology.nitrogen_leaching_kg_day")
+        ),
+        fields.get(
+            cell,field(*simulation,"ecology.nitrogen_leached_kg")
+        )-leached_before,
+        2.0e-15,
+        "soil nitrogen leaching rate disagrees with its one-day ledger delta"
     );
 }
 
