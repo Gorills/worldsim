@@ -18,7 +18,7 @@ sky_material = SubResource("ProceduralSkyMaterial_world")
 background_mode = 2
 sky = SubResource("Sky_world")
 ambient_light_source = 3
-ambient_light_energy = 0.38
+ambient_light_energy = 0.34
 fog_enabled = true
 fog_mode = 1
 fog_light_color = Color(0.64, 0.71, 0.81, 1)
@@ -75,12 +75,8 @@ environment = SubResource("Environment_world")
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 rotation_degrees = Vector3(-48, -32, 0)
 light_color = Color(1, 0.93, 0.84, 1)
-light_energy = 1.55
-shadow_enabled = true
-directional_shadow_mode = 1
-directional_shadow_max_distance = 20000.0
-directional_shadow_fade_start = 0.9
-shadow_blur = 1.15
+light_energy = 1.35
+shadow_enabled = false
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
