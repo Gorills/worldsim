@@ -292,7 +292,20 @@ double climate_land_albedo(double snow_cover_fraction) {
 double orographic_condensation_fraction_from_climb(double climb_m) {
     if (!std::isfinite(climb_m) || climb_m<0.0)
         throw std::invalid_argument("invalid orographic climb");
-    return 0.35*std::clamp(climb_m/1'500.0,0.0,1.0);
+
+    // Treat uplift as a cumulative rainout hazard rather than a per-edge
+    // fraction. This preserves the former 35% rainout over 1500 m while making
+    // the result compositional: splitting the same monotonic climb across more
+    // climate-grid edges cannot create extra condensation.
+    constexpr double reference_climb_m=1'500.0;
+    constexpr double reference_fraction=0.35;
+    static const double rate_per_m=
+        -std::log1p(-reference_fraction)/reference_climb_m;
+    return std::clamp(
+        -std::expm1(-rate_per_m*climb_m),
+        0.0,
+        1.0
+    );
 }
 
 void ClimateStore::on_add_cell(CellId cell) {
