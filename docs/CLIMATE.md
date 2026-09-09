@@ -8,7 +8,7 @@
 > grazing-timestep correction introduced epoch 23, the magic forcing
 > timebase correction introduced epoch 24, and the wildfire burn-cap
 > timebase correction introduced epoch 25, the active-fire persistence correction introduced epoch 26, and LOD-invariant field-command routing introduced epoch 27, the parent-consistent LOD hysteresis correction raised the combined-world epoch to 28,
-the resolution-aware lateral heat-transport correction raised it to 29, Carbon cycle v1 raised it to 30, Nitrogen cycle v1 raised it to 31, Planetary nitrogen v2 raised it to 32, fauna nitrogen stoichiometry raised it to 33, area-integrated coastal geography raised it to 34, and fixed-support climate orography raises the current combined-world epoch to 35. Carbon-cycle state and assumptions are documented separately in `CARBON_CYCLE.md`; nitrogen state is documented in `NITROGEN_CYCLE.md`.
+the resolution-aware lateral heat-transport correction raised it to 29, Carbon cycle v1 raised it to 30, Nitrogen cycle v1 raised it to 31, Planetary nitrogen v2 raised it to 32, fauna nitrogen stoichiometry raised it to 33, area-integrated coastal geography raised it to 34, fixed-support climate orography raised it to 35, and fixed-support stochastic weather forcing raises the current combined-world epoch to 36. Carbon-cycle state and assumptions are documented separately in `CARBON_CYCLE.md`; nitrogen state is documented in `NITROGEN_CYCLE.md`.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 
@@ -281,6 +281,56 @@ ClimateStore orographic reference changes that store layout from v3 to v4.
 The combined-world snapshot epoch therefore advances from 34 to 35. Version 34
 is rejected rather than silently continuing with the former orographic
 semantics.
+
+## Resolution-consistent stochastic weather forcing — 2026-09-09
+
+After the orographic reference correction, stochastic weather remained keyed
+directly by the climate reference cell identity. Level-2 and level-3 worlds
+therefore applied unrelated random anomalies to the same physical hierarchy
+region even when seed and simulation tick were identical. Because
+`weather_anomaly_k` enters the surface temperature used by saturation-water
+capacity, this was a real resolution-dependent climate forcing contract.
+
+Weather forcing now uses cube-sphere level 4 as a fixed spatial reference
+support. Level-4 climate worlds retain the exact existing
+`climate.weather.v2` random stream and cell keys. Coarser L1-L3 nodes use the
+area-weighted mean of the same level-4 samples. Reference cell IDs and area
+weights are derived once when the ClimateStore transport graph is rebuilt, so
+each tick performs only deterministic random evaluations and weighted sums;
+spherical areas and hierarchy walks are not repeated.
+
+The regression advances flat level-2 and level-3 climate worlds for seeds
+`0,42,999` across eight ticks and requires every L2 weather anomaly to equal
+the area-weighted aggregate of its L3 children to within 1e-12 K. The
+regression-only head built successfully and failed only this new climate test;
+the other 14 CTest entries and Godot integration passed.
+
+This correction fixes the forcing invariant but is **not** the primary source of
+the remaining coupled precipitation-resolution delta. On the same two-year
+coupled seeds `0,42,999`, levels `2,3` smoke used for the orographic
+baseline, maximum adjacent-level deltas change only modestly:
+
+- mean land precipitation: 19.2486% -> **19.2057%**;
+- total NPP: 20.7725% -> **20.4789%**;
+- NPP per represented land area: 21.1858% -> **20.8937%**;
+- mineral-N density: 23.7750% -> **23.6755%**;
+- mean land temperature: 0.8984% -> **0.8956%**.
+
+Vegetation density changes by only +0.0016 percentage points and litter density
+by +0.0022 percentage points. Those differences are below the scale of the
+remaining process-resolution discrepancies and do not justify changing
+amplitude, temporal decay, moisture capacity or precipitation closures in this
+slice.
+
+The cached-support implementation showed no CI-scale runtime regression:
+complete CTest was 106.1 s versus 111.8 s on the immediately preceding main
+run, and the six-case two-year matrix was about 117.5 s versus 128.9 s. These
+single-run timings are regression guards only, not benchmark claims.
+
+ClimateStore binary layout remains v4, but continuing an identical coarse
+snapshot now produces different stochastic forcing. Under the repository's
+strict authoritative-semantics policy the combined-world snapshot epoch
+therefore advances from 35 to 36; version 35 is rejected.
 
 ## Executed evidence — 2026-09-08
 
