@@ -8,6 +8,9 @@ namespace worldsim {
 // climate, diagnostics and tests. SWE is liquid-water-equivalent depth.
 [[nodiscard]] double snow_cover_fraction_from_swe(double swe_m);
 [[nodiscard]] double climate_land_albedo(double snow_cover_fraction);
+[[nodiscard]] double orographic_condensation_fraction_from_climb(
+    double climb_m
+);
 
 struct ClimateNode {
     CellId cell;
