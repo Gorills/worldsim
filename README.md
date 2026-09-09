@@ -1,6 +1,6 @@
 # WorldSim
 
-WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, a reduced coupled energy/moisture climate with land/ocean thermal inertia, closed planetary water exchange and snow-albedo feedback, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus with persistent fast/slow soil carbon and respiration accounting, grass/shrub/tree plant functional types with local dispersal, competition and snow burial, fuel/moisture/wind/snow-driven wildfire with explicit fire-carbon transfers, carbon-accounted cohort fauna with trophic biomass bounds and local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
+WorldSim is a headless C++20 world-simulation kernel designed for a persistent, planet-scale game world whose simulation fidelity changes with spatial LOD without changing the authoritative world model. The included vertical slice covers geography, a reduced coupled energy/moisture climate with land/ocean thermal inertia, closed planetary water exchange and snow-albedo feedback, a conservative atmosphere/ocean/terrestrial carbon cycle with logarithmic CO2 radiative forcing, basin hydrology with snow, shallow groundwater, delayed river routing and lake storage, living-soil fertility/detritus with persistent fast/slow soil carbon and respiration accounting, grass/shrub/tree plant functional types with local dispersal, competition and snow burial, fuel/moisture/wind/snow-driven wildfire with explicit fire-carbon transfers, carbon-accounted cohort fauna with trophic biomass bounds and local habitat-selected migration, and an independent magic domain. It also includes a stable C ABI and a Godot 4.7 GDExtension host project.
 
 This repository is **not** claiming that the included climate/ecology equations are a scientifically calibrated Earth model. They are deliberately replaceable domain implementations used to exercise the production architecture: spatial hierarchy, conservation across LOD, scheduling, state stores, snapshots, commands, events, engine boundaries, and module extension.
 
@@ -155,7 +155,7 @@ public:
 };
 ```
 
-No changes to `Simulation`, `WorldState`, LOD code, snapshot framing, or engine adapters are required merely to introduce the domain. See `docs/ADDING_MODULES.md`.
+No changes to `Simulation`, `WorldState`, LOD code, snapshot framing, or engine adapters are required merely to introduce the domain. See `docs/ADDING_MODULES.md`. The authoritative reduced carbon-cycle contract is documented in `docs/CARBON_CYCLE.md`.
 
 ## Engine boundary
 
@@ -183,4 +183,4 @@ The architecture is informed by established patterns rather than copied from a s
 
 ## Important scope boundary
 
-This archive provides the architectural foundation and a working multi-domain vertical slice. A production world still requires domain work: calibrated atmospheric/ocean models, calibrated soil biogeochemistry with nutrients and vertical profiles, calibrated plant traits/phenology and long-range dispersal, additional disturbance regimes and fire calibration, species databases and behavior, aquatic ecology, population dispersal/migration, eventual settlement/population models, transport, markets, institutions, diplomacy, warfare, epidemiology, content pipelines, persistence scaling, and profiling on the target hardware. Those belong behind the module/state-store/system contracts already present; they are not hidden TODOs that require redesigning the kernel.
+This archive provides the architectural foundation and a working multi-domain vertical slice. A production world still requires domain work: calibrated atmospheric chemistry and ocean circulation/biogeochemistry beyond the reduced carbon box, calibrated soil biogeochemistry with nutrients and vertical profiles, calibrated plant traits/phenology and long-range dispersal, additional disturbance regimes and fire calibration, species databases and behavior, aquatic ecology, population dispersal/migration, eventual settlement/population models, transport, markets, institutions, diplomacy, warfare, epidemiology, content pipelines, persistence scaling, and profiling on the target hardware. Those belong behind the module/state-store/system contracts already present; they are not hidden TODOs that require redesigning the kernel.

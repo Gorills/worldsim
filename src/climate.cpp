@@ -32,6 +32,13 @@ constexpr double land_ocean_exchange_days=30.0;
 constexpr double moisture_diffusivity_m2_s=2.0e5;
 constexpr double lapse_rate_k_m=0.0065;
 constexpr double heat_reference_temperature_k=273.15;
+constexpr double carbon_kg_per_ppm=2.12e12;
+constexpr double carbon_reference_ppm=280.0;
+constexpr double atmospheric_carbon_reference_kg=
+    carbon_reference_ppm*carbon_kg_per_ppm;
+constexpr double ocean_carbon_reference_kg=38'000.0e12;
+constexpr double carbon_exchange_timescale_days=180.0*365.2422;
+constexpr double co2_forcing_coefficient_w_m2=5.35;
 
 FieldId required_field(const FieldRegistry& r, std::string_view key) {
     const auto id=r.find(key);
@@ -42,6 +49,11 @@ FieldId required_field(const FieldRegistry& r, std::string_view key) {
 
 void require_nonnegative_finite(double value, std::string_view name) {
     if (!std::isfinite(value) || value<0.0 || value>1.0e30)
+        throw std::runtime_error("invalid climate "+std::string(name));
+}
+
+void require_finite_bounded(double value, std::string_view name) {
+    if (!std::isfinite(value) || std::abs(value)>1.0e30)
         throw std::runtime_error("invalid climate "+std::string(name));
 }
 
@@ -193,7 +205,9 @@ public:
                 "field:climate.evaporation_mm_day",
                 "field:climate.net_radiation_w_m2",
                 "field:climate.snow_cover_fraction",
-                "field:climate.surface_albedo"
+                "field:climate.surface_albedo",
+                "field:climate.atmospheric_co2_ppm",
+                "field:climate.co2_radiative_forcing_w_m2"
             }
         };
     }
@@ -291,6 +305,8 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
     nodes_.clear();
     nodes_.reserve(world.active_cells().size());
     ocean_water_m3_=0.0;
+    atmospheric_carbon_kg_=atmospheric_carbon_reference_kg;
+    ocean_carbon_kg_=ocean_carbon_reference_kg;
     for (CellId cell:world.active_cells()) {
         if (cell.level()!=reference_level_)
             throw std::runtime_error(
@@ -418,8 +434,21 @@ void ClimateStore::update_diagnostics(double day) {
     }
 }
 
+double ClimateStore::atmospheric_co2_ppm() const {
+    return atmospheric_carbon_kg_/carbon_kg_per_ppm;
+}
+
+double ClimateStore::co2_radiative_forcing_w_m2() const {
+    const double ppm=atmospheric_co2_ppm();
+    if (!(ppm>0.0) || !std::isfinite(ppm))
+        throw std::runtime_error("invalid atmospheric CO2 state");
+    return co2_forcing_coefficient_w_m2*
+        std::log(ppm/carbon_reference_ppm);
+}
+
 void ClimateStore::advance_energy(double dt_days) {
     const double seconds=dt_days*seconds_per_day;
+    const double co2_forcing=co2_radiative_forcing_w_m2();
     for (auto& node:nodes_) {
         const double ocean_area=std::max(
             0.0,node.area_m2-node.land_area_m2
@@ -435,7 +464,7 @@ void ClimateStore::advance_energy(double dt_days) {
                 climate_land_albedo(node.snow_cover_fraction);
             const double absorbed=
                 node.solar_flux_w_m2*(1.0-effective_land_albedo);
-            const double net=absorbed-outgoing;
+            const double net=absorbed-outgoing+co2_forcing;
             node.land_temperature_k+=
                 net*seconds/land_heat_capacity_j_m2_k;
             net_energy+=net*node.land_area_m2;
@@ -443,6 +472,8 @@ void ClimateStore::advance_energy(double dt_days) {
                 absorbed*node.land_area_m2*seconds;
             budget_.outgoing_longwave_j+=
                 outgoing*node.land_area_m2*seconds;
+            budget_.co2_forcing_j+=
+                co2_forcing*node.land_area_m2*seconds;
         }
         if (ocean_area>0.0) {
             const double outgoing=std::max(
@@ -451,12 +482,13 @@ void ClimateStore::advance_energy(double dt_days) {
                 outgoing_b_w_m2_k*(node.ocean_temperature_k-273.15)
             );
             const double absorbed=node.solar_flux_w_m2*(1.0-ocean_albedo);
-            const double net=absorbed-outgoing;
+            const double net=absorbed-outgoing+co2_forcing;
             node.ocean_temperature_k+=
                 net*seconds/ocean_heat_capacity_j_m2_k;
             net_energy+=net*ocean_area;
             budget_.absorbed_solar_j+=absorbed*ocean_area*seconds;
             budget_.outgoing_longwave_j+=outgoing*ocean_area*seconds;
+            budget_.co2_forcing_j+=co2_forcing*ocean_area*seconds;
         }
         node.net_radiation_w_m2=net_energy/node.area_m2;
 
@@ -795,6 +827,55 @@ void ClimateStore::exchange_surface(
     project_surface_exchange(world,r);
 }
 
+void ClimateStore::advance_carbon(
+    double terrestrial_to_atmosphere_kg,
+    double dt_days
+) {
+    if (!std::isfinite(terrestrial_to_atmosphere_kg))
+        throw std::invalid_argument("carbon flux must be finite");
+    if (!std::isfinite(dt_days) || dt_days<0.0)
+        throw std::invalid_argument("carbon timestep must be finite and non-negative");
+
+    const double atmosphere_after_land=
+        atmospheric_carbon_kg_+terrestrial_to_atmosphere_kg;
+    if (!(atmosphere_after_land>0.0) ||
+        atmosphere_after_land>1.0e30) {
+        throw std::runtime_error(
+            "terrestrial carbon flux overdraws atmospheric reservoir"
+        );
+    }
+    atmospheric_carbon_kg_=atmosphere_after_land;
+
+    if (dt_days>0.0) {
+        const double disequilibrium=
+            atmospheric_carbon_kg_/atmospheric_carbon_reference_kg-
+            ocean_carbon_kg_/ocean_carbon_reference_kg;
+        const double equilibrium_transfer=
+            disequilibrium/
+            (
+                1.0/atmospheric_carbon_reference_kg+
+                1.0/ocean_carbon_reference_kg
+            );
+        const double relaxation=
+            -std::expm1(-dt_days/carbon_exchange_timescale_days);
+        double atmosphere_to_ocean=equilibrium_transfer*relaxation;
+        atmosphere_to_ocean=std::clamp(
+            atmosphere_to_ocean,
+            -ocean_carbon_kg_,
+            atmospheric_carbon_kg_
+        );
+        atmospheric_carbon_kg_-=atmosphere_to_ocean;
+        ocean_carbon_kg_+=atmosphere_to_ocean;
+    }
+
+    require_nonnegative_finite(
+        atmospheric_carbon_kg_,"atmospheric carbon"
+    );
+    require_nonnegative_finite(ocean_carbon_kg_,"ocean carbon");
+    if (!(atmospheric_carbon_kg_>0.0))
+        throw std::runtime_error("atmospheric carbon reservoir is empty");
+}
+
 void ClimateStore::project_surface_exchange(
     WorldState& world,
     const FieldRegistry& r
@@ -821,6 +902,24 @@ void ClimateStore::project_surface_exchange(
             slot,evaporation,
             node.evaporation_m3_day/node.area_m2*1'000.0
         );
+    }
+}
+
+void ClimateStore::project_carbon(
+    WorldState& world,
+    const FieldRegistry& r
+) const {
+    auto& fields=world.stores().get<FieldStore>();
+    const FieldId co2=required_field(r,"climate.atmospheric_co2_ppm");
+    const FieldId forcing=required_field(
+        r,"climate.co2_radiative_forcing_w_m2"
+    );
+    const double ppm=atmospheric_co2_ppm();
+    const double forcing_value=co2_radiative_forcing_w_m2();
+    for (CellId cell:world.active_cells()) {
+        const std::size_t slot=fields.dense_index(cell);
+        fields.set_dense(slot,co2,ppm);
+        fields.set_dense(slot,forcing,forcing_value);
     }
 }
 
@@ -915,6 +1014,7 @@ void ClimateStore::project(
                 (1.0-reference_land_fraction)*ocean_albedo
         );
     }
+    project_carbon(world,r);
 }
 
 double ClimateStore::total_atmospheric_water_m3() const {
@@ -944,8 +1044,11 @@ double ClimateStore::total_surface_heat_j() const {
 void ClimateStore::save(BinaryWriter& writer) const {
     writer.pod(reference_level_);
     writer.pod(ocean_water_m3_);
+    writer.pod(atmospheric_carbon_kg_);
+    writer.pod(ocean_carbon_kg_);
     writer.pod(budget_.absorbed_solar_j);
     writer.pod(budget_.outgoing_longwave_j);
+    writer.pod(budget_.co2_forcing_j);
     writer.pod(budget_.land_precipitation_m3);
     writer.pod(budget_.ocean_precipitation_m3);
     writer.pod(budget_.land_evaporation_m3);
@@ -973,14 +1076,21 @@ void ClimateStore::save(BinaryWriter& writer) const {
 }
 
 void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
-    if (version!=2)
+    if (version!=3)
         throw std::runtime_error("unsupported climate state snapshot version");
     const std::uint8_t level=reader.pod<std::uint8_t>();
     if (!has_level_ || level!=reference_level_)
         throw std::runtime_error("climate reference level mismatch");
     const double ocean_water=reader.pod<double>();
+    const double atmospheric_carbon=reader.pod<double>();
+    const double ocean_carbon=reader.pod<double>();
     require_nonnegative_finite(ocean_water,"ocean water");
+    require_nonnegative_finite(atmospheric_carbon,"atmospheric carbon");
+    require_nonnegative_finite(ocean_carbon,"ocean carbon");
+    if (!(atmospheric_carbon>0.0))
+        throw std::runtime_error("invalid climate atmospheric carbon");
     ClimateBudget budget{
+        reader.pod<double>(),
         reader.pod<double>(),
         reader.pod<double>(),
         reader.pod<double>(),
@@ -993,6 +1103,7 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
     require_nonnegative_finite(
         budget.outgoing_longwave_j,"longwave budget"
     );
+    require_finite_bounded(budget.co2_forcing_j,"CO2 forcing budget");
     require_nonnegative_finite(
         budget.land_precipitation_m3,"land precipitation budget"
     );
@@ -1086,6 +1197,8 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
     }
     nodes_=std::move(nodes);
     ocean_water_m3_=ocean_water;
+    atmospheric_carbon_kg_=atmospheric_carbon;
+    ocean_carbon_kg_=ocean_carbon;
     budget_=budget;
     rebuild_graph();
 }
@@ -1106,6 +1219,42 @@ double total_planet_water_m3(
     return climate.ocean_water_m3()+
         climate.total_atmospheric_water_m3()+
         total_land_water_m3(world,r);
+}
+
+double total_planet_carbon_kg(
+    const WorldState& world,
+    const FieldRegistry& r
+) {
+    const ClimateStore& climate=world.stores().get<ClimateStore>();
+    double total=
+        climate.atmospheric_carbon_kg()+climate.ocean_carbon_kg();
+    const auto& fields=world.stores().get<FieldStore>();
+    for (std::string_view key:{
+             "ecology.grass_carbon_kg",
+             "ecology.shrub_carbon_kg",
+             "ecology.tree_carbon_kg",
+             "ecology.litter_carbon_kg",
+             "ecology.soil_fast_carbon_kg",
+             "ecology.soil_slow_carbon_kg",
+             "ecology.pyrogenic_carbon_kg"
+         }) {
+        if (const auto id=r.find(key))
+            total=std::accumulate(
+                fields.column(*id).begin(),
+                fields.column(*id).end(),
+                total
+            );
+    }
+    if (
+        world.stores().all().contains(std::string(CohortStore::kKey))
+    ) {
+        for (const auto& [id,cohort]:
+             world.stores().get<CohortStore>().all()) {
+            (void)id;
+            total+=cohort_carbon_kg(cohort);
+        }
+    }
+    return total;
 }
 
 void ClimateModule::register_fields(FieldRegistry& r) {
@@ -1164,6 +1313,14 @@ void ClimateModule::register_fields(FieldRegistry& r) {
     r.register_field({
         "climate.surface_albedo","1",
         FieldSemantics::Intensive,land_albedo,0.0,1.0
+    });
+    r.register_field({
+        "climate.atmospheric_co2_ppm","ppm",
+        FieldSemantics::Intensive,carbon_reference_ppm,1.0,5'000.0
+    });
+    r.register_field({
+        "climate.co2_radiative_forcing_w_m2","W/m2",
+        FieldSemantics::Intensive,0.0,-50.0,50.0
     });
 }
 

@@ -132,7 +132,8 @@ void energy_and_moisture_accounting() {
     const ClimateBudget& budget=store.budget();
     near(
         store.total_surface_heat_j(),
-        initial_heat+budget.absorbed_solar_j-budget.outgoing_longwave_j,
+        initial_heat+budget.absorbed_solar_j-budget.outgoing_longwave_j+
+            budget.co2_forcing_j,
         2.0e-12,
         "surface energy ledger does not close"
     );
@@ -537,16 +538,79 @@ void coupled_planet_water_and_snapshot() {
     );
 }
 
+void carbon_cycle_closes_and_forces_climate() {
+    auto coupled=make_default_simulation(
+        9191,SimulationConfig{1,1,3'600.0}
+    );
+    const double carbon_before=total_planet_carbon_kg(
+        coupled->world(),coupled->fields()
+    );
+    coupled->step(24*30);
+    const double carbon_after=total_planet_carbon_kg(
+        coupled->world(),coupled->fields()
+    );
+    near(
+        carbon_before,carbon_after,5.0e-13,
+        "coupled atmosphere/ocean/ecology carbon inventory does not close"
+    );
+
+    auto forcing=climate_fixture(9192,1,1,86'400.0);
+    auto& store=forcing->world().stores().get<ClimateStore>();
+    const double initial_atmosphere=store.atmospheric_carbon_kg();
+    const double initial_ocean=store.ocean_carbon_kg();
+    store.advance_carbon(initial_atmosphere,0.0);
+    near(
+        store.atmospheric_co2_ppm(),560.0,1.0e-14,
+        "doubling atmospheric carbon did not double CO2 ppm"
+    );
+    near(
+        store.co2_radiative_forcing_w_m2(),
+        5.35*std::log(2.0),1.0e-14,
+        "CO2 forcing does not follow the logarithmic closure"
+    );
+    const double doubled_atmosphere=store.atmospheric_carbon_kg();
+    store.advance_carbon(0.0,365.2422);
+    check(
+        store.atmospheric_carbon_kg()<doubled_atmosphere &&
+        store.ocean_carbon_kg()>initial_ocean,
+        "ocean carbon reservoir did not buffer an atmospheric perturbation"
+    );
+    near(
+        store.atmospheric_carbon_kg()+store.ocean_carbon_kg(),
+        initial_atmosphere*2.0+initial_ocean,2.0e-15,
+        "air-sea carbon exchange is not conservative"
+    );
+
+    const double heat_before=store.total_surface_heat_j();
+    const double absorbed_before=store.budget().absorbed_solar_j;
+    const double outgoing_before=store.budget().outgoing_longwave_j;
+    const double forcing_before=store.budget().co2_forcing_j;
+    forcing->step(1);
+    check(
+        store.budget().co2_forcing_j>forcing_before,
+        "positive CO2 perturbation did not enter the energy ledger"
+    );
+    near(
+        store.total_surface_heat_j(),
+        heat_before+
+            (store.budget().absorbed_solar_j-absorbed_before)-
+            (store.budget().outgoing_longwave_j-outgoing_before)+
+            (store.budget().co2_forcing_j-forcing_before),
+        3.0e-12,
+        "CO2 forcing is not included in surface energy closure"
+    );
+}
+
 void malformed_climate_store_is_rejected() {
     auto simulation=climate_fixture(303,1,1,3'600.0);
     auto& store=simulation->world().stores().get<ClimateStore>();
     BinaryWriter writer;
     store.save(writer);
     auto bytes=writer.data();
-    // Header: reference level, ocean water, seven budget values and count.
-    // The sixth node double is atmospheric water.
+    // Header: reference level, three reservoir doubles, eight budget values
+    // and count. The sixth node double is atmospheric water.
     constexpr std::size_t first_atmospheric_water_offset=
-        1U+8U+7U*8U+8U+8U+5U*8U;
+        1U+3U*8U+8U*8U+8U+8U+5U*8U;
     BinaryWriter nan;
     nan.pod(std::numeric_limits<double>::quiet_NaN());
     std::copy(
@@ -571,9 +635,33 @@ void malformed_climate_store_is_rejected() {
     );
 
     bytes=writer.data();
+    // Atmospheric carbon follows reference level and ocean water.
+    constexpr std::size_t atmospheric_carbon_offset=1U+8U;
+    std::copy(
+        nan.data().begin(),nan.data().end(),
+        bytes.begin()+static_cast<std::ptrdiff_t>(
+            atmospheric_carbon_offset
+        )
+    );
+    rejected=false;
+    try {
+        BinaryReader reader(bytes);
+        store.load(reader,store.snapshot_version());
+    } catch (const std::exception&) {
+        rejected=true;
+    }
+    check(rejected,"climate store accepted invalid atmospheric carbon");
+    BinaryWriter after_carbon;
+    store.save(after_carbon);
+    check(
+        after_carbon.data()==writer.data(),
+        "failed carbon load mutated live climate state"
+    );
+
+    bytes=writer.data();
     // The snow-cover fraction is the final (15th) node double.
     constexpr std::size_t first_snow_cover_offset=
-        1U+8U+7U*8U+8U+8U+14U*8U;
+        1U+3U*8U+8U*8U+8U+8U+14U*8U;
     std::copy(
         nan.data().begin(),nan.data().end(),
         bytes.begin()+static_cast<std::ptrdiff_t>(
@@ -610,6 +698,7 @@ int main() {
         horizontal_heat_transport_is_resolution_consistent();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();
+        carbon_cycle_closes_and_forces_climate();
         malformed_climate_store_is_rejected();
         std::cout<<"climate_tests: OK\n";
         return 0;
