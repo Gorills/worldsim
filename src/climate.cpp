@@ -137,6 +137,28 @@ double capacity_weighted_temperature(const ClimateNode& node) {
     )/capacity;
 }
 
+std::vector<CellId> climate_transport_reference_cells(
+    CellId cell,
+    std::uint8_t target_level
+) {
+    if (cell.level()>=target_level) return {cell};
+    std::vector<CellId> cells{cell};
+    while (cells.front().level()<target_level) {
+        std::vector<CellId> refined;
+        refined.reserve(cells.size()*4U);
+        for (CellId current:cells) {
+            const auto children=current.children();
+            refined.insert(
+                refined.end(),
+                children.begin(),
+                children.end()
+            );
+        }
+        cells=std::move(refined);
+    }
+    return cells;
+}
+
 double shared_edge_length(
     const CubeSphereTopology& topology,
     CellId a,
@@ -378,14 +400,60 @@ void ClimateStore::rebuild_graph() {
             const double distance=kEarthRadiusM*std::acos(cosine);
             const Vec3d tangent_a=normalized(b-a*cosine);
             const Vec3d tangent_b=normalized(a-b*cosine);
-            links_.push_back({
+            Link link{
                 i,
                 j,
                 distance,
                 shared_edge_length(topology,nodes_[i].cell,neighbor),
                 tangent_a,
-                tangent_b
-            });
+                tangent_b,
+                {}
+            };
+            constexpr std::uint8_t transport_reference_level=4;
+            if (reference_level_<transport_reference_level) {
+                for (CellId sample_a:climate_transport_reference_cells(
+                    nodes_[i].cell,
+                    transport_reference_level
+                )) {
+                    for (CellId sample_b:topology.neighbors4(sample_a)) {
+                        CellId ancestor=sample_b;
+                        while (ancestor.level()>reference_level_)
+                            ancestor=ancestor.parent();
+                        if (ancestor!=neighbor) continue;
+                        const Vec3d sample_a_center=
+                            topology.center_unit(sample_a);
+                        const Vec3d sample_b_center=
+                            topology.center_unit(sample_b);
+                        const double sample_cosine=std::clamp(
+                            dot(sample_a_center,sample_b_center),
+                            -1.0,
+                            1.0
+                        );
+                        link.advection_samples.push_back({
+                            sample_a,
+                            sample_b,
+                            shared_edge_length(
+                                topology,
+                                sample_a,
+                                sample_b
+                            ),
+                            normalized(
+                                sample_b_center-
+                                sample_a_center*sample_cosine
+                            ),
+                            normalized(
+                                sample_a_center-
+                                sample_b_center*sample_cosine
+                            )
+                        });
+                    }
+                }
+                if (link.advection_samples.empty())
+                    throw std::runtime_error(
+                        "coarse climate link has no transport reference faces"
+                    );
+            }
+            links_.push_back(std::move(link));
         }
     }
     rebuild_weather_support();
@@ -607,7 +675,7 @@ void ClimateStore::advance_energy(double dt_days) {
     }
 }
 
-void ClimateStore::advance_moisture(double dt_days) {
+void ClimateStore::advance_moisture(double dt_days, double day) {
     CubeSphereTopology topology;
     std::vector<Vec3d> winds(nodes_.size());
     for (std::size_t i=0;i<nodes_.size();++i) {
@@ -622,17 +690,43 @@ void ClimateStore::advance_moisture(double dt_days) {
     const double seconds=dt_days*seconds_per_day;
     for (std::size_t k=0;k<links_.size();++k) {
         const Link& link=links_[k];
-        const double velocity=0.5*(
-            dot(winds[link.a],link.tangent_a_to_b)-
-            dot(winds[link.b],link.tangent_b_to_a)
-        );
         const double density_a=
             nodes_[link.a].atmospheric_water_m3/nodes_[link.a].area_m2;
         const double density_b=
             nodes_[link.b].atmospheric_water_m3/nodes_[link.b].area_m2;
-        const double advective=velocity>=0.0
-            ? velocity*link.interface_m*seconds*density_a
-            : velocity*link.interface_m*seconds*density_b;
+        double advective=0.0;
+        if (link.advection_samples.empty()) {
+            const double velocity=0.5*(
+                dot(winds[link.a],link.tangent_a_to_b)-
+                dot(winds[link.b],link.tangent_b_to_a)
+            );
+            advective=velocity>=0.0
+                ? velocity*link.interface_m*seconds*density_a
+                : velocity*link.interface_m*seconds*density_b;
+        } else {
+            for (const AdvectionFaceSample& sample:
+                link.advection_samples) {
+                const Vec3d position_a=topology.center_unit(sample.a);
+                const Vec3d position_b=topology.center_unit(sample.b);
+                const auto [east_a,north_a]=east_north_basis(position_a);
+                const auto [east_b,north_b]=east_north_basis(position_b);
+                const auto [east_speed_a,north_speed_a]=
+                    prescribed_wind(position_a,day);
+                const auto [east_speed_b,north_speed_b]=
+                    prescribed_wind(position_b,day);
+                const Vec3d wind_a=
+                    east_a*east_speed_a+north_a*north_speed_a;
+                const Vec3d wind_b=
+                    east_b*east_speed_b+north_b*north_speed_b;
+                const double velocity=0.5*(
+                    dot(wind_a,sample.tangent_a_to_b)-
+                    dot(wind_b,sample.tangent_b_to_a)
+                );
+                advective+=velocity>=0.0
+                    ? velocity*sample.interface_m*seconds*density_a
+                    : velocity*sample.interface_m*seconds*density_b;
+            }
+        }
         const double diffusive=
             moisture_diffusivity_m2_s*
             (density_a-density_b)/link.distance_m*
@@ -731,7 +825,7 @@ void ClimateStore::advance(
         const double day=static_cast<double>(world.tick())*dt_days+elapsed;
         update_diagnostics(day);
         advance_energy(substep);
-        advance_moisture(substep);
+        advance_moisture(substep,day);
         remaining-=substep;
         elapsed+=substep;
     }
