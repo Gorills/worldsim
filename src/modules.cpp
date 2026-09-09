@@ -290,7 +290,8 @@ void update_geography_surface(
     WorldState& world,
     const FieldRegistry& r,
     const GeologyModel& geology,
-    CoastalReferenceCache* coastal_cache=nullptr
+    CoastalReferenceCache* coastal_cache=nullptr,
+    bool update_land_fraction=true
 ) {
     auto& fs=world.stores().get<FieldStore>();
     const GeologyFieldIds ids=geology_fields(r);
@@ -343,17 +344,19 @@ void update_geography_surface(
               flexural_coupling*neighbor_sum/static_cast<double>(neighbor_count)
             : local;
         fs.set(cell,ids.elevation,flexed);
-        fs.set(
-            cell,
-            ids.land_fraction,
-            coastal_land_fraction(
-                world,
-                geology,
+        if (update_land_fraction) {
+            fs.set(
                 cell,
-                flexed,
-                coastal_cache
-            )
-        );
+                ids.land_fraction,
+                coastal_land_fraction(
+                    world,
+                    geology,
+                    cell,
+                    flexed,
+                    coastal_cache
+                )
+            );
+        }
     }
 }
 
@@ -2761,7 +2764,11 @@ void GeographyModule::initialize(WorldState& world, const FieldRegistry& r) {
 
 void GeographyModule::on_spatial_cover_changed(WorldState& world, const FieldRegistry& r) {
     const GeologyModel geology(world.seed());
-    update_geography_surface(world,r,geology);
+    // FieldStore refine/coarsen already conserves the physical land-area
+    // fraction. A pure LOD transition may reveal derived elevation detail but
+    // must not create or destroy represented terrestrial area without elapsed
+    // simulation time.
+    update_geography_surface(world,r,geology,nullptr,false);
 }
 
 void MagicModule::register_fields(FieldRegistry& r) {
