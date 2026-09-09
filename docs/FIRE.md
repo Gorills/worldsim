@@ -81,10 +81,15 @@ growth, while the projection of the local wind vector toward each neighbor
 biases spread allocation.
 
 Natural ignitions are rare deterministic draws from the repository's stateless
-random contract. Their hazard scales with effective land area and fire danger,
-so changing iteration order does not change the draw and refining a cell does
-not assign the same per-cell hazard to every child. No human ignitions or
-suppression are synthesized without an authoritative population state.
+random contract. Their hazard scales with effective land area and fire danger.
+The stochastic process is anchored to fixed cube-sphere level-4 regions: active
+cells contribute hazard to those regions, each region performs one ignition and
+size draw, and adaptively refined regions deterministically assign an ignition
+to one active descendant in proportion to its hazard contribution. Coarse
+L1-L3 worlds therefore sample the same level-4 process instead of inventing a
+new per-cell random process, while a uniform level-4 world retains the former
+ignition/size stream keys and calibration. No human ignitions or suppression
+are synthesized without an authoritative population state.
 
 The burning fraction is bounded by a 25% per-day ceiling converted to the
 current integration window with elapsed simulation time. A half-day fire pass
@@ -153,6 +158,40 @@ reservoir.
   warnings remain unchanged.
 - Interactive performance and visual layout on target player hardware are
   **NOT VERIFIED**.
+
+## Resolution-consistent natural ignition — 2026-09-09
+
+The two-year L2/L3 stability matrix exposed a large stochastic fire artifact:
+for seed 42 the former operator produced zero annual burned fraction at level 2
+and about 21.6% at level 3. Although the ignition hazard already scaled with
+land area, both the Bernoulli draw and ignition-size draw were keyed by the
+current active cell id, so changing spatial resolution changed the random
+process itself.
+
+A regression-only head confirmed the defect on a dry, fully fueled fixture:
+for seed 0 the first natural ignition occurred on day 9 at L2 and day 8 at L3,
+with different burned-area magnitudes. The corrected operator uses fixed level-4
+ignition regions and the same reference draw for L2, L3 and L4; an additional
+L4/L5 fixture verifies that adaptive refinement does not duplicate or move the
+first ignition event.
+
+On the standard two-year coupled seeds `0,42,999`, levels `2,3` smoke, the
+largest absolute annual-burn mismatch falls from about **21.64** to **10.30
+percentage points of represented land**. Seed 0 falls from about **2.08 pp** to
+**0.0056 pp**, and seed 999 becomes zero at both levels in this short window.
+Relative burned-fraction error remains a poor diagnostic when both values are
+near zero.
+
+Downstream effects are path-dependent rather than uniformly monotonic:
+worst-case NPP-density delta improves from 20.89% to 16.78%, fauna-carbon
+density remains about 7.41%, and precipitation is essentially unchanged.
+Individual seeds can move in either direction because synchronizing ignition
+changes which disturbance history each world follows. This slice is therefore
+accepted for stochastic correctness and reduced absolute fire-resolution error,
+not as fire calibration.
+
+The changed stochastic continuation advances the combined snapshot epoch from
+36 to 37 even though field/store binary layouts are unchanged.
 
 ## Nitrogen coupling added after Wildfire v1
 
