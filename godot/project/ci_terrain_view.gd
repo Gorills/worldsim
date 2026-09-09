@@ -107,7 +107,9 @@ func _process(_delta: float) -> bool:
     var mountain_half := 32.0
     var mountain_max_x := mountain_max_index % 65
     var mountain_max_z := floori(float(mountain_max_index) / 65.0)
+    var target_height_m := float(mountain_probe[mountain_max_index])
     var view_index := -1
+    var best_elevation_angle := -INF
     for i in range(mountain_probe.size()):
         var x := i % 65
         var z := floori(float(i) / 65.0)
@@ -116,13 +118,25 @@ func _process(_delta: float) -> bool:
             float(z - mountain_max_z) * 625.0
         ).length()
         var height_m := float(mountain_probe[i])
-        if distance_m < 8_000.0 or distance_m > 12_000.0 or height_m < 0.0:
+        if distance_m < 6_000.0 or distance_m > 10_000.0 or height_m < 0.0:
             continue
-        if view_index < 0 or height_m < float(mountain_probe[view_index]):
+        var elevation_angle := atan2(
+            target_height_m - height_m,
+            maxf(distance_m, 1.0)
+        )
+        if elevation_angle > best_elevation_angle:
+            best_elevation_angle = elevation_angle
             view_index = i
     if view_index < 0:
-        push_error("Mountain diagnostic has no dry 8-12 km viewing point")
+        push_error("Mountain diagnostic has no dry 6-10 km viewing point")
         quit(54)
+        return true
+    if best_elevation_angle < deg_to_rad(4.0):
+        push_error(
+            "Mountain viewpoint lacks visible angular relief: %.2f degrees"
+            % rad_to_deg(best_elevation_angle)
+        )
+        quit(59)
         return true
 
     var view_x := view_index % 65
@@ -149,7 +163,7 @@ func _process(_delta: float) -> bool:
         or absf(mountain_target_east_m - expected_target_east_m) > 0.1
         or absf(mountain_target_north_m - expected_target_north_m) > 0.1
     ):
-        push_error("Walker does not use the nearby dry mountain viewpoint facing its peak")
+        push_error("Walker does not use the strongest nearby dry mountain viewpoint facing its peak")
         quit(54)
         return true
 
@@ -389,7 +403,7 @@ func _process(_delta: float) -> bool:
         return true
 
     print(
-        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
+        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f view_angle_deg=%.2f height_rise_m=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
         % [
             aabb.position.y,
             aabb.end.y,
@@ -397,6 +411,8 @@ func _process(_delta: float) -> bool:
             mountain_span,
             mountain_prominence,
             mountain_view_distance_m / 1000.0,
+            rad_to_deg(best_elevation_angle),
+            target_height_m - float(mountain_probe[view_index]),
             distant_resolution,
             camera.fov,
             spawn_east_m,
