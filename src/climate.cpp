@@ -137,37 +137,6 @@ double capacity_weighted_temperature(const ClimateNode& node) {
     )/capacity;
 }
 
-double stochastic_weather_unit(
-    const CubeSphereTopology& topology,
-    std::uint64_t seed,
-    Tick tick,
-    CellId cell
-) {
-    static const std::uint64_t stream=fnv1a64("climate.weather.v2");
-    if (cell.level()>=weather_reference_level)
-        return deterministic_unit(seed,stream,tick,cell.raw());
-
-    double weighted=0.0;
-    double represented_area=0.0;
-    const auto accumulate=[&](auto&& self, CellId sample) -> void {
-        if (sample.level()>=weather_reference_level) {
-            const double area=topology.area_m2(sample);
-            weighted+=
-                area*deterministic_unit(seed,stream,tick,sample.raw());
-            represented_area+=area;
-            return;
-        }
-        for (CellId child:sample.children())
-            self(self,child);
-    };
-    accumulate(accumulate,cell);
-    if (!(represented_area>0.0))
-        throw std::runtime_error(
-            "weather reference support has zero represented area"
-        );
-    return weighted/represented_area;
-}
-
 double shared_edge_length(
     const CubeSphereTopology& topology,
     CellId a,
@@ -418,6 +387,34 @@ void ClimateStore::rebuild_graph() {
                 tangent_b
             });
         }
+    }
+    rebuild_weather_support();
+}
+
+void ClimateStore::rebuild_weather_support() {
+    weather_support_.clear();
+    weather_support_.resize(nodes_.size());
+    const CubeSphereTopology topology;
+    for (std::size_t i=0;i<nodes_.size();++i) {
+        auto& support=weather_support_[i];
+        double represented_area=0.0;
+        const auto accumulate=[&](auto&& self, CellId sample) -> void {
+            if (sample.level()>=weather_reference_level) {
+                const double area=topology.area_m2(sample);
+                support.push_back({sample,area});
+                represented_area+=area;
+                return;
+            }
+            for (CellId child:sample.children())
+                self(self,child);
+        };
+        accumulate(accumulate,nodes_[i].cell);
+        if (!(represented_area>0.0))
+            throw std::runtime_error(
+                "weather reference support has zero represented area"
+            );
+        for (WeatherSample& sample:support)
+            sample.area_weight/=represented_area;
     }
 }
 
@@ -741,14 +738,19 @@ void ClimateStore::advance(
         node.precipitation_m3_day/=dt_days;
 
     const double weather_decay=std::exp(-dt_days/2.0);
-    const CubeSphereTopology topology;
-    for (auto& node:nodes_) {
-        const double random=stochastic_weather_unit(
-            topology,
-            world.seed(),
-            world.tick(),
-            node.cell
-        );
+    static const std::uint64_t weather_stream=
+        fnv1a64("climate.weather.v2");
+    for (std::size_t i=0;i<nodes_.size();++i) {
+        double random=0.0;
+        for (const WeatherSample& sample:weather_support_[i]) {
+            random+=sample.area_weight*deterministic_unit(
+                world.seed(),
+                weather_stream,
+                world.tick(),
+                sample.cell.raw()
+            );
+        }
+        ClimateNode& node=nodes_[i];
         node.weather_anomaly_k=
             node.weather_anomaly_k*weather_decay+
             (2.0*random-1.0)*1.5*(1.0-weather_decay);
