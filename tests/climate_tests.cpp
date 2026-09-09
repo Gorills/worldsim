@@ -420,6 +420,67 @@ void orographic_precipitation() {
     );
 }
 
+double flat_surface_l2_l3_temperature_mae_k() {
+    auto coarse=climate_fixture(314,2,2,86'400.0);
+    auto fine=climate_fixture(314,3,3,86'400.0);
+    coarse->step(730);
+    fine->step(730);
+
+    const auto& coarse_store=
+        coarse->world().stores().get<ClimateStore>();
+    const auto& fine_store=
+        fine->world().stores().get<ClimateStore>();
+    struct Aggregate {
+        double land_temperature_area{};
+        double land_area{};
+        double ocean_temperature_area{};
+        double ocean_area{};
+    };
+    std::vector<Aggregate> aggregated(coarse_store.nodes().size());
+    for (const ClimateNode& node:fine_store.nodes()) {
+        const std::size_t index=coarse_store.node_index(node.cell);
+        Aggregate& aggregate=aggregated[index];
+        const double ocean_area=node.area_m2-node.land_area_m2;
+        aggregate.land_temperature_area+=
+            node.land_temperature_k*node.land_area_m2;
+        aggregate.land_area+=node.land_area_m2;
+        aggregate.ocean_temperature_area+=
+            node.ocean_temperature_k*ocean_area;
+        aggregate.ocean_area+=ocean_area;
+    }
+
+    double absolute_error_area=0.0;
+    double total_area=0.0;
+    for (std::size_t i=0;i<coarse_store.nodes().size();++i) {
+        const ClimateNode& node=coarse_store.nodes()[i];
+        const Aggregate& aggregate=aggregated[i];
+        if (aggregate.land_area>0.0) {
+            const double fine_temperature=
+                aggregate.land_temperature_area/aggregate.land_area;
+            absolute_error_area+=
+                std::abs(node.land_temperature_k-fine_temperature)*
+                aggregate.land_area;
+            total_area+=aggregate.land_area;
+        }
+        if (aggregate.ocean_area>0.0) {
+            const double fine_temperature=
+                aggregate.ocean_temperature_area/aggregate.ocean_area;
+            absolute_error_area+=
+                std::abs(node.ocean_temperature_k-fine_temperature)*
+                aggregate.ocean_area;
+            total_area+=aggregate.ocean_area;
+        }
+    }
+    return absolute_error_area/std::max(1.0,total_area);
+}
+
+void resolution_diagnostic() {
+    std::cout
+        << "CLIMATE_FLAT_L2_L3_TEMPERATURE_MAE_K="
+        << flat_surface_l2_l3_temperature_mae_k()
+        << '\n';
+}
+
 void lod_independent_reference_state() {
     auto coarse=climate_fixture(101,1,2,3'600.0);
     auto focused=climate_fixture(101,1,2,3'600.0);
@@ -545,6 +606,7 @@ int main() {
         snow_coupling_is_lod_independent();
         snow_burial_suppresses_short_vegetation();
         orographic_precipitation();
+        resolution_diagnostic();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();
         malformed_climate_store_is_rejected();
