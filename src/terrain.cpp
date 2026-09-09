@@ -175,11 +175,48 @@ double visual_orographic_relief_m(
     const double summit_relief=
         summit_profile*(0.35+0.65*ridge);
 
+    // The broad fields above place the mountain system, but by themselves they
+    // read as a smooth dome at first-person distances. Add a signed, mountain-
+    // gated crag field at a few-kilometre scale. The signed term cuts shallow
+    // gullies as well as raising ribs, avoiding the "noise pasted on top" look.
+    // It remains visual/collision relief only; authoritative geography is still
+    // reconstructed from the adaptive elevation field in the Godot adapter.
+    const double crag_source=fbm_unit(
+        seed,
+        fnv1a64("terrain.visual.orography.crags"),
+        p,
+        7'500.0,
+        5
+    );
+    const double crag_ridge=std::pow(
+        std::clamp(1.0-std::abs(crag_source),0.0,1.0),
+        3.0
+    );
+    const double gully_noise=fbm_unit(
+        seed,
+        fnv1a64("terrain.visual.orography.gullies"),
+        p,
+        3'200.0,
+        4
+    );
+    const double alpine_gate=smoothstep(
+        0.16,
+        0.72,
+        broad_relief+summit_relief
+    );
+    const double crag_relief=
+        460.0*
+        land_gate*
+        mountain_strength*
+        alpine_gate*
+        (1.45*crag_ridge-0.62+0.42*gully_noise);
+
     return
         1'800.0*
         land_gate*
         mountain_strength*
-        (broad_relief+summit_relief);
+        (broad_relief+summit_relief)+
+        crag_relief;
 }
 
 } // namespace
