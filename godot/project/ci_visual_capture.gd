@@ -105,32 +105,6 @@ func _prepare_and_capture() -> void:
         quit(9)
         return
 
-    var near_root := root.get_node_or_null("WorldViewer/Terrain") as Node3D
-    if near_root == null:
-        push_error("Visual capture could not find near terrain root")
-        quit(10)
-        return
-
-    distant.visible = false
-    await RenderingServer.frame_post_draw
-    var near_image := root.get_texture().get_image()
-    var near_path := output_dir.path_join("walk_spawn_near_only.png")
-    if near_image.save_png(near_path) != OK:
-        push_error("Visual capture could not save near-only diagnostic")
-        quit(10)
-        return
-
-    distant.visible = true
-    near_root.visible = false
-    await RenderingServer.frame_post_draw
-    var distant_image := root.get_texture().get_image()
-    var distant_path := output_dir.path_join("walk_spawn_distant_only.png")
-    if distant_image.save_png(distant_path) != OK:
-        push_error("Visual capture could not save distant-only diagnostic")
-        quit(10)
-        return
-    near_root.visible = true
-
     print(
         "WORLDSIM_GODOT_VISUAL_OK display=%s size=%dx%d luminance_range=%.4f path=%s"
         % [
