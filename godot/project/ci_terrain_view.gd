@@ -578,6 +578,24 @@ func _process(_delta: float) -> bool:
         quit(10)
         return true
 
+    # Ecology/climate-only refreshes must not pay for another reconstructed
+    # terrain/collision build. Force that path directly and ensure only the
+    # visual mesh resource changes.
+    var surface_mesh_before := mesh_instance.mesh
+    var surface_shape_before := collision.shape
+    var surface_dirty: Dictionary = scene.get("surface_dirty_chunks")
+    surface_dirty[spawn_chunk] = true
+    scene.set("surface_dirty_chunks", surface_dirty)
+    scene.call("_create_chunk", spawn_chunk)
+    if mesh_instance.mesh == surface_mesh_before:
+        push_error("Surface-only refresh did not update near terrain colors")
+        quit(73)
+        return true
+    if collision.shape != surface_shape_before:
+        push_error("Surface-only refresh rebuilt walking collision terrain")
+        quit(73)
+        return true
+
     print(
         "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f view_angle_deg=%.2f skyline_margin_deg=%.2f height_rise_m=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
         % [
