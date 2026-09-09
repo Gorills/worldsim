@@ -119,18 +119,21 @@ walking chunks remain the only physics terrain:
 For the fixed seed-42 walking demonstration, startup placement is intentionally
 inside the existing mountain regression region instead of the projection origin.
 The viewer samples the same 40 km x 40 km reconstructed-terrain window centered
-at east 5,573 km / north -1,800.3 km, starts at that window's lowest 625 m-grid
-sample, and initially faces its highest sample. This changes only presentation
-placement: terrain authority, simulation focus, snapshots and the reconstruction
-formula are unchanged. The purpose is diagnostic as well as presentational: if
-the standard walk scene still appears flat, the failure is in terrain
-reconstruction/rendering rather than in requiring the user to travel thousands
-of kilometres to the known mountain belt.
+at east 5,573 km / north -1,800.3 km, finds its highest 625 m-grid sample, then
+starts at the lowest dry sample between 8 km and 12 km from that peak and faces
+it. This keeps the diagnostic mountain large enough in the first-person view to
+judge silhouette, shading and LOD detail without exaggerating authoritative
+height. Terrain authority, simulation focus, snapshots and the reconstruction
+formula are unchanged.
 
 The walker now also renders visual-only nested spherical terrain rings. Every
-ring is a 33 x 33 regular grid, sample spacing doubles from 64 m through
-16,384 m, and the outer half-extent therefore grows from 1.024 km to
-262.144 km. Heights come from the same reconstructed terrain adapter used by
+ring is a 65 x 65 regular grid, sample spacing doubles from 64 m through
+16,384 m, and the outer half-extent therefore grows from 2.048 km to
+524.288 km. The camera far plane remains 400 km; the final ring deliberately
+extends beyond it so the visible horizon never reaches the mesh boundary. The
+denser grid keeps 512 m sampling out to 16.384 km and 1,024 m sampling out to
+32.768 km instead of collapsing mountain-scale relief into 2,048 m samples at
+those ranges. Heights come from the same reconstructed terrain adapter used by
 walking collision. The regional baseline remains authoritative geology; the
 adapter then adds deterministic presentation-only orography below the adaptive
 cell scale in convergent dry-land belts. That visual/collision relief is bounded,
@@ -143,6 +146,14 @@ Coarse-to-fine updates morph the final two fine-grid rows onto bilinear samples
 of the next coarser ring. Exact shared outer/inner boundaries therefore meet
 without a T-junction crack while local detail is retained away from the
 transition. Distant rings have no collision.
+
+Terrain albedo now also receives a presentation-only rock cue from rendered
+slope and elevation. This does not feed back into ecology or geography; it only
+prevents coarse living-surface fields from painting steep local cliffs as the
+same vegetation color as nearby flats. The walking camera uses a 65-degree field
+of view, and the environment keeps lower ambient energy with a stronger warm
+directional light so the existing mesh normals produce readable large-scale
+form without enabling long-range real-time shadows.
 
 A separate visual-only sea-level surface uses the exact same spherical sample
 directions at elevation 0 m. It is opaque in this first slice to stay on the
@@ -184,7 +195,8 @@ chunk boundary:
 - https://docs.godotengine.org/en/4.7/classes/class_environment.html
 
 Sampling cost and frame time on target player hardware remain **NOT VERIFIED**.
-The implementation limits work to one distant LOD rebuild per rendered frame,
+The denser distant grid raises each ring from 1,089 to 4,225 vertices. The
+implementation still limits work to one distant LOD rebuild per rendered frame,
 recenters every 256 m while walking, uses a much larger threshold during survey
 flight, and throttles simulation-driven distant refreshes to avoid coupling
 hourly simulation steps to full-horizon mesh regeneration.
