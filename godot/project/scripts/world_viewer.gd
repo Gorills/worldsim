@@ -99,7 +99,10 @@ func _ready() -> void:
     walking_collision_mask = player.collision_mask
     var target_east_delta := mountain_target_east_m - origin_east_m
     var target_north_delta := mountain_target_north_m - origin_north_m
-    var target_distance_m := hypot(target_east_delta, target_north_delta)
+    var target_distance_m := Vector2(
+        target_east_delta,
+        target_north_delta
+    ).length()
     var target_height_m := sim.sample_terrain_height(
         mountain_target_east_m,
         mountain_target_north_m
