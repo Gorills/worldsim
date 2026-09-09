@@ -205,6 +205,39 @@ func _process(_delta: float) -> bool:
         )
         quit(63)
         return true
+    var local_curvature_sq_sum := 0.0
+    var local_curvature_count := 0
+    for curvature_z in range(
+        maxi(target_z - 3, 1),
+        mini(target_z + 4, 64)
+    ):
+        for curvature_x in range(
+            maxi(target_x - 3, 1),
+            mini(target_x + 4, 64)
+        ):
+            var curvature_center := float(
+                mountain_probe[curvature_z * 65 + curvature_x]
+            )
+            var curvature_laplacian := (
+                4.0 * curvature_center
+                - float(mountain_probe[curvature_z * 65 + curvature_x - 1])
+                - float(mountain_probe[curvature_z * 65 + curvature_x + 1])
+                - float(mountain_probe[(curvature_z - 1) * 65 + curvature_x])
+                - float(mountain_probe[(curvature_z + 1) * 65 + curvature_x])
+            )
+            local_curvature_sq_sum += curvature_laplacian * curvature_laplacian
+            local_curvature_count += 1
+    var local_curvature_rms_m := sqrt(
+        local_curvature_sq_sum / maxf(float(local_curvature_count), 1.0)
+    )
+    if local_curvature_rms_m < 35.0:
+        push_error(
+            "Mountain terrain lost kilometre-scale ridge curvature: %.1f m"
+            % local_curvature_rms_m
+        )
+        quit(74)
+        return true
+
     var local_crest_height_m := target_height_m
     for dz in range(-3, 4):
         for dx in range(-3, 4):
@@ -605,7 +638,7 @@ func _process(_delta: float) -> bool:
         return true
 
     print(
-        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f view_angle_deg=%.2f skyline_margin_deg=%.2f height_rise_m=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
+        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f view_angle_deg=%.2f skyline_margin_deg=%.2f height_rise_m=%.2f curvature_rms_m=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
         % [
             aabb.position.y,
             aabb.end.y,
@@ -616,6 +649,7 @@ func _process(_delta: float) -> bool:
             rad_to_deg(best_elevation_angle),
             rad_to_deg(best_skyline_margin),
             height_rise_m,
+            local_curvature_rms_m,
             distant_resolution,
             camera.fov,
             spawn_east_m,
