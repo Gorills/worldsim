@@ -399,6 +399,18 @@ func _process(_delta: float) -> bool:
         quit(61)
         return true
 
+    var near_material := mesh_instance.material_override as BaseMaterial3D
+    var distant_material := near_distant_terrain.material_override as BaseMaterial3D
+    if (
+        near_material == null
+        or distant_material == null
+        or near_material.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED
+        or distant_material.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED
+    ):
+        push_error("Terrain material regained a normal-lighting pass that exposes LOD seams")
+        quit(66)
+        return true
+
     var flat_rock := SurfaceVisual.terrain_color(
         800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     )
