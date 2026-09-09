@@ -64,11 +64,15 @@ coarse/fine separation used in established AMR practice:
 - Berger & Colella (1989), conservative coarse/fine AMR synchronization:
   https://doi.org/10.1016/0021-9991(89)90035-1
 
-The adapter exposes a transient terrain revision derived from active cell ids
-and authoritative elevation values. A revision change dirties existing chunks.
-The chunk under the player updates its `ArrayMesh` and `HeightMapShape3D`
-synchronously; remaining visible chunks update at one per frame. Render and
-collision always use the same sampled height array. Godot 4.7 documents the
+The adapter exposes separate transient terrain and living-surface revisions.
+A terrain revision dirties height/collision data: the chunk under the player
+updates its `ArrayMesh` and `HeightMapShape3D` synchronously, while remaining
+visible chunks update at one per frame. A surface-only revision no longer
+resamples reconstructed terrain or rebuilds collision. Near chunks cache their
+central 33 x 33 heights and only rebuild vertex colors/decorative vegetation;
+distant LODs reuse cached positions, normals and heights and resample only the
+living-surface packet. Render and collision still use the same sampled height
+array whenever terrain authority actually changes. Godot 4.7 documents the
 relevant mutable height-map data and procedural mesh contracts:
 
 - https://docs.godotengine.org/en/4.7/classes/class_arraymesh.html
@@ -230,8 +234,10 @@ produced severe runtime slowdown in manual testing, so the runtime contract is
 back to 33 x 33. The implementation still limits work to one distant LOD rebuild
 per rendered frame, recenters on 256 m near-chunk transitions while walking,
 uses a much larger threshold during survey flight, and throttles
-simulation-driven distant refreshes to avoid coupling hourly simulation steps
-to full-horizon mesh regeneration.
+simulation-driven distant refreshes. Surface-only revisions use cached terrain
+geometry instead of re-running reconstructed-height sampling, preventing hourly
+ecology/climate changes from repeatedly entering the expensive terrain/collision
+path.
 
 ## Global map inspection
 
