@@ -589,6 +589,99 @@ void stochastic_weather_forcing_is_resolution_consistent() {
 }
 
 
+
+struct ThermalAggregationError {
+    double mae_k{};
+    double mean_delta_k{};
+};
+
+ThermalAggregationError initial_l2_l3_land_temperature_error(
+    std::uint64_t seed,
+    bool geography
+) {
+    auto coarse=geography
+        ? geography_climate_fixture(seed,2)
+        : climate_fixture(seed,2,2,86'400.0);
+    auto fine=geography
+        ? geography_climate_fixture(seed,3)
+        : climate_fixture(seed,3,3,86'400.0);
+    const auto& coarse_store=
+        coarse->world().stores().get<ClimateStore>();
+    const auto& fine_store=
+        fine->world().stores().get<ClimateStore>();
+
+    struct Aggregate {
+        double temperature_area{};
+        double land_area{};
+    };
+    std::vector<Aggregate> aggregated(coarse_store.nodes().size());
+    double fine_temperature_area=0.0;
+    double fine_land_area=0.0;
+    for (const ClimateNode& node:fine_store.nodes()) {
+        const std::size_t index=coarse_store.node_index(node.cell);
+        aggregated[index].temperature_area+=
+            node.land_temperature_k*node.land_area_m2;
+        aggregated[index].land_area+=node.land_area_m2;
+        fine_temperature_area+=node.land_temperature_k*node.land_area_m2;
+        fine_land_area+=node.land_area_m2;
+    }
+
+    double absolute_error_area=0.0;
+    double coarse_temperature_area=0.0;
+    double coarse_land_area=0.0;
+    for (std::size_t i=0;i<coarse_store.nodes().size();++i) {
+        const ClimateNode& node=coarse_store.nodes()[i];
+        if (!(aggregated[i].land_area>0.0)) continue;
+        const double fine_mean=
+            aggregated[i].temperature_area/aggregated[i].land_area;
+        absolute_error_area+=
+            std::abs(node.land_temperature_k-fine_mean)*
+            aggregated[i].land_area;
+        coarse_temperature_area+=node.land_temperature_k*node.land_area_m2;
+        coarse_land_area+=node.land_area_m2;
+    }
+    return {
+        absolute_error_area/std::max(1.0,fine_land_area),
+        coarse_temperature_area/std::max(1.0,coarse_land_area)-
+            fine_temperature_area/std::max(1.0,fine_land_area)
+    };
+}
+
+void initial_thermal_forcing_is_resolution_consistent() {
+    double flat_max_mae=0.0;
+    double geography_max_mae=0.0;
+    double flat_max_mean_delta=0.0;
+    double geography_max_mean_delta=0.0;
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const ThermalAggregationError flat=
+            initial_l2_l3_land_temperature_error(seed,false);
+        const ThermalAggregationError terrain=
+            initial_l2_l3_land_temperature_error(seed,true);
+        flat_max_mae=std::max(flat_max_mae,flat.mae_k);
+        geography_max_mae=std::max(geography_max_mae,terrain.mae_k);
+        flat_max_mean_delta=std::max(
+            flat_max_mean_delta,std::abs(flat.mean_delta_k)
+        );
+        geography_max_mean_delta=std::max(
+            geography_max_mean_delta,std::abs(terrain.mean_delta_k)
+        );
+    }
+    std::cerr
+        <<"thermal forcing diagnostic: flat_mae_k="<<flat_max_mae
+        <<" flat_mean_delta_k="<<flat_max_mean_delta
+        <<" geography_mae_k="<<geography_max_mae
+        <<" geography_mean_delta_k="<<geography_max_mean_delta
+        <<'\n';
+    check(
+        flat_max_mae<0.10,
+        "flat L2/L3 initial thermal forcing diverged"
+    );
+    check(
+        geography_max_mae<0.10,
+        "terrain L2/L3 initial thermal forcing diverged"
+    );
+}
+
 void lod_independent_reference_state() {
     auto coarse=climate_fixture(101,1,2,3'600.0);
     auto focused=climate_fixture(101,1,2,3'600.0);
@@ -829,6 +922,7 @@ int main() {
         horizontal_heat_transport_is_resolution_consistent();
         orographic_reference_elevation_is_resolution_consistent();
         stochastic_weather_forcing_is_resolution_consistent();
+        initial_thermal_forcing_is_resolution_consistent();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();
         carbon_cycle_closes_and_forces_climate();
