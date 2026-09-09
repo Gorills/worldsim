@@ -235,6 +235,33 @@ double initial_reference_mean_elevation_m(
     return elevation_area/represented_area;
 }
 
+double initial_reference_mean_lapse_elevation_m(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell
+) {
+    double represented_area=0.0;
+    double positive_elevation_area=0.0;
+    for (CellId sample:geography_reference_cells(cell)) {
+        const double area=world.topology().area_m2(sample);
+        represented_area+=area;
+        positive_elevation_area+=
+            area*std::max(
+                0.0,
+                initial_flexed_reference_elevation_m(
+                    world,
+                    geology,
+                    sample
+                )
+            );
+    }
+    if (!(represented_area>0.0))
+        throw std::runtime_error(
+            "geography lapse reference has zero represented area"
+        );
+    return positive_elevation_area/represented_area;
+}
+
 struct CoastalReferenceSample {
     double area_m2{};
     double elevation_m{};
@@ -414,6 +441,8 @@ void initialize_geology(WorldState& world, const FieldRegistry& r) {
     const GeologyFieldIds ids=geology_fields(r);
     const FieldId reference_elevation=
         require_field(r,"geography.reference_elevation_m");
+    const FieldId reference_lapse_elevation=
+        require_field(r,"geography.reference_lapse_elevation_m");
     const GeologyModel geology(world.seed());
     for (CellId cell:world.active_cells()) {
         const GeologyState state=
@@ -431,6 +460,15 @@ void initialize_geology(WorldState& world, const FieldRegistry& r) {
             cell,
             reference_elevation,
             initial_reference_mean_elevation_m(
+                world,
+                geology,
+                cell
+            )
+        );
+        fs.set(
+            cell,
+            reference_lapse_elevation,
+            initial_reference_mean_lapse_elevation_m(
                 world,
                 geology,
                 cell
@@ -2800,6 +2838,7 @@ double total_ecology_nitrogen_accounted_kg(
 void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geography.elevation_m","m",FieldSemantics::Intensive,0.0,-11000.0,9000.0});
     r.register_field({"geography.reference_elevation_m","m",FieldSemantics::Intensive,0.0,-11000.0,9000.0});
+    r.register_field({"geography.reference_lapse_elevation_m","m",FieldSemantics::Intensive,0.0,0.0,9000.0});
     r.register_field({"geography.land_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
     r.register_field({"geology.crust_thickness_m","m",FieldSemantics::Intensive,35'000.0,3'000.0,70'000.0});
     r.register_field({"geology.crust_density_kg_m3","kg/m3",FieldSemantics::Intensive,2'850.0,2'500.0,3'300.0,
