@@ -622,30 +622,36 @@ NaturalIgnition first_natural_ignition(
 }
 
 void natural_ignition_is_resolution_consistent() {
-    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
-        const NaturalIgnition coarse=first_natural_ignition(seed,2);
-        const NaturalIgnition fine=first_natural_ignition(seed,3);
-        if (
-            coarse.day!=fine.day ||
-            std::abs(coarse.burned_area_m2-fine.burned_area_m2)>
+    const auto same_ignition=[](
+        const NaturalIgnition& a,
+        const NaturalIgnition& b
+    ) {
+        return
+            a.day==b.day &&
+            std::abs(a.burned_area_m2-b.burned_area_m2)<=
                 1.0e-12*std::max({
                     1.0,
-                    std::abs(coarse.burned_area_m2),
-                    std::abs(fine.burned_area_m2)
-                })
-        ) {
-            std::cerr
-                <<"fire ignition diagnostic: seed="<<seed
-                <<" l2_day="<<coarse.day
-                <<" l3_day="<<fine.day
-                <<" l2_area_m2="<<coarse.burned_area_m2
-                <<" l3_area_m2="<<fine.burned_area_m2
-                <<'\n';
-            throw std::runtime_error(
-                "L2/L3 natural ignition is not resolution-consistent"
-            );
-        }
+                    std::abs(a.burned_area_m2),
+                    std::abs(b.burned_area_m2)
+                });
+    };
+
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const NaturalIgnition l2=first_natural_ignition(seed,2);
+        const NaturalIgnition l3=first_natural_ignition(seed,3);
+        const NaturalIgnition l4=first_natural_ignition(seed,4);
+        check(
+            same_ignition(l2,l3) && same_ignition(l3,l4),
+            "L2/L3/L4 natural ignition is not resolution-consistent"
+        );
     }
+
+    const NaturalIgnition l4=first_natural_ignition(0,4);
+    const NaturalIgnition l5=first_natural_ignition(0,5);
+    check(
+        same_ignition(l4,l5),
+        "L4/L5 natural ignition changed under spatial refinement"
+    );
 }
 
 void natural_ignition_is_stateless_and_deterministic() {
