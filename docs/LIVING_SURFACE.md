@@ -105,8 +105,10 @@ Living surface v1 does not add:
 - fauna embodiment;
 - renderer-owned ecological state.
 
-The current cone primitives are intentionally diagnostic placeholders. Visual
-asset quality and target-hardware frame time remain **NOT VERIFIED**. CI can
-verify the surface packet, revision propagation, Godot parsing/headless runtime,
-near MultiMesh creation, distant color arrays and existing collision/terrain
-invariants.
+Near vegetation remains deliberately low-detail presentation, but trees now use
+a separate low-poly trunk and rounded canopy surface and shrubs use a rounded
+low-poly crown instead of the diagnostic cone silhouettes. Final art quality and
+target-hardware frame time remain **NOT VERIFIED**. CI can verify the surface
+packet, revision propagation, Godot parsing/headless runtime, near MultiMesh
+creation and primitive structure, distant color arrays and existing
+collision/terrain invariants.
