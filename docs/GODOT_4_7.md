@@ -154,6 +154,7 @@ practice represented by Unreal Engine's `ADebugCameraController::SpeedScale`:
 - https://docs.godotengine.org/en/4.7/classes/class_input.html
 - https://docs.godotengine.org/en/4.7/tutorials/inputs/input_examples.html
 - https://docs.godotengine.org/en/4.7/classes/class_characterbody3d.html
+- https://docs.godotengine.org/en/4.7/tutorials/assets_pipeline/importing_3d_scenes/model_export_considerations.html
 - https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Engine/ADebugCameraController/SpeedScale?application_version=5.5
 
 HUD text is localized through gettext PO catalogs (English and Russian) and styled by a shared `Theme` resource.
