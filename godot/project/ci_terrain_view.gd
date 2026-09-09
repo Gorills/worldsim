@@ -109,7 +109,7 @@ func _process(_delta: float) -> bool:
     var mountain_max_z := floori(float(mountain_max_index) / 65.0)
     var target_height_m := float(mountain_probe[mountain_max_index])
     var view_index := -1
-    var best_elevation_angle := -INF
+    var best_skyline_margin := -INF
     for i in range(mountain_probe.size()):
         var x := i % 65
         var z := floori(float(i) / 65.0)
@@ -120,17 +120,31 @@ func _process(_delta: float) -> bool:
         var height_m := float(mountain_probe[i])
         if distance_m < 6_000.0 or distance_m > 10_000.0 or height_m < 0.0:
             continue
-        var elevation_angle := atan2(
-            target_height_m - height_m,
-            maxf(distance_m, 1.0)
-        )
-        if elevation_angle > best_elevation_angle:
-            best_elevation_angle = elevation_angle
+        var skyline_margin := float(scene.call(
+            "_mountain_skyline_margin",
+            mountain_probe,
+            Vector2(float(x), float(z)),
+            Vector2(float(mountain_max_x), float(mountain_max_z))
+        ))
+        if skyline_margin > best_skyline_margin:
+            best_skyline_margin = skyline_margin
             view_index = i
     if view_index < 0:
         push_error("Mountain diagnostic has no dry 6-10 km viewing point")
         quit(54)
         return true
+
+    var view_x := view_index % 65
+    var view_z := floori(float(view_index) / 65.0)
+    var view_height_m := float(mountain_probe[view_index])
+    var mountain_view_distance_m := Vector2(
+        float(mountain_max_x - view_x) * 625.0,
+        float(mountain_max_z - view_z) * 625.0
+    ).length()
+    var best_elevation_angle := atan2(
+        target_height_m - view_height_m,
+        maxf(mountain_view_distance_m, 1.0)
+    )
     if best_elevation_angle < deg_to_rad(4.0):
         push_error(
             "Mountain viewpoint lacks visible angular relief: %.2f degrees"
@@ -138,9 +152,13 @@ func _process(_delta: float) -> bool:
         )
         quit(59)
         return true
-
-    var view_x := view_index % 65
-    var view_z := floori(float(view_index) / 65.0)
+    if best_skyline_margin < deg_to_rad(1.5):
+        push_error(
+            "Mountain peak is hidden by foreground skyline: margin=%.2f degrees"
+            % rad_to_deg(best_skyline_margin)
+        )
+        quit(63)
+        return true
     var expected_spawn_east_m := 5_573_000.0 + (
         float(view_x) - mountain_half
     ) * 625.0
@@ -153,10 +171,6 @@ func _process(_delta: float) -> bool:
     var expected_target_north_m := -1_800_300.0 + (
         float(mountain_max_z) - mountain_half
     ) * 625.0
-    var mountain_view_distance_m := Vector2(
-        expected_target_east_m - expected_spawn_east_m,
-        expected_target_north_m - expected_spawn_north_m
-    ).length()
     if (
         absf(spawn_east_m - expected_spawn_east_m) > 0.1
         or absf(spawn_north_m - expected_spawn_north_m) > 0.1
@@ -427,7 +441,7 @@ func _process(_delta: float) -> bool:
         return true
 
     print(
-        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f view_angle_deg=%.2f height_rise_m=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
+        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f view_angle_deg=%.2f skyline_margin_deg=%.2f height_rise_m=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
         % [
             aabb.position.y,
             aabb.end.y,
@@ -436,6 +450,7 @@ func _process(_delta: float) -> bool:
             mountain_prominence,
             mountain_view_distance_m / 1000.0,
             rad_to_deg(best_elevation_angle),
+            rad_to_deg(best_skyline_margin),
             target_height_m - float(mountain_probe[view_index]),
             distant_resolution,
             camera.fov,
