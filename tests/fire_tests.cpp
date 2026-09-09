@@ -591,6 +591,63 @@ void spread_resolves_refined_neighbor_region() {
     );
 }
 
+struct NaturalIgnition {
+    Tick day{};
+    double burned_area_m2{};
+};
+
+NaturalIgnition first_natural_ignition(
+    std::uint64_t seed,
+    std::uint8_t level
+) {
+    auto simulation=make_default_simulation(
+        seed,SimulationConfig{level,level,3'600.0}
+    );
+    clear_and_dry(*simulation);
+    for (CellId cell:simulation->world().active_cells())
+        set_fuel(*simulation,cell);
+
+    for (Tick day=0;day<256U;++day) {
+        simulation->world().set_tick(day*24U+23U);
+        run_fire(*simulation);
+        const auto events=simulation->world().drain_events();
+        for (const auto& event:events) {
+            if (event.type=="ecology.fire_ignited")
+                return {day,event.magnitude};
+        }
+    }
+    throw std::runtime_error(
+        "bounded dry/fueled run produced no natural ignition"
+    );
+}
+
+void natural_ignition_is_resolution_consistent() {
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const NaturalIgnition coarse=first_natural_ignition(seed,2);
+        const NaturalIgnition fine=first_natural_ignition(seed,3);
+        if (
+            coarse.day!=fine.day ||
+            std::abs(coarse.burned_area_m2-fine.burned_area_m2)>
+                1.0e-12*std::max({
+                    1.0,
+                    std::abs(coarse.burned_area_m2),
+                    std::abs(fine.burned_area_m2)
+                })
+        ) {
+            std::cerr
+                <<"fire ignition diagnostic: seed="<<seed
+                <<" l2_day="<<coarse.day
+                <<" l3_day="<<fine.day
+                <<" l2_area_m2="<<coarse.burned_area_m2
+                <<" l3_area_m2="<<fine.burned_area_m2
+                <<'\n';
+            throw std::runtime_error(
+                "L2/L3 natural ignition is not resolution-consistent"
+            );
+        }
+    }
+}
+
 void natural_ignition_is_stateless_and_deterministic() {
     auto first=make_default_simulation(
         7005,SimulationConfig{1,1,3'600.0}
@@ -668,6 +725,7 @@ int main() {
         wet_weather_suppresses_fire();
         snow_cover_suppresses_fire();
         spread_resolves_refined_neighbor_region();
+        natural_ignition_is_resolution_consistent();
         natural_ignition_is_stateless_and_deterministic();
         snapshot_continuation_includes_fire_state();
         std::cout<<"fire_tests: OK\n";
