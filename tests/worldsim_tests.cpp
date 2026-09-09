@@ -601,15 +601,19 @@ void test_living_soil_ecology_contracts() {
         "thin and deep regolith retained nearly the same storm water"
     );
 
-    // Soil fertility must affect plant production through the actual scheduler
-    // rather than existing as an unused diagnostic field.
+    // The derived fertility diagnostic must reflect a real finite nutrient
+    // donor, and that donor must affect plant production through the scheduler.
     auto poor=make_default_simulation(seed);
     auto fertile=make_default_simulation(seed);
     const CellId vegetation_cell=probe_cell(*poor);
     auto& poor_fs=poor->world().stores().get<FieldStore>();
     auto& fertile_fs=fertile->world().stores().get<FieldStore>();
     const auto fertility=*poor->fields().find("ecology.soil_fertility");
+    const auto mineral_n=*poor->fields().find("ecology.mineral_nitrogen_kg");
+    const auto fast_n=*poor->fields().find("ecology.soil_fast_nitrogen_kg");
+    const auto slow_n=*poor->fields().find("ecology.soil_slow_nitrogen_kg");
     const auto litter=*poor->fields().find("ecology.litter_carbon_kg");
+    const auto litter_n=*poor->fields().find("ecology.litter_nitrogen_kg");
     const auto vegetation=*poor->fields().find(
         "ecology.vegetation_carbon_kg"
     );
@@ -620,20 +624,30 @@ void test_living_soil_ecology_contracts() {
         poor_fs.get(vegetation_cell,veg_land);
     const double controlled_carbon=0.5*veg_effective_area;
 
-    poor_fs.set(vegetation_cell,fertility,0.0);
-    fertile_fs.set(vegetation_cell,fertility,1.0);
-    poor_fs.set(vegetation_cell,litter,0.0);
-    fertile_fs.set(vegetation_cell,litter,0.0);
-    poor_fs.set(vegetation_cell,vegetation,controlled_carbon);
-    fertile_fs.set(vegetation_cell,vegetation,controlled_carbon);
+    for (auto* fields:{&poor_fs,&fertile_fs}) {
+        fields->set(vegetation_cell,fast_n,0.0);
+        fields->set(vegetation_cell,slow_n,0.0);
+        fields->set(vegetation_cell,litter,0.0);
+        fields->set(vegetation_cell,litter_n,0.0);
+        fields->set(vegetation_cell,vegetation,controlled_carbon);
+    }
+    poor_fs.set(vegetation_cell,mineral_n,0.0);
+    fertile_fs.set(
+        vegetation_cell,mineral_n,0.02*veg_effective_area
+    );
 
     poor->step(24);
     fertile->step(24);
     check(
+        fertile_fs.get(vegetation_cell,fertility)>
+        poor_fs.get(vegetation_cell,fertility),
+        "mineral nitrogen did not raise derived soil fertility"
+    );
+    check(
         fertile_fs.get(vegetation_cell,npp)>
         poor_fs.get(vegetation_cell,npp)+
             1.0e-5*veg_effective_area,
-        "soil fertility did not limit vegetation NPP"
+        "finite mineral nitrogen did not limit vegetation NPP"
     );
     check(
         poor_fs.get(vegetation_cell,litter)>0.0 &&
@@ -660,17 +674,39 @@ void test_living_soil_ecology_contracts() {
         bare_litter->world().topology().area_m2(soil_cell)*
         bare_fs.get(soil_cell,soil_land);
 
-    bare_fs.set(soil_cell,soil_fertility,0.20);
-    rich_fs.set(soil_cell,soil_fertility,0.20);
-    bare_fs.set(soil_cell,soil_litter,0.0);
-    rich_fs.set(soil_cell,soil_litter,2.0*soil_effective_area);
+    const auto soil_litter_n=*bare_litter->fields().find(
+        "ecology.litter_nitrogen_kg"
+    );
+    const auto soil_fast_n=*bare_litter->fields().find(
+        "ecology.soil_fast_nitrogen_kg"
+    );
+    const auto soil_slow_n=*bare_litter->fields().find(
+        "ecology.soil_slow_nitrogen_kg"
+    );
+    const auto soil_mineral_n=*bare_litter->fields().find(
+        "ecology.mineral_nitrogen_kg"
+    );
+    for (auto* fields:{&bare_fs,&rich_fs}) {
+        fields->set(soil_cell,soil_fast_n,0.0);
+        fields->set(soil_cell,soil_slow_n,0.0);
+        fields->set(soil_cell,soil_mineral_n,0.0);
+        fields->set(soil_cell,soil_litter,0.0);
+        fields->set(soil_cell,soil_litter_n,0.0);
+    }
+    const double rich_litter_carbon=2.0*soil_effective_area;
+    rich_fs.set(soil_cell,soil_litter,rich_litter_carbon);
+    rich_fs.set(
+        soil_cell,
+        soil_litter_n,
+        rich_litter_carbon/40.0
+    );
 
     bare_litter->step(24);
     rich_litter->step(24);
     check(
         rich_fs.get(soil_cell,soil_fertility)>
         bare_fs.get(soil_cell,soil_fertility)+1.0e-3,
-        "litter decomposition did not improve reduced soil fertility"
+        "litter nitrogen mineralization did not improve soil fertility"
     );
 }
 

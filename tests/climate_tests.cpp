@@ -1,6 +1,7 @@
 #include "worldsim/climate.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/soil_nitrogen.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -367,6 +368,13 @@ void snow_burial_suppresses_short_vegetation() {
         set("ecology.shrub_carbon_kg",0.0);
         set("ecology.tree_carbon_kg",0.0);
         set("ecology.vegetation_carbon_kg",0.20*area);
+        const double grass_nitrogen=
+            0.20*area/kPlantCarbonNitrogenRatio[0];
+        set("ecology.grass_nitrogen_kg",grass_nitrogen);
+        set("ecology.shrub_nitrogen_kg",0.0);
+        set("ecology.tree_nitrogen_kg",0.0);
+        set("ecology.vegetation_nitrogen_kg",grass_nitrogen);
+        set("ecology.mineral_nitrogen_kg",0.02*area);
     }
     bare->world().stores().get<FieldStore>().set(
         cell,*bare->fields().find("climate.snow_cover_fraction"),0.0
