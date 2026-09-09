@@ -1,6 +1,7 @@
 #include "worldsim/climate.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/soil_nitrogen.hpp"
 
 #include <algorithm>
 #include <array>
