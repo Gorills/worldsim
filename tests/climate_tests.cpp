@@ -860,9 +860,9 @@ int main() {
         snow_albedo_feedback();
         snow_coupling_is_lod_independent();
         snow_burial_suppresses_short_vegetation();
-        orographic_precipitation();
         horizontal_heat_transport_is_resolution_consistent();
         flat_moisture_transport_resolution_diagnostic();
+        orographic_precipitation();
         orographic_reference_elevation_is_resolution_consistent();
         stochastic_weather_forcing_is_resolution_consistent();
         lod_independent_reference_state();
