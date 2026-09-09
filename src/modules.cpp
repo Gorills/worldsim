@@ -115,6 +115,7 @@ double land_fraction_from_elevation(double elevation_m) {
 }
 
 constexpr std::uint8_t kCoastalReferenceLevel=4;
+constexpr double kFlexuralCoupling=0.15;
 
 std::vector<CellId> geography_reference_cells(CellId cell) {
     std::vector<CellId> cells{cell};
@@ -183,6 +184,55 @@ GeologyState initial_geology_state_for_cell(
         sediment_mass,
         regolith_area/represented_area
     };
+}
+
+
+double initial_flexed_reference_elevation_m(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell
+) {
+    const auto sample_elevation=[&](CellId sample) {
+        const double area=world.topology().area_m2(sample);
+        const Vec3d direction=world.topology().center_unit(sample);
+        const GeologyState state=geology.initial_state(direction,area);
+        return geology.surface_elevation_m(state,direction,area);
+    };
+
+    const double local=sample_elevation(cell);
+    double neighbor_sum=0.0;
+    const auto neighbors=world.topology().neighbors4(cell);
+    for (CellId neighbor:neighbors)
+        neighbor_sum+=sample_elevation(neighbor);
+    return
+        (1.0-kFlexuralCoupling)*local+
+        kFlexuralCoupling*
+            neighbor_sum/static_cast<double>(neighbors.size());
+}
+
+double initial_reference_mean_elevation_m(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell
+) {
+    double represented_area=0.0;
+    double elevation_area=0.0;
+    for (CellId sample:geography_reference_cells(cell)) {
+        const double area=world.topology().area_m2(sample);
+        represented_area+=area;
+        elevation_area+=
+            area*
+            initial_flexed_reference_elevation_m(
+                world,
+                geology,
+                sample
+            );
+    }
+    if (!(represented_area>0.0))
+        throw std::runtime_error(
+            "geography reference elevation has zero represented area"
+        );
+    return elevation_area/represented_area;
 }
 
 struct CoastalReferenceSample {
@@ -321,7 +371,6 @@ void update_geography_surface(
     // isostatic response to adjacent columns. It is deliberately conservative:
     // the persistent mass state remains local, while only the derived surface
     // responds flexurally across the adaptive cover.
-    constexpr double flexural_coupling=0.15;
     for (CellId cell:world.active_cells()) {
         double neighbor_sum=0.0;
         std::size_t neighbor_count=0;
@@ -340,8 +389,8 @@ void update_geography_surface(
         }
         const double local=local_elevation.at(cell);
         const double flexed=neighbor_count>0
-            ? (1.0-flexural_coupling)*local+
-              flexural_coupling*neighbor_sum/static_cast<double>(neighbor_count)
+            ? (1.0-kFlexuralCoupling)*local+
+              kFlexuralCoupling*neighbor_sum/static_cast<double>(neighbor_count)
             : local;
         fs.set(cell,ids.elevation,flexed);
         if (update_land_fraction) {
@@ -363,6 +412,8 @@ void update_geography_surface(
 void initialize_geology(WorldState& world, const FieldRegistry& r) {
     auto& fs=world.stores().get<FieldStore>();
     const GeologyFieldIds ids=geology_fields(r);
+    const FieldId reference_elevation=
+        require_field(r,"geography.reference_elevation_m");
     const GeologyModel geology(world.seed());
     for (CellId cell:world.active_cells()) {
         const GeologyState state=
@@ -375,6 +426,17 @@ void initialize_geology(WorldState& world, const FieldRegistry& r) {
         fs.set(cell,ids.erosion_rate,0.0);
     }
     update_geography_surface(world,r,geology);
+    for (CellId cell:world.active_cells()) {
+        fs.set(
+            cell,
+            reference_elevation,
+            initial_reference_mean_elevation_m(
+                world,
+                geology,
+                cell
+            )
+        );
+    }
 }
 
 class GeologySystem final : public ISimSystem {
@@ -2737,6 +2799,7 @@ double total_ecology_nitrogen_accounted_kg(
 
 void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geography.elevation_m","m",FieldSemantics::Intensive,0.0,-11000.0,9000.0});
+    r.register_field({"geography.reference_elevation_m","m",FieldSemantics::Intensive,0.0,-11000.0,9000.0});
     r.register_field({"geography.land_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
     r.register_field({"geology.crust_thickness_m","m",FieldSemantics::Intensive,35'000.0,3'000.0,70'000.0});
     r.register_field({"geology.crust_density_kg_m3","kg/m3",FieldSemantics::Intensive,2'850.0,2'500.0,3'300.0,

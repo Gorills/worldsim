@@ -90,6 +90,16 @@ system, so a daily coarse simulation does not regenerate tectonics and terrain
 samples. Level 4 and finer cells retain the direct center-elevation path, so the
 normal level-4 production baseline pays no extra coastal quadrature cost.
 
+The same fixed level-4 support also defines
+`geography.reference_elevation_m`: an area-weighted mean of the initial
+flexed reference surface for coarse hierarchy regions. It is not a replacement
+for authoritative `geography.elevation_m`. The latter remains the evolving
+representative center surface used by geology, routing and local thermal lapse
+projection; the reference elevation is a stable coarse/fine orographic
+descriptor consumed by climate moisture forcing. This prevents a coarse
+climate node from inventing a different mountain barrier merely because its
+center falls on a different part of the generated terrain.
+
 The area-weighted restriction follows the same conservation principle as
 AMReX volume-weighted average-down and ESMF destination-area conservative
 normalization: a coarse fractional coverage is an integral over represented
