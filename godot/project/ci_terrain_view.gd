@@ -12,7 +12,7 @@ func _initialize() -> void:
     root.add_child(scene)
 
 func _process(_delta: float) -> bool:
-    if Engine.get_process_frames() < 12:
+    if Engine.get_process_frames() < 2:
         return false
 
     var terrain := root.get_node_or_null("WorldViewer/Terrain")
@@ -63,10 +63,21 @@ func _process(_delta: float) -> bool:
         return true
 
     var distant_root := root.get_node_or_null("WorldViewer/DistantTerrain")
+    if distant_root == null:
+        push_error("Spherical distant terrain root was not created")
+        quit(11)
+        return true
+
+    # Build visual LODs explicitly instead of waiting extra global frames. Waiting
+    # here used to advance the viewer simulation nondeterministically, invalidating
+    # the existing "first focused step refreshes terrain resources" regression.
+    for _i in range(12):
+        distant_root.call("_process", 0.0)
+
     var distant_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod8/Terrain") as MeshInstance3D
     var distant_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod8/Ocean") as MeshInstance3D
     var near_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod0/Ocean") as MeshInstance3D
-    if distant_root == null or distant_terrain == null or distant_ocean == null or near_ocean == null:
+    if distant_terrain == null or distant_ocean == null or near_ocean == null:
         push_error("Spherical distant terrain/ocean nodes were not created")
         quit(11)
         return true
