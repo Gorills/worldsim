@@ -42,3 +42,51 @@ The fixed suite is intentionally small. Multi-seed numerical robustness remains 
 ## CI
 
 The core CI job runs a small smoke invocation through CTest and then generates the five-seed 512x256 suite. The resulting directory is uploaded as the `worldsim-visual-dump` workflow artifact so it can be inspected without a local Godot installation.
+
+
+## Godot rendered-frame artifact
+
+The Godot integration CI also captures one canonical rendered frame from the
+actual walking scene. This complements the structural headless checks; it does
+not replace them and it is not a pixel-perfect golden-image gate.
+
+The capture contract is:
+
+- Godot 4.7.2 runs with the project's `gl_compatibility` renderer on a virtual
+  X11 display instead of the `--headless` display driver;
+- the requested window size is fixed at 1600x900;
+- `main.tscn` is instantiated with the normal seed-42 mountain demonstration
+  spawn;
+- automatic scene processing is disabled after startup, then the existing near
+  and distant terrain update methods are advanced with zero delta until their
+  initial work queues are empty, so the screenshot does not depend on runner
+  speed or simulation time;
+- capture waits for `RenderingServer.frame_post_draw` before reading the root
+  viewport texture;
+- the script rejects an empty image and a trivially uniform frame, writes
+  `walk_spawn.png`, and CI uploads it as the
+  `worldsim-godot-visual` workflow artifact.
+
+Godot 4.7 documents that `Viewport.get_texture().get_image()` can be used for
+screen capture and specifically requires waiting for
+`RenderingServer.frame_post_draw` to avoid an empty or stale image. Its command
+line contract exposes `--rendering-method`, `--windowed` and
+`--resolution`; `--headless` selects the headless display driver and is kept
+for correctness tests rather than rendered-frame review:
+
+- https://docs.godotengine.org/en/4.7/classes/class_viewport.html
+- https://docs.godotengine.org/en/4.7/tutorials/editor/command_line_tutorial.html
+
+GitHub Actions artifacts explicitly support retaining screenshots and other test
+outputs after a workflow completes. The rendered frame therefore stays a review
+artifact with the same 14-day retention policy as the existing C++ visual
+diagnostics:
+
+- https://docs.github.com/en/actions/concepts/workflows-and-actions/workflow-artifacts
+- https://docs.github.com/en/actions/tutorials/store-and-share-data
+
+The screenshot is intentionally not compared byte-for-byte in CI. Mesa/software
+renderer revisions, rasterization details and anti-aliasing can change pixels
+without changing the world presentation contract. Numeric terrain invariants,
+mesh/collision checks and runtime parsing remain the automated gates; the PNG is
+for human/model visual inspection.
