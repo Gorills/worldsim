@@ -1609,9 +1609,9 @@ public:
             "ecology.fire.ignition_target"
         );
 
-        // Freeze danger and today's burning fraction before applying either
-        // biomass loss or neighbor spread. Newly spread fire cannot move a
-        // second spatial step during this pass.
+        // Freeze danger and existing active-fire state before sampling
+        // natural ignition or applying biomass loss and neighbor spread.
+        // Newly spread fire cannot move a second spatial step during this pass.
         for (CellId cell:ctx.world.active_cells()) {
             FireState local;
             const double area=ctx.world.topology().area_m2(cell);
