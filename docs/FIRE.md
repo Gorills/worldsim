@@ -7,7 +7,7 @@
 > epoch 23, the magic forcing timebase correction introduced epoch 24, and the
 > wildfire burn-cap timebase correction introduced epoch 25, and the active-fire
 > persistence timebase correction introduced epoch 26, and LOD-invariant field-command
-> routing raises the current combined-world epoch to 27.
+> routing introduced epoch 27, and the parent-consistent LOD hysteresis correction raises the current combined-world epoch to 28.
 > The Wildfire-v1 execution record below is retained as historical evidence for
 > epoch 19.
 
