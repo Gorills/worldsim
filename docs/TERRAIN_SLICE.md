@@ -116,6 +116,17 @@ walking chunks remain the only physics terrain:
 - at most one missing or dirty near chunk is generated per rendered frame;
 - the chunk under the initial player position is built synchronously before movement starts.
 
+For the fixed seed-42 walking demonstration, startup placement is intentionally
+inside the existing mountain regression region instead of the projection origin.
+The viewer samples the same 40 km x 40 km reconstructed-terrain window centered
+at east 5,573 km / north -1,800.3 km, starts at that window's lowest 625 m-grid
+sample, and initially faces its highest sample. This changes only presentation
+placement: terrain authority, simulation focus, snapshots and the reconstruction
+formula are unchanged. The purpose is diagnostic as well as presentational: if
+the standard walk scene still appears flat, the failure is in terrain
+reconstruction/rendering rather than in requiring the user to travel thousands
+of kilometres to the known mountain belt.
+
 The walker now also renders visual-only nested spherical terrain rings. Every
 ring is a 33 x 33 regular grid, sample spacing doubles from 64 m through
 16,384 m, and the outer half-extent therefore grows from 1.024 km to
