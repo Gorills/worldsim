@@ -453,6 +453,12 @@ func _select_mountain_demo_spawn() -> bool:
     var view_index := -1
     var target_index := -1
     var best_score := -INF
+    var diagnostic_view_index := -1
+    var diagnostic_target_index := -1
+    var diagnostic_score := -INF
+    var diagnostic_rise_m := 0.0
+    var diagnostic_angle := 0.0
+    var diagnostic_margin := 0.0
     for summit_index in summit_indices:
         var target_x := summit_index % MOUNTAIN_DEMO_RESOLUTION
         var target_z := floori(
@@ -480,6 +486,19 @@ func _select_mountain_demo_spawn() -> bool:
                 Vector2(float(x), float(z)),
                 Vector2(float(target_x), float(target_z))
             )
+            if rise_m > 0.0:
+                var diagnostic_candidate_score := (
+                    skyline_margin
+                    + 0.35 * elevation_angle
+                    + 0.00008 * rise_m
+                )
+                if diagnostic_candidate_score > diagnostic_score:
+                    diagnostic_score = diagnostic_candidate_score
+                    diagnostic_view_index = i
+                    diagnostic_target_index = summit_index
+                    diagnostic_rise_m = rise_m
+                    diagnostic_angle = elevation_angle
+                    diagnostic_margin = skyline_margin
             if rise_m < MOUNTAIN_VIEW_MIN_RISE_M:
                 continue
             if elevation_angle < MOUNTAIN_VIEW_MIN_ANGLE_RAD:
@@ -496,6 +515,29 @@ func _select_mountain_demo_spawn() -> bool:
                 target_index = summit_index
 
     if view_index < 0 or target_index < 0:
+        if diagnostic_view_index >= 0 and diagnostic_target_index >= 0:
+            var diagnostic_view_x := diagnostic_view_index % MOUNTAIN_DEMO_RESOLUTION
+            var diagnostic_view_z := floori(
+                float(diagnostic_view_index) / float(MOUNTAIN_DEMO_RESOLUTION)
+            )
+            var diagnostic_target_x := (
+                diagnostic_target_index % MOUNTAIN_DEMO_RESOLUTION
+            )
+            var diagnostic_target_z := floori(
+                float(diagnostic_target_index) / float(MOUNTAIN_DEMO_RESOLUTION)
+            )
+            print(
+                "WORLDSIM_MOUNTAIN_ROLLBACK_DIAG rise_m=%.1f angle_deg=%.2f skyline_margin_deg=%.2f view=[%d,%d] target=[%d,%d]"
+                % [
+                    diagnostic_rise_m,
+                    rad_to_deg(diagnostic_angle),
+                    rad_to_deg(diagnostic_margin),
+                    diagnostic_view_x,
+                    diagnostic_view_z,
+                    diagnostic_target_x,
+                    diagnostic_target_z,
+                ]
+            )
         return false
 
     var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
