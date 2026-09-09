@@ -73,13 +73,13 @@ static func terrain_color(
     var steepness := clampf((slope - 0.06) / 0.48, 0.0, 1.0)
     var highland_rock := clampf((height_m - 1800.0) / 2600.0, 0.0, 1.0)
     var rock_strength := clampf(
-        maxf(0.75 * steepness, 0.65 * highland_rock),
+        maxf(0.82 * steepness, 0.65 * highland_rock),
         0.0,
-        0.82
+        0.85
     )
     if rock_strength > 0.0:
-        var rock_color := Color(0.16, 0.15, 0.14).lerp(
-            Color(0.34, 0.33, 0.32),
+        var rock_color := Color(0.13, 0.125, 0.12).lerp(
+            Color(0.31, 0.30, 0.29),
             elevation_t
         )
         color = color.lerp(rock_color, rock_strength)
