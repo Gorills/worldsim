@@ -41,6 +41,7 @@ func _process(_delta: float) -> bool:
 
     var arrays := mesh.surface_get_arrays(0)
     var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+    var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
     var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
     var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
     if verts.size() < 3 or indices.size() < 6:
@@ -69,6 +70,35 @@ func _process(_delta: float) -> bool:
     if !_surface_packet_valid(surface_packet, 33 * 33):
         push_error("Living-surface visual packet is missing or invalid")
         quit(42)
+        return true
+
+    var chunk_center_east_m := float(spawn_chunk.x) * 256.0
+    var chunk_center_north_m := float(spawn_chunk.y) * 256.0
+    var normal_probe := viewer_sim.sample_terrain_patch(
+        chunk_center_east_m,
+        chunk_center_north_m,
+        8.0,
+        35
+    )
+    if normal_probe.size() != 35 * 35:
+        push_error("Near terrain ghost-border normal probe failed")
+        quit(68)
+        return true
+    var edge_scene_z := 16
+    var edge_source_z := 32 - edge_scene_z
+    var edge_normal_z := edge_source_z + 1
+    var edge_normal_x := 33
+    var expected_edge_normal := Vector3(
+        float(normal_probe[edge_normal_z * 35 + edge_normal_x - 1])
+        - float(normal_probe[edge_normal_z * 35 + edge_normal_x + 1]),
+        16.0,
+        float(normal_probe[(edge_normal_z + 1) * 35 + edge_normal_x])
+        - float(normal_probe[(edge_normal_z - 1) * 35 + edge_normal_x])
+    ).normalized()
+    var rendered_edge_normal := normals[edge_scene_z * 33 + 32]
+    if rendered_edge_normal.dot(expected_edge_normal) < 0.9999:
+        push_error("Near chunk edge normal no longer uses the ghost-border central derivative")
+        quit(68)
         return true
 
     var mountain_probe := viewer_sim.sample_terrain_patch(
@@ -212,8 +242,6 @@ func _process(_delta: float) -> bool:
     # Godot's right-handed terrain convention is +X east and -Z north.
     # The sampled patch is ordered south-to-north, so its north row must appear
     # on the chunk's negative-Z side.
-    var chunk_center_east_m := float(spawn_chunk.x) * 256.0
-    var chunk_center_north_m := float(spawn_chunk.y) * 256.0
     var source_heights := viewer_sim.sample_terrain_patch(
         chunk_center_east_m,
         chunk_center_north_m,
