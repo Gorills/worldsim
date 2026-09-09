@@ -125,9 +125,13 @@ void NitrogenStore::advance(
                 2.0
             )
         );
-        const double scarcity=1.0-std::clamp(
-            fields.get(cell,fertility),0.0,1.0
-        );
+        const double current_fertility=
+            effective_area>1.0
+                ? mineral_nitrogen_fertility(
+                    fields.get(cell,mineral)/effective_area
+                )
+                : 0.0;
+        const double scarcity=1.0-current_fertility;
         const double request=
             maximum_fixation_kg_m2_day*
             effective_area*

@@ -2297,23 +2297,11 @@ public:
         bool fire_enabled,
         bool fauna_enabled
     ):
-        land_(require_field(r,"geography.land_fraction")),
-        temperature_(
-            require_field(r,"climate.surface_temperature_k")
-        ),
-        fertility_(require_field(r,"ecology.soil_fertility")),
-        mineral_(require_field(r,"ecology.mineral_nitrogen_kg")),
         leaching_(require_field(
             r,"ecology.nitrogen_leaching_kg_day"
         )),
         fire_emission_(require_field(
             r,"ecology.fire_nitrogen_emission_kg_day"
-        )),
-        fixation_(require_field(
-            r,"ecology.nitrogen_fixation_kg_day"
-        )),
-        deposition_(require_field(
-            r,"ecology.nitrogen_deposition_kg_day"
         )),
         fire_enabled_(fire_enabled),
         fauna_enabled_(fauna_enabled) {}
@@ -2332,7 +2320,6 @@ public:
             {
                 "field:geography.land_fraction",
                 "field:climate.surface_temperature_k",
-                "field:ecology.soil_fertility",
                 "field:ecology.mineral_nitrogen_kg",
                 "field:ecology.nitrogen_leaching_kg_day",
                 "field:ecology.fire_nitrogen_emission_kg_day",
@@ -2368,8 +2355,7 @@ public:
     }
 
 private:
-    FieldId land_,temperature_,fertility_,mineral_;
-    FieldId leaching_,fire_emission_,fixation_,deposition_;
+    FieldId leaching_,fire_emission_;
     bool fire_enabled_{};
     bool fauna_enabled_{};
 };
