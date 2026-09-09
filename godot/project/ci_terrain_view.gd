@@ -295,7 +295,15 @@ func _process(_delta: float) -> bool:
     var distant_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod8/Terrain") as MeshInstance3D
     var distant_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod8/Ocean") as MeshInstance3D
     var near_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod0/Ocean") as MeshInstance3D
-    if distant_terrain == null or distant_ocean == null or near_ocean == null:
+    var shadow_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod3/Terrain") as MeshInstance3D
+    var nonshadow_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod4/Terrain") as MeshInstance3D
+    if (
+        distant_terrain == null
+        or distant_ocean == null
+        or near_ocean == null
+        or shadow_terrain == null
+        or nonshadow_terrain == null
+    ):
         push_error("Spherical distant terrain/ocean nodes were not created")
         quit(11)
         return true
@@ -359,12 +367,28 @@ func _process(_delta: float) -> bool:
         push_error("Terrain lighting regressed to flat ambient-dominated shading")
         quit(57)
         return true
+    if (
+        !sun.shadow_enabled
+        or sun.directional_shadow_mode != 1
+        or sun.directional_shadow_max_distance < 15_000.0
+        or sun.directional_shadow_max_distance > 25_000.0
+    ):
+        push_error("Mountain shadows are disabled or no longer bounded to the near horizon")
+        quit(60)
+        return true
+    if (
+        shadow_terrain.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+        or nonshadow_terrain.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    ):
+        push_error("Distant terrain shadow casters exceed the intended LOD budget")
+        quit(61)
+        return true
 
     var flat_rock := SurfaceVisual.terrain_color(
-        2600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     )
     var steep_rock := SurfaceVisual.terrain_color(
-        2600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.45
+        800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.45
     )
     var slope_color_delta := (
         absf(flat_rock.r - steep_rock.r)
