@@ -385,7 +385,8 @@ void planetary_reservoirs_close_boundary_and_return_fluxes() {
     const double before=total_planet_nitrogen_kg(
         simulation->world(),simulation->fields()
     );
-    const double ocean_before=store.ocean_dissolved_nitrogen_kg();
+    const double leaching_budget_before=
+        store.budget().terrestrial_leached_to_ocean_kg;
     fields.add(cell,mineral,-leached);
     fields.add(cell,litter,-fire_loss);
     fields.set(cell,fertility,0.0);
@@ -405,8 +406,11 @@ void planetary_reservoirs_close_boundary_and_return_fluxes() {
         3.0e-15,
         "planetary nitrogen reservoirs did not close boundary transfers"
     );
-    check(
-        store.ocean_dissolved_nitrogen_kg()>ocean_before,
+    near(
+        store.budget().terrestrial_leached_to_ocean_kg-
+            leaching_budget_before,
+        leached,
+        2.0e-15,
         "terrestrial leaching did not enter the ocean nitrogen reservoir"
     );
     check(
