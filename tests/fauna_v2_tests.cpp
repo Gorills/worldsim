@@ -74,7 +74,7 @@ void clear_plants(Simulation& sim) {
 
 std::pair<CellId,CellId> find_land_pair(
     Simulation& sim,
-    double minimum_land_fraction=0.80
+    double minimum_land_fraction=0.10
 ) {
     const auto land=*sim.fields().find("geography.land_fraction");
     const auto& fields=sim.world().stores().get<FieldStore>();
