@@ -1,5 +1,7 @@
 extends Node3D
 
+const SurfaceVisual = preload("res://scripts/surface_visual.gd")
+
 # Visual-only spherical terrain. Physics stays on the existing fine local chunks.
 # Each coarser level doubles sample spacing and renders only the ring not covered
 # by the next-finer level. Fine outer rows morph onto the coarser grid so the
@@ -38,6 +40,7 @@ var target_center_north_m := 0.0
 var queued_center_east_m := 0.0
 var queued_center_north_m := 0.0
 var terrain_revision := 0
+var surface_revision := 0
 var revision_dirty := false
 var revision_elapsed_s := 0.0
 var initialized := false
@@ -57,6 +60,7 @@ func initialize(
     queued_center_east_m = target_center_east_m
     queued_center_north_m = target_center_north_m
     terrain_revision = sim.get_terrain_revision()
+    surface_revision = sim.get_surface_revision()
 
     terrain_material = StandardMaterial3D.new()
     terrain_material.vertex_color_use_as_albedo = true
@@ -97,6 +101,12 @@ func set_terrain_revision(revision: int) -> void:
     if !initialized or revision == terrain_revision:
         return
     terrain_revision = revision
+    revision_dirty = true
+
+func set_surface_revision(revision: int) -> void:
+    if !initialized or revision == surface_revision:
+        return
+    surface_revision = revision
     revision_dirty = true
 
 func set_view_state(
@@ -186,8 +196,19 @@ func _rebuild_level(level: int) -> void:
     var positions: PackedVector3Array = packet.get("positions", PackedVector3Array())
     var sea_positions: PackedVector3Array = packet.get("sea_positions", PackedVector3Array())
     var heights: PackedFloat32Array = packet.get("heights", PackedFloat32Array())
+    var surface := sim.sample_surface_visual_patch(
+        queued_center_east_m,
+        queued_center_north_m,
+        spacing_m,
+        LOD_RESOLUTION
+    )
     var expected := LOD_RESOLUTION * LOD_RESOLUTION
-    if positions.size() != expected or sea_positions.size() != expected or heights.size() != expected:
+    if (
+        positions.size() != expected
+        or sea_positions.size() != expected
+        or heights.size() != expected
+        or !_surface_packet_valid(surface, expected)
+    ):
         push_error("Distant terrain LOD %d sampling failed: %s" % [level, sim.get_last_error()])
         return
 
@@ -209,6 +230,7 @@ func _rebuild_level(level: int) -> void:
     terrain_instance.mesh = _build_mesh(
         positions,
         heights,
+        surface,
         spacing_m,
         _terrain_inner_half_m(level),
         true
@@ -216,6 +238,7 @@ func _rebuild_level(level: int) -> void:
     ocean_instance.mesh = _build_mesh(
         sea_positions,
         PackedFloat32Array(),
+        {},
         spacing_m,
         _ocean_inner_half_m(level),
         false
@@ -280,6 +303,7 @@ func _sample_grid_bilinear(
 func _build_mesh(
     positions: PackedVector3Array,
     heights: PackedFloat32Array,
+    surface: Dictionary,
     spacing_m: float,
     inner_half_m: float,
     use_elevation_colors: bool
@@ -287,8 +311,22 @@ func _build_mesh(
     var normals := PackedVector3Array()
     normals.resize(positions.size())
     var colors := PackedColorArray()
+    var grass := PackedFloat32Array()
+    var shrub := PackedFloat32Array()
+    var tree := PackedFloat32Array()
+    var snow := PackedFloat32Array()
+    var flooded := PackedFloat32Array()
+    var fire_active := PackedFloat32Array()
+    var fire_burned := PackedFloat32Array()
     if use_elevation_colors:
         colors.resize(positions.size())
+        grass = surface["grass_density_kg_m2"]
+        shrub = surface["shrub_density_kg_m2"]
+        tree = surface["tree_density_kg_m2"]
+        snow = surface["snow_cover_fraction"]
+        flooded = surface["flooded_fraction"]
+        fire_active = surface["fire_active_fraction"]
+        fire_burned = surface["fire_burned_fraction"]
 
     for z in range(LOD_RESOLUTION):
         for x in range(LOD_RESOLUTION):
@@ -299,7 +337,16 @@ func _build_mesh(
             var up := positions[mini(z + 1, LOD_RESOLUTION - 1) * LOD_RESOLUTION + x]
             normals[index] = (up - down).cross(right - left).normalized()
             if use_elevation_colors:
-                colors[index] = _terrain_color(float(heights[index]))
+                colors[index] = SurfaceVisual.terrain_color(
+                    float(heights[index]),
+                    float(grass[index]),
+                    float(shrub[index]),
+                    float(tree[index]),
+                    float(snow[index]),
+                    float(flooded[index]),
+                    float(fire_active[index]),
+                    float(fire_burned[index])
+                )
 
     var indices := PackedInt32Array()
     var half_cells := float(LOD_RESOLUTION - 1) * 0.5
@@ -337,9 +384,17 @@ func _build_mesh(
     mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
     return mesh
 
-func _terrain_color(height_m: float) -> Color:
-    if height_m < 0.0:
-        var depth_t := clampf(-height_m / 5000.0, 0.0, 1.0)
-        return Color(0.25, 0.27, 0.28).lerp(Color(0.12, 0.14, 0.16), depth_t)
-    var elevation_t := clampf(height_m / 4500.0, 0.0, 1.0)
-    return Color(0.34, 0.31, 0.27).lerp(Color(0.62, 0.60, 0.56), elevation_t)
+func _surface_packet_valid(surface: Dictionary, expected: int) -> bool:
+    for key in [
+        "grass_density_kg_m2",
+        "shrub_density_kg_m2",
+        "tree_density_kg_m2",
+        "snow_cover_fraction",
+        "flooded_fraction",
+        "fire_active_fraction",
+        "fire_burned_fraction",
+    ]:
+        var values: PackedFloat32Array = surface.get(key, PackedFloat32Array())
+        if values.size() != expected:
+            return false
+    return true
