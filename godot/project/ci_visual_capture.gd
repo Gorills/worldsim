@@ -128,6 +128,30 @@ func _prepare_and_capture() -> void:
         Time.get_ticks_msec() - surface_refresh_start_ms
     )
 
+    # llvmpipe is only a relative CI proxy, but these bounds catch the exact
+    # regressions that made the 65 x 65 / multi-FBM terrain unusably slow.
+    if rendered_fps < 12.0:
+        push_error(
+            "Terrain render proxy regressed below 12 FPS: %.2f"
+            % rendered_fps
+        )
+        quit(10)
+        return
+    if terrain_rebuild_ms > 20:
+        push_error(
+            "Near terrain rebuild proxy exceeded 20 ms: %d"
+            % terrain_rebuild_ms
+        )
+        quit(10)
+        return
+    if surface_refresh_ms > 8:
+        push_error(
+            "Surface-only refresh proxy exceeded 8 ms: %d"
+            % surface_refresh_ms
+        )
+        quit(10)
+        return
+
     var output_path := output_dir.path_join("walk_spawn.png")
     var save_error := image.save_png(output_path)
     if save_error != OK:
