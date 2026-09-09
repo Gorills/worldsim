@@ -8,7 +8,7 @@
 > grazing-timestep correction introduced epoch 23, the magic forcing
 > timebase correction introduced epoch 24, and the wildfire burn-cap
 > timebase correction introduced epoch 25, the active-fire persistence correction introduced epoch 26, and LOD-invariant field-command routing introduced epoch 27, the parent-consistent LOD hysteresis correction raised the combined-world epoch to 28,
-the resolution-aware lateral heat-transport correction raised it to 29, Carbon cycle v1 raised it to 30, Nitrogen cycle v1 raised it to 31, and Planetary nitrogen v2 raises the current combined-world epoch to 32. Carbon-cycle state and assumptions are documented separately in `CARBON_CYCLE.md`; nitrogen state is documented in `NITROGEN_CYCLE.md`.
+the resolution-aware lateral heat-transport correction raised it to 29, Carbon cycle v1 raised it to 30, Nitrogen cycle v1 raised it to 31, Planetary nitrogen v2 raised it to 32, fauna nitrogen stoichiometry raised it to 33, area-integrated coastal geography raised it to 34, and fixed-support climate orography raises the current combined-world epoch to 35. Carbon-cycle state and assumptions are documented separately in `CARBON_CYCLE.md`; nitrogen state is documented in `NITROGEN_CYCLE.md`.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 
@@ -220,6 +220,64 @@ changes the field schema and authoritative ecology continuation state, raising
 the combined-world epoch to 31. Planetary nitrogen v2 subsequently adds a
 separate global nitrogen store and new field schema, raising the current
 combined-world epoch to 32 without changing ClimateStore v3.
+
+## Resolution-consistent orographic reference — 2026-09-09
+
+After coastal land area was made resolution-consistent, the standard two-year
+level-2/3 matrix still showed a maximum 21.33% mean-land-precipitation delta.
+The climate moisture operator diagnosed uplift from neighboring
+`ClimateNode.mean_elevation_m` values, while those values came from the
+representative cell-center elevation. L2 and L3 therefore described the same
+generated mountain system with unrelated coarse orographic samples.
+
+Geography now exposes `geography.reference_elevation_m`. Below level 4 it is
+the area-weighted mean of the same fixed level-4 flexed initial surface used as
+the common reference support; level 4 and finer use their direct reference
+cell. Climate stores that value separately as `orographic_elevation_m` and
+uses it only for uplift condensation. The existing center elevation remains
+the thermal lapse-rate reference and the local projected temperature contract.
+This separation is intentional: an earlier implementation reused the
+area-mean reference for thermal initialization and improved temperature
+convergence while worsening several downstream ecological diagnostics.
+
+The approach follows established model-orography practice: ECMWF derives mean
+model-grid orography by aggregating a substantially finer elevation dataset and
+treats unresolved terrain separately rather than classifying a whole coarse
+grid box from one point sample.
+
+- ECMWF, *Impact of orographic drag on forecast skill*:
+  https://www.ecmwf.int/en/newsletter/150/meteorology/impact-orographic-drag-forecast-skill
+- ECMWF Forecast User Guide, *Model orography*:
+  https://confluence.ecmwf.int/pages/viewpage.action?pageId=673552287
+
+A regression constructs geography+climate worlds for seeds 0, 42 and 999 at
+levels 2 and 3 and requires every L2 climate orographic reference elevation to
+equal the area-weighted aggregate of its L3 children to within 1e-6 m. The
+regression-only commit failed on the former center-sampled operator.
+
+On the final bounded implementation, the two-year coupled seeds
+`0,42,999` L2/L3 smoke changes the maximum adjacent-level deltas relative to
+the coastal-geography main baseline as follows:
+
+- mean land precipitation: 21.33% -> **19.25%**;
+- total NPP: 26.01% -> **20.77%**;
+- NPP per represented land area: 26.39% -> **21.19%**;
+- mean fertility: 24.45% -> **16.62%**;
+- mineral-N density: 25.37% -> **23.78%**;
+- fauna carbon density: 7.65% -> **7.41%**.
+
+Vegetation density changes from 23.34% to 23.55% and mean land temperature
+from 0.877% to 0.898%; those small regressions are retained rather than
+changing unrelated thermal/ecology semantics to optimize a two-year matrix.
+A separate attempted compositional rainout-law change was also rejected after
+it worsened precipitation convergence to 25.75% and NPP-density convergence to
+34.77%.
+
+The new geography field changes the field schema, and the additional
+ClimateStore orographic reference changes that store layout from v3 to v4.
+The combined-world snapshot epoch therefore advances from 34 to 35. Version 34
+is rejected rather than silently continuing with the former orographic
+semantics.
 
 ## Executed evidence — 2026-09-08
 
