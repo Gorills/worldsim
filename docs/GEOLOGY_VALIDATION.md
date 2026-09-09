@@ -64,6 +64,71 @@ The daily geology system advances these fields using simulation elapsed time. Co
 
 Crust thickness is area-averaged on coarsening; density is thickness-and-area weighted. Thus `sum(area * thickness * density)` is preserved across LOD even for heterogeneous crust. The oceanic branch also includes buoyancy relative to the 7 km / 2950 kg/m3 reference column, so stored crust thickness and density affect both oceanic and continental relief. Protected bedrock that cannot be eroded at the 3 km crust floor does not consume regolith availability.
 
+### Coarse coastal area fraction
+
+`geography.land_fraction` is physical terrestrial area, not a display mask:
+climate, hydrology, soil, vegetation, fire and fauna multiply cell area by this
+fraction. The former implementation derived the entire fraction from one
+flexed elevation at the active cell center. The level-2/3 stability comparison
+therefore measured up to 18.9% represented-land-area disagreement across the
+standard seed set even after the climate transport discretization was fixed.
+
+Cells below cube-sphere level 4 now use the fixed level-4 descendants of the
+same hierarchy region as their initialization/reference support. Initial crust
+thickness, continental fraction, lithosphere age and regolith are area-restricted;
+crust density uses the same thickness-and-area weighting as FieldStore
+coarsening; sediment mass is summed as an extensive stock. Thus a level-2 or
+level-3 new world starts from the conservative restriction of the same level-4
+geology instead of unrelated center samples.
+
+The same level-4 samples provide deterministic initial surface elevations for
+a subgrid hypsometric profile. The current authoritative flexed center elevation
+shifts that profile vertically as geology evolves, and land fraction is the
+area-weighted share above the existing smooth sea-level transition. The profile
+is deterministic from seed + hierarchy cell and is cached inside the geology
+system, so a daily coarse simulation does not regenerate tectonics and terrain
+samples. Level 4 and finer cells retain the direct center-elevation path, so the
+normal level-4 production baseline pays no extra coastal quadrature cost.
+
+The area-weighted restriction follows the same conservation principle as
+AMReX volume-weighted average-down and ESMF destination-area conservative
+normalization: a coarse fractional coverage is an integral over represented
+area, not a reclassification of the entire coarse region from its center.
+
+- AMReX `average_down`: https://amrex-codes.github.io/amrex/doxygen/namespaceamrex.html
+- ESMF conservative destination-area normalization: https://earthsystemmodeling.org/docs/release/ESMF_8_0_1/ESMF_refdoc/node9.html
+
+Mixed coarse cells no longer use the sign of the center elevation as a
+land/ocean ownership switch. Terrestrial drainage propagates whenever a cell
+owns positive land area and stops at a pure-ocean receiver. Geomorphic
+transport applies terrestrial erosion to the represented land share and the
+reduced marine sediment path to the represented ocean share when the center is
+submerged; both debit the same conservative sediment/crust state before the
+downstream deposit is applied. The center elevation remains the routing/slope
+representative, so this is a fractional-area closure rather than a resolved
+coastline or separate land/ocean bed geometry.
+
+A simulation-LOD-only split/merge does not recompute physical
+`land_fraction`: FieldStore already area-averages the intensive fraction on
+coarsening and copies it on refinement, so represented terrestrial area is
+conserved while derived elevation may reveal finer spatial detail. The daily
+geology process remains the point at which changing geology can change the
+physical coast.
+
+Executed PR evidence on 2026-09-09:
+
+- the regression-only commit failed `worldsim_tests` because the old L2/L3
+  represented-land-area delta exceeded the new 5% gate;
+- the final functional head passed **15/15 CTest**;
+- the two-year coupled seeds `0,42,999` level-2/3 stability smoke completed
+  all six cases with no stability failures and maximum represented-land-area
+  delta **1.5108%**;
+- the previous current-main smoke on the same cases measured **18.8633%**;
+- the 64-seed / 4096-sample geology benchmark completed with no broad
+  plausibility warnings (`land_fraction_mean=0.2411`);
+- Godot 4.7 Linux integration, headless simulation/UI checks and rendered-frame
+  capture passed on the same functional head.
+
 Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
 
 - Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803

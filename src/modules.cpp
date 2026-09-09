@@ -14,6 +14,7 @@
 #include <map>
 #include <numeric>
 #include <optional>
+#include <vector>
 
 namespace worldsim {
 namespace {
@@ -113,10 +114,184 @@ double land_fraction_from_elevation(double elevation_m) {
     return t*t*(3.0-2.0*t);
 }
 
+constexpr std::uint8_t kCoastalReferenceLevel=4;
+
+std::vector<CellId> geography_reference_cells(CellId cell) {
+    std::vector<CellId> cells{cell};
+    while (!cells.empty() &&
+           cells.front().level()<kCoastalReferenceLevel) {
+        std::vector<CellId> refined;
+        refined.reserve(cells.size()*4U);
+        for (CellId current:cells) {
+            const auto children=current.children();
+            refined.insert(
+                refined.end(),
+                children.begin(),
+                children.end()
+            );
+        }
+        cells=std::move(refined);
+    }
+    return cells;
+}
+
+GeologyState initial_geology_state_for_cell(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell
+) {
+    const double cell_area=world.topology().area_m2(cell);
+    const Vec3d cell_direction=world.topology().center_unit(cell);
+    if (cell.level()>=kCoastalReferenceLevel)
+        return geology.initial_state(cell_direction,cell_area);
+
+    double represented_area=0.0;
+    double crust_thickness_area=0.0;
+    double crust_density_weighted=0.0;
+    double crust_density_weight=0.0;
+    double continental_area=0.0;
+    double age_area=0.0;
+    double sediment_mass=0.0;
+    double regolith_area=0.0;
+
+    for (CellId sample:geography_reference_cells(cell)) {
+        const double sample_area=world.topology().area_m2(sample);
+        const GeologyState state=geology.initial_state(
+            world.topology().center_unit(sample),
+            sample_area
+        );
+        represented_area+=sample_area;
+        crust_thickness_area+=state.crust_thickness_m*sample_area;
+        const double density_weight=
+            state.crust_thickness_m*sample_area;
+        crust_density_weighted+=
+            state.crust_density_kg_m3*density_weight;
+        crust_density_weight+=density_weight;
+        continental_area+=state.continental_fraction*sample_area;
+        age_area+=state.lithosphere_age_ma*sample_area;
+        sediment_mass+=state.sediment_mass_kg;
+        regolith_area+=state.regolith_thickness_m*sample_area;
+    }
+    if (!(represented_area>0.0) || !(crust_density_weight>0.0))
+        return geology.initial_state(cell_direction,cell_area);
+
+    return {
+        crust_thickness_area/represented_area,
+        crust_density_weighted/crust_density_weight,
+        continental_area/represented_area,
+        age_area/represented_area,
+        sediment_mass,
+        regolith_area/represented_area
+    };
+}
+
+struct CoastalReferenceSample {
+    double area_m2{};
+    double elevation_m{};
+};
+
+struct CoastalReferenceProfile {
+    double center_elevation_m{};
+    double represented_area_m2{};
+    std::vector<CoastalReferenceSample> samples;
+};
+
+using CoastalReferenceCache=std::map<CellId,CoastalReferenceProfile>;
+
+CoastalReferenceProfile build_coastal_reference_profile(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell
+) {
+    CoastalReferenceProfile profile;
+    const double cell_area=world.topology().area_m2(cell);
+    const Vec3d cell_direction=world.topology().center_unit(cell);
+    const GeologyState initial_cell=
+        initial_geology_state_for_cell(
+            world,
+            geology,
+            cell
+        );
+    profile.center_elevation_m=geology.surface_elevation_m(
+        initial_cell,
+        cell_direction,
+        cell_area
+    );
+
+    const std::vector<CellId> cells=geography_reference_cells(cell);
+    profile.samples.reserve(cells.size());
+    for (CellId sample:cells) {
+        const double sample_area=world.topology().area_m2(sample);
+        const Vec3d sample_direction=
+            world.topology().center_unit(sample);
+        const GeologyState sample_state=geology.initial_state(
+            sample_direction,
+            sample_area
+        );
+        profile.samples.push_back({
+            sample_area,
+            geology.surface_elevation_m(
+                sample_state,
+                sample_direction,
+                sample_area
+            )
+        });
+        profile.represented_area_m2+=sample_area;
+    }
+    return profile;
+}
+
+double coastal_land_fraction(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell,
+    double flexed_center_elevation_m,
+    CoastalReferenceCache* cache
+) {
+    if (cell.level()>=kCoastalReferenceLevel)
+        return land_fraction_from_elevation(flexed_center_elevation_m);
+
+    std::optional<CoastalReferenceProfile> local_profile;
+    const CoastalReferenceProfile* profile=nullptr;
+    if (cache) {
+        const auto [it,inserted]=cache->try_emplace(cell);
+        if (inserted)
+            it->second=build_coastal_reference_profile(
+                world,
+                geology,
+                cell
+            );
+        profile=&it->second;
+    } else {
+        local_profile=build_coastal_reference_profile(
+            world,
+            geology,
+            cell
+        );
+        profile=&*local_profile;
+    }
+
+    const double vertical_offset=
+        flexed_center_elevation_m-profile->center_elevation_m;
+    double represented_land_area=0.0;
+    for (const CoastalReferenceSample& sample:profile->samples) {
+        represented_land_area+=
+            sample.area_m2*
+            land_fraction_from_elevation(
+                sample.elevation_m+vertical_offset
+            );
+    }
+    return profile->represented_area_m2>0.0
+        ? represented_land_area/profile->represented_area_m2
+        : land_fraction_from_elevation(flexed_center_elevation_m);
+}
+
 void update_geography_surface(
     WorldState& world,
     const FieldRegistry& r,
-    const GeologyModel& geology
+    const GeologyModel& geology,
+    CoastalReferenceCache* coastal_cache=nullptr,
+    bool update_land_fraction=true
 ) {
     auto& fs=world.stores().get<FieldStore>();
     const GeologyFieldIds ids=geology_fields(r);
@@ -169,7 +344,19 @@ void update_geography_surface(
               flexural_coupling*neighbor_sum/static_cast<double>(neighbor_count)
             : local;
         fs.set(cell,ids.elevation,flexed);
-        fs.set(cell,ids.land_fraction,land_fraction_from_elevation(flexed));
+        if (update_land_fraction) {
+            fs.set(
+                cell,
+                ids.land_fraction,
+                coastal_land_fraction(
+                    world,
+                    geology,
+                    cell,
+                    flexed,
+                    coastal_cache
+                )
+            );
+        }
     }
 }
 
@@ -178,10 +365,12 @@ void initialize_geology(WorldState& world, const FieldRegistry& r) {
     const GeologyFieldIds ids=geology_fields(r);
     const GeologyModel geology(world.seed());
     for (CellId cell:world.active_cells()) {
-        const GeologyState state=geology.initial_state(
-            world.topology().center_unit(cell),
-            world.topology().area_m2(cell)
-        );
+        const GeologyState state=
+            initial_geology_state_for_cell(
+                world,
+                geology,
+                cell
+            );
         write_geology_state(fs,cell,ids,state);
         fs.set(cell,ids.erosion_rate,0.0);
     }
@@ -279,7 +468,7 @@ public:
         // iteration order cannot create or destroy transported mass.
         for (const auto& [cell,state]:states)
             write_geology_state(fs,cell,ids_,state);
-        update_geography_surface(ctx.world,ctx.fields,geology);
+        update_geography_surface(ctx.world,ctx.fields,geology,&coastal_reference_);
 
         struct FlowTarget {
             CellId cell;
@@ -387,7 +576,7 @@ public:
                 // Terrestrial drainage terminates at the first submerged receiver.
                 // Marine sediment routing below may continue farther downslope, but
                 // river discharge is not propagated across the ocean floor.
-                if (fs.get(cell,ids_.elevation)<0.0) continue;
+                if (fs.get(cell,ids_.land_fraction)<=0.0) continue;
                 const auto route=routes.find(cell);
                 if (route==routes.end()) continue;
                 for (const FlowTarget& target:route->second.targets) {
@@ -415,18 +604,26 @@ public:
             const double source_elevation=fs.get(cell,ids_.elevation);
             GeologyState& state=states.at(cell);
 
+            const double land_fraction=std::clamp(
+                fs.get(cell,ids_.land_fraction),
+                0.0,
+                1.0
+            );
+            const double ocean_fraction=1.0-land_fraction;
             double transport_rate=0.0;
             double transported_mass=0.0;
-            if (source_elevation<0.0) {
-                // Once sediment crosses sea level, stop applying terrestrial
-                // runoff/hillslope incision. Existing marine sediment can
-                // still move downslope through a sediment-only submarine path.
+
+            // A coarse coastal cell may represent both exposed land and
+            // submerged area even when its center lies on only one side of
+            // sea level. Apply each reduced process to its represented area
+            // share instead of reclassifying the whole cell from the center.
+            if (ocean_fraction>0.0 && source_elevation<0.0) {
                 const double sediment_depth=
                     geology.sediment_column_thickness_m(
                         state.sediment_mass_kg,
                         area
                     );
-                transport_rate=
+                const double marine_rate=
                     geology.marine_sediment_transport_rate_m_per_year(
                         route->second.slope,
                         -source_elevation,
@@ -434,16 +631,20 @@ public:
                     );
                 const double transport_depth=std::min(
                     0.05,
-                    transport_rate*dt_years
-                );
-                transported_mass=geology.entrain_sediment(
+                    marine_rate*dt_years
+                )*ocean_fraction;
+                transported_mass+=geology.entrain_sediment(
                     state,
                     area,
                     transport_depth
                 );
-            } else {
+                transport_rate+=ocean_fraction*marine_rate;
+            }
+
+            if (land_fraction>0.0) {
+                const double land_area=area*land_fraction;
                 const double runoff_m_day=
-                    discharge[cell]/std::max(1.0,area);
+                    discharge[cell]/std::max(1.0,land_area);
                 const double fluvial_erosion_rate=
                     geology.erosion_rate_m_per_year(
                         route->second.slope,
@@ -455,18 +656,19 @@ public:
                         route->second.slope,
                         state.regolith_thickness_m
                     );
-                transport_rate=
+                const double terrestrial_rate=
                     fluvial_erosion_rate+hillslope_transport_rate;
                 const double erosion_depth=std::min(
                     0.05,
-                    transport_rate*dt_years
-                );
+                    terrestrial_rate*dt_years
+                )*land_fraction;
                 const ErosionBudget budget=geology.erode(
                     state,
                     area,
                     erosion_depth
                 );
-                transported_mass=budget.transported_mass_kg();
+                transported_mass+=budget.transported_mass_kg();
+                transport_rate+=land_fraction*terrestrial_rate;
             }
 
             for (const FlowTarget& target:route->second.targets)
@@ -480,7 +682,7 @@ public:
         for (const auto& [cell,state]:states)
             write_geology_state(fs,cell,ids_,state);
 
-        update_geography_surface(ctx.world,ctx.fields,geology);
+        update_geography_surface(ctx.world,ctx.fields,geology,&coastal_reference_);
         if (has_hydrology_) {
             for (auto& [cell,height]:bed_before) height=fs.get(cell,ids_.elevation)-height;
             for (auto& [cell,land]:land_before) land=fs.get(cell,ids_.land_fraction)-land;
@@ -492,6 +694,7 @@ public:
 
 private:
     GeologyFieldIds ids_;
+    CoastalReferenceCache coastal_reference_;
     bool has_climate_{};
     bool has_climate_exchange_{};
     bool has_hydrology_{};
@@ -2561,7 +2764,11 @@ void GeographyModule::initialize(WorldState& world, const FieldRegistry& r) {
 
 void GeographyModule::on_spatial_cover_changed(WorldState& world, const FieldRegistry& r) {
     const GeologyModel geology(world.seed());
-    update_geography_surface(world,r,geology);
+    // FieldStore refine/coarsen already conserves the physical land-area
+    // fraction. A pure LOD transition may reveal derived elevation detail but
+    // must not create or destroy represented terrestrial area without elapsed
+    // simulation time.
+    update_geography_surface(world,r,geology,nullptr,false);
 }
 
 void MagicModule::register_fields(FieldRegistry& r) {

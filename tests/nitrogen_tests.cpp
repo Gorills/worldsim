@@ -41,7 +41,7 @@ CellId land_cell(Simulation& simulation) {
     const auto land=field(simulation,"geography.land_fraction");
     const auto& fields=simulation.world().stores().get<FieldStore>();
     for (CellId cell:simulation.world().active_cells()) {
-        if (fields.get(cell,land)>0.70) return cell;
+        if (fields.get(cell,land)>0.10) return cell;
     }
     throw std::runtime_error("nitrogen fixture found no land cell");
 }
@@ -566,7 +566,7 @@ void lod_and_snapshot_preserve_nitrogen() {
     simulation->step(48);
     const auto snapshot=simulation->save_snapshot();
     check(
-        snapshot.size()>11U && snapshot[8]==std::byte{33},
+        snapshot.size()>11U && snapshot[8]==std::byte{34},
         "unexpected nitrogen-cycle snapshot epoch"
     );
     auto restored=make_default_simulation(

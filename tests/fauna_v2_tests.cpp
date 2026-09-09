@@ -74,7 +74,7 @@ void clear_plants(Simulation& sim) {
 
 std::pair<CellId,CellId> find_land_pair(
     Simulation& sim,
-    double minimum_land_fraction=0.80
+    double minimum_land_fraction=0.10
 ) {
     const auto land=*sim.fields().find("geography.land_fraction");
     const auto& fields=sim.world().stores().get<FieldStore>();
@@ -745,7 +745,7 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{33},
+        snapshot[8]==std::byte{34},
         "unexpected authoritative snapshot epoch"
     );
 

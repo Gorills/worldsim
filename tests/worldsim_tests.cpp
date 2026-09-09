@@ -328,7 +328,7 @@ void test_determinism_and_snapshot() {
         std::uint8_t{22},std::uint8_t{23},std::uint8_t{24},
         std::uint8_t{25},std::uint8_t{26},std::uint8_t{27},
         std::uint8_t{28},std::uint8_t{29},std::uint8_t{30},
-        std::uint8_t{31},std::uint8_t{32}
+        std::uint8_t{31},std::uint8_t{32},std::uint8_t{33}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -2451,6 +2451,86 @@ void test_geology_drainage_accumulation() {
           "drainage graph did not accumulate any upstream catchment");
 }
 
+double represented_land_area_m2(std::uint64_t seed,std::uint8_t level) {
+    SimulationConfig cfg;
+    cfg.base_level=level;
+    cfg.max_level=level;
+    cfg.tick_seconds=3600.0;
+    auto sim=make_terrain_simulation(seed,cfg);
+    const auto land=*sim->fields().find("geography.land_fraction");
+    const auto& fs=sim->world().stores().get<FieldStore>();
+    double total=0.0;
+    for (CellId cell:sim->world().active_cells())
+        total+=sim->world().topology().area_m2(cell)*fs.get(cell,land);
+    return total;
+}
+
+void test_geography_land_area_is_resolution_consistent() {
+    double maximum_relative_delta=0.0;
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const double level2=represented_land_area_m2(seed,2);
+        const double level3=represented_land_area_m2(seed,3);
+        const double relative_delta=
+            std::abs(level2-level3)/std::max(level2,level3);
+        maximum_relative_delta=std::max(
+            maximum_relative_delta,
+            relative_delta
+        );
+    }
+    check(
+        maximum_relative_delta<0.05,
+        "L2/L3 represented land area diverged by more than 5%"
+    );
+}
+
+void test_geography_coastal_area_survives_focus_refinement() {
+    SimulationConfig cfg;
+    cfg.base_level=2;
+    cfg.max_level=3;
+    cfg.tick_seconds=3600.0;
+    auto sim=make_terrain_simulation(42,cfg);
+    const auto land=*sim->fields().find("geography.land_fraction");
+    const auto& before=sim->world().stores().get<FieldStore>();
+
+    CellId coastal_parent{};
+    double parent_land_fraction=0.0;
+    bool found=false;
+    for (CellId cell:sim->world().active_cells()) {
+        const double fraction=before.get(cell,land);
+        if (fraction>0.05 && fraction<0.95) {
+            coastal_parent=cell;
+            parent_land_fraction=fraction;
+            found=true;
+            break;
+        }
+    }
+    check(found,"coastal LOD fixture found no fractional coarse land cell");
+    const double expected_land_area=
+        sim->world().topology().area_m2(coastal_parent)*
+        parent_land_fraction;
+
+    sim->set_focus(sim->world().topology().center_unit(coastal_parent));
+    sim->step(1);
+
+    const auto& after=sim->world().stores().get<FieldStore>();
+    double refined_land_area=0.0;
+    std::size_t active_children=0;
+    for (CellId child:coastal_parent.children()) {
+        if (!sim->world().active_cells().contains(child)) continue;
+        refined_land_area+=
+            sim->world().topology().area_m2(child)*
+            after.get(child,land);
+        ++active_children;
+    }
+    check(active_children==4,"coastal parent did not refine into four children");
+    near(
+        refined_land_area,
+        expected_land_area,
+        0.02,
+        "focus-only refinement changed represented coastal land area"
+    );
+}
+
 void test_geography_refinement_preserves_geology_state() {
     SimulationConfig cfg;
     cfg.base_level=4;
@@ -2555,6 +2635,8 @@ int main() {
         test_geology_marine_sediment_transport_without_runoff();
         test_geology_mixed_margin_uses_both_crust_sides();
         test_geology_drainage_accumulation();
+        test_geography_land_area_is_resolution_consistent();
+        test_geography_coastal_area_survives_focus_refinement();
         test_geography_refinement_preserves_geology_state();
         test_c_api();
         test_module_extension_contract();
