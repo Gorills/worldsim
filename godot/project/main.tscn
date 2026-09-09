@@ -1,8 +1,9 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource path="res://scripts/world_viewer.gd" type="Script" id="1"]
 [ext_resource path="res://ui/worldsim_theme.tres" type="Theme" id="2"]
 [ext_resource path="res://scripts/world_minimap_overlay.gd" type="Script" id="3"]
+[ext_resource path="res://scripts/distant_terrain.gd" type="Script" id="4"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_world"]
 sky_top_color = Color(0.32, 0.52, 0.78, 1)
@@ -19,9 +20,14 @@ sky = SubResource("Sky_world")
 ambient_light_source = 3
 ambient_light_energy = 0.65
 fog_enabled = true
+fog_mode = 1
 fog_light_color = Color(0.68, 0.74, 0.82, 1)
-fog_density = 0.0011
-fog_sky_affect = 0.35
+fog_density = 1.0
+fog_depth_begin = 35000.0
+fog_depth_end = 300000.0
+fog_depth_curve = 1.25
+fog_aerial_perspective = 0.7
+fog_sky_affect = 0.65
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.35
@@ -40,6 +46,9 @@ script = ExtResource("1")
 
 [node name="Terrain" type="Node3D" parent="."]
 
+[node name="DistantTerrain" type="Node3D" parent="."]
+script = ExtResource("4")
+
 [node name="Player" type="CharacterBody3D" parent="."]
 floor_snap_length = 0.4
 safe_margin = 0.02
@@ -57,7 +66,7 @@ position = Vector3(0, 0.62, 0)
 [node name="Camera3D" type="Camera3D" parent="Player/Head"]
 current = true
 near = 0.1
-far = 1800.0
+far = 400000.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_world")

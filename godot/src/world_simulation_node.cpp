@@ -158,6 +158,68 @@ double reconstructed_terrain_height(
     );
 }
 
+struct LocalPlanetFrame {
+    worldsim::Vec3d origin_surface;
+    worldsim::Vec3d x_axis;
+    worldsim::Vec3d up_axis;
+    worldsim::Vec3d z_axis;
+};
+
+LocalPlanetFrame local_planet_frame(
+    double origin_east_m,
+    double origin_north_m,
+    double origin_height_m
+) {
+    constexpr double derivative_step_m=16.0;
+    const worldsim::Vec3d up=worldsim::TerrainGenerator::projected_to_direction(
+        origin_east_m,
+        origin_north_m
+    );
+    const worldsim::Vec3d east_direction=worldsim::TerrainGenerator::projected_to_direction(
+        origin_east_m+derivative_step_m,
+        origin_north_m
+    );
+    const worldsim::Vec3d north_direction=worldsim::TerrainGenerator::projected_to_direction(
+        origin_east_m,
+        origin_north_m+derivative_step_m
+    );
+
+    worldsim::Vec3d x=east_direction-up*worldsim::dot(east_direction,up);
+    if (!(worldsim::norm(x)>1.0e-12))
+        throw std::runtime_error("projected east axis is degenerate");
+    x=worldsim::normalized(x);
+
+    worldsim::Vec3d z=
+        north_direction-
+        up*worldsim::dot(north_direction,up)-
+        x*worldsim::dot(north_direction,x);
+    if (!(worldsim::norm(z)>1.0e-12))
+        throw std::runtime_error("projected north axis is degenerate");
+    z=worldsim::normalized(z);
+
+    return {
+        up*(worldsim::kEarthRadiusM+origin_height_m),
+        x,
+        up,
+        z
+    };
+}
+
+Vector3 local_planet_position(
+    const LocalPlanetFrame& frame,
+    worldsim::Vec3d direction,
+    double elevation_m
+) {
+    const worldsim::Vec3d point=
+        worldsim::normalized(direction)*(worldsim::kEarthRadiusM+elevation_m);
+    const worldsim::Vec3d delta=point-frame.origin_surface;
+    return {
+        static_cast<godot::real_t>(worldsim::dot(delta,frame.x_axis)),
+        static_cast<godot::real_t>(worldsim::dot(delta,frame.up_axis)),
+        static_cast<godot::real_t>(worldsim::dot(delta,frame.z_axis))
+    };
+}
+
 std::uint64_t fingerprint_mix(std::uint64_t hash, std::uint64_t value) {
     hash^=value+0x9e3779b97f4a7c15ULL+(hash<<6U)+(hash>>2U);
     return hash;
@@ -233,6 +295,19 @@ void WorldSimulationNode::_bind_methods() {
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_height","east_m","north_m"),&WorldSimulationNode::sample_terrain_height);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_patch","center_east_m","center_north_m","spacing_m","resolution"),
                          &WorldSimulationNode::sample_terrain_patch);
+    ClassDB::bind_method(
+        godot::D_METHOD(
+            "sample_terrain_visual_patch",
+            "center_east_m",
+            "center_north_m",
+            "spacing_m",
+            "resolution",
+            "origin_east_m",
+            "origin_north_m",
+            "origin_height_m"
+        ),
+        &WorldSimulationNode::sample_terrain_visual_patch
+    );
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_equirectangular","width","height"),
                          &WorldSimulationNode::sample_terrain_equirectangular);
     ClassDB::bind_method(
@@ -468,6 +543,78 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_patch(double center_east_
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in sample_terrain_patch"); }
+    return out;
+}
+
+Dictionary WorldSimulationNode::sample_terrain_visual_patch(
+    double center_east_m,
+    double center_north_m,
+    double spacing_m,
+    std::int64_t resolution,
+    double origin_east_m,
+    double origin_north_m,
+    double origin_height_m
+) const {
+    Dictionary out;
+    try {
+        ensure_sim();
+        if (!std::isfinite(center_east_m) || !std::isfinite(center_north_m) ||
+            !std::isfinite(spacing_m) || spacing_m<=0.0 ||
+            !std::isfinite(origin_east_m) || !std::isfinite(origin_north_m) ||
+            !std::isfinite(origin_height_m))
+            throw std::invalid_argument("invalid visual terrain patch coordinates or spacing");
+        if (resolution<2 || resolution>129)
+            throw std::invalid_argument("visual terrain patch resolution must be in [2,129]");
+        if (!terrain_preview_)
+            throw std::runtime_error("terrain preview is not initialized");
+
+        const auto n=static_cast<int>(resolution);
+        const int sample_count=n*n;
+        const double half=0.5*static_cast<double>(n-1);
+        PackedVector3Array positions;
+        PackedVector3Array sea_positions;
+        PackedFloat32Array heights;
+        positions.resize(sample_count);
+        sea_positions.resize(sample_count);
+        heights.resize(sample_count);
+
+        const LocalPlanetFrame frame=local_planet_frame(
+            origin_east_m,
+            origin_north_m,
+            origin_height_m
+        );
+        TerrainStencilCache stencil_cache;
+        for (int z=0;z<n;++z) {
+            for (int x=0;x<n;++x) {
+                const int index=z*n+x;
+                const double east=
+                    center_east_m+(static_cast<double>(x)-half)*spacing_m;
+                const double north=
+                    center_north_m+(static_cast<double>(z)-half)*spacing_m;
+                const worldsim::Vec3d direction=
+                    worldsim::TerrainGenerator::projected_to_direction(east,north);
+                const double height=reconstructed_terrain_height(
+                    *sim_,
+                    *terrain_preview_,
+                    direction,
+                    stencil_cache,
+                    terrain_preview_anchor_cache_
+                );
+                positions.set(index,local_planet_position(frame,direction,height));
+                sea_positions.set(index,local_planet_position(frame,direction,0.0));
+                heights.set(index,static_cast<float>(height));
+            }
+        }
+
+        out["positions"]=positions;
+        out["sea_positions"]=sea_positions;
+        out["heights"]=heights;
+        last_error_.clear();
+    } catch (const std::exception& e) {
+        report_error(e.what());
+    } catch (...) {
+        report_error("unknown C++ exception in sample_terrain_visual_patch");
+    }
     return out;
 }
 
