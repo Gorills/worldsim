@@ -630,17 +630,17 @@ void ClimateStore::advance_moisture(double dt_days) {
             nodes_[link.a].atmospheric_water_m3/nodes_[link.a].area_m2;
         const double density_b=
             nodes_[link.b].atmospheric_water_m3/nodes_[link.b].area_m2;
-        // First-order donor-cell advection adds numerical diffusion
-        // proportional to cell spacing. Keep the level-4 production operator
-        // unchanged, while coarse reference grids blend toward the centered
-        // face density so the artificial diffusion corresponds approximately
-        // to the same level-4 physical length scale.
-        const double upwind_dissipation=reference_level_<4U
-            ? std::ldexp(1.0,static_cast<int>(reference_level_)-4)
-            : 1.0;
+        // Lax-Wendroff face state for conservative second-order
+        // advection on each uniform-grid link. The climate substep bounds the
+        // link CFL below one; clamp defensively for distorted cube-face links.
+        const double cfl=std::clamp(
+            std::abs(velocity)*seconds/link.distance_m,
+            0.0,
+            1.0
+        );
         const double face_density=
             0.5*(density_a+density_b)+
-            0.5*upwind_dissipation*
+            0.5*cfl*
                 (velocity>=0.0 ? density_a-density_b
                                : density_b-density_a);
         const double advective=
