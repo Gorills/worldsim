@@ -36,6 +36,11 @@ struct EcologyConfig {
     bool enable_fauna{true};
 };
 
+double total_ecology_nitrogen_accounted_kg(
+    const WorldState&,
+    const FieldRegistry&
+);
+
 class EcologyModule final : public ISimModule {
 public:
     explicit EcologyModule(EcologyConfig config={}): config_(config) {}

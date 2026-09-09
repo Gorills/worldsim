@@ -18,6 +18,7 @@ add_library(worldsim
     src/climate.cpp
     src/hydrology.cpp
     src/soil_carbon.cpp
+    src/soil_nitrogen.cpp
     src/fields.cpp
     src/state.cpp
     src/simulation.cpp
@@ -107,6 +108,11 @@ if(WORLDSIM_BUILD_TESTS)
   target_link_libraries(worldsim_soil_carbon_tests PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_soil_carbon_tests)
   add_test(NAME worldsim_soil_carbon_tests COMMAND worldsim_soil_carbon_tests)
+
+  add_executable(worldsim_nitrogen_tests tests/nitrogen_tests.cpp)
+  target_link_libraries(worldsim_nitrogen_tests PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_nitrogen_tests)
+  add_test(NAME worldsim_nitrogen_tests COMMAND worldsim_nitrogen_tests)
 
   add_executable(worldsim_sanitizer_smoke tests/sanitizer_smoke.cpp)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)
