@@ -119,14 +119,15 @@ walking chunks remain the only physics terrain:
 For the fixed seed-42 walking demonstration, startup placement is intentionally
 inside the existing mountain regression region instead of the projection origin.
 The viewer samples the same 40 km x 40 km reconstructed-terrain window centered
-at east 5,573 km / north -1,800.3 km, finds its highest 625 m-grid sample, then
-scores dry samples 6-10 km from that peak by how far the peak rises above the
-intermediate terrain skyline. The line of sight is sampled twice per diagnostic
-grid interval with bilinear patch heights. This rejects geometrically steep views
-where a foreground ridge hides the actual summit. The regression requires at
-least four degrees of peak elevation and 1.5 degrees of visible skyline margin.
-Terrain authority, simulation focus, snapshots and the reconstruction formula are
-unchanged.
+at east 5,573 km / north -1,800.3 km and finds local summit candidates on the
+625 m diagnostic grid. A summit must be a 3-cell-radius local maximum and retain
+at least 700 m of regional relief. The viewer jointly chooses a dry viewpoint
+3-7 km away and a summit with at least 500 m rise, five degrees of elevation and
+one degree of visible separation above the intermediate terrain skyline. The line
+of sight is sampled twice per diagnostic grid interval with bilinear patch
+heights. This avoids targeting the absolute regional maximum when that point lies
+inside a broader ridge and is not actually visible as a summit. Terrain authority,
+simulation focus, snapshots and the reconstruction formula are unchanged.
 
 The walker now also renders visual-only nested spherical terrain rings. Every
 ring is a 65 x 65 regular grid, sample spacing doubles from 64 m through
