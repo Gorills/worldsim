@@ -73,17 +73,22 @@ flexed elevation at the active cell center. The level-2/3 stability comparison
 therefore measured up to 18.9% represented-land-area disagreement across the
 standard seed set even after the climate transport discretization was fixed.
 
-Cells below cube-sphere level 4 now integrate land fraction over the fixed
-level-4 descendants of the same hierarchy region. Their deterministic initial
-surface elevations form a subgrid hypsometric profile; the current authoritative
-flexed center elevation shifts that profile vertically as geology evolves.
-The profile is deterministic from seed + hierarchy cell and is cached inside
-the geology system, so a daily coarse simulation does not regenerate tectonics
-and terrain samples. The support is therefore the same physical sample set for
-level 2 and level 3, while persistent crust/sediment/regolith state remains
-owned by the active simulation cells. Level 4 and finer cells retain the direct
-center-elevation path, so the normal level-4 production baseline pays no extra
-coastal quadrature cost.
+Cells below cube-sphere level 4 now use the fixed level-4 descendants of the
+same hierarchy region as their initialization/reference support. Initial crust
+thickness, continental fraction, lithosphere age and regolith are area-restricted;
+crust density uses the same thickness-and-area weighting as FieldStore
+coarsening; sediment mass is summed as an extensive stock. Thus a level-2 or
+level-3 new world starts from the conservative restriction of the same level-4
+geology instead of unrelated center samples.
+
+The same level-4 samples provide deterministic initial surface elevations for
+a subgrid hypsometric profile. The current authoritative flexed center elevation
+shifts that profile vertically as geology evolves, and land fraction is the
+area-weighted share above the existing smooth sea-level transition. The profile
+is deterministic from seed + hierarchy cell and is cached inside the geology
+system, so a daily coarse simulation does not regenerate tectonics and terrain
+samples. Level 4 and finer cells retain the direct center-elevation path, so the
+normal level-4 production baseline pays no extra coastal quadrature cost.
 
 The area-weighted restriction follows the same conservation principle as
 AMReX volume-weighted average-down and ESMF destination-area conservative
