@@ -1,5 +1,7 @@
 extends Node3D
 
+const SurfaceVisual = preload("res://scripts/surface_visual.gd")
+
 @onready var sim: WorldSimulationNode = $Simulation
 @onready var terrain_root: Node3D = $Terrain
 @onready var distant_terrain: Node3D = $DistantTerrain
@@ -17,6 +19,9 @@ const VISIBLE_RADIUS := 3
 const KEEP_RADIUS := 4
 const MAX_CHUNKS_PER_FRAME := 1
 const ORIGIN_SHIFT_THRESHOLD_M := 1024.0
+const SURFACE_REFRESH_INTERVAL_S := 1.0
+const TREE_CANDIDATES_PER_CHUNK := 64
+const SHRUB_CANDIDATES_PER_CHUNK := 48
 
 const WALK_SPEED_M_S := 8.0
 const JUMP_SPEED_M_S := 7.0
@@ -32,11 +37,16 @@ const MINIMAP_HEIGHT := 160
 const MINIMAP_HEADING_SAMPLE_M := 50000.0
 
 var terrain_material: StandardMaterial3D
+var tree_mesh: CylinderMesh
+var shrub_mesh: CylinderMesh
 var chunks: Dictionary = {}
 var dirty_chunks: Dictionary = {}
 var pending_chunks: Array[Vector2i] = []
 var current_chunk := Vector2i(0, 0)
 var terrain_revision := 0
+var surface_revision := 0
+var pending_surface_revision := 0
+var surface_refresh_elapsed := 0.0
 
 # Logical projected coordinates stay in 64-bit GDScript floats. Scene-tree coordinates
 # stay near zero so the stock single-precision Godot build remains stable at world scale.
@@ -51,7 +61,7 @@ var survey_speed_index := 1
 var walking_collision_mask := 1
 
 func _ready() -> void:
-    sim.initialize_terrain_world(42)
+    sim.initialize(42)
     if !sim.get_last_error().is_empty():
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
@@ -59,8 +69,11 @@ func _ready() -> void:
     terrain_material = StandardMaterial3D.new()
     terrain_material.vertex_color_use_as_albedo = true
     terrain_material.roughness = 0.95
+    _initialize_vegetation_meshes()
 
     terrain_revision = sim.get_terrain_revision()
+    surface_revision = sim.get_surface_revision()
+    pending_surface_revision = surface_revision
     origin_height_m = sim.sample_terrain_height(0.0, 0.0)
     distant_terrain.call(
         "initialize",
@@ -102,6 +115,9 @@ func _process(delta: float) -> void:
         sim.set_focus_projected(east_m, north_m)
         sim.step_hours(1)
         _refresh_terrain_revision(old_origin_height, old_ground_height, was_grounded)
+        _observe_surface_revision()
+
+    _refresh_surface_revision(delta)
 
     status_elapsed += delta
     if status_elapsed >= 0.25:
@@ -396,7 +412,16 @@ func _create_chunk(coord: Vector2i) -> void:
         SAMPLE_SPACING_M,
         CHUNK_RESOLUTION
     )
-    if heights.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION:
+    var surface := sim.sample_surface_visual_patch(
+        center_east_m,
+        center_north_m,
+        SAMPLE_SPACING_M,
+        CHUNK_RESOLUTION
+    )
+    if (
+        heights.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION
+        or !_surface_packet_valid(surface, heights.size())
+    ):
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
 
@@ -413,9 +438,10 @@ func _create_chunk(coord: Vector2i) -> void:
         var existing_chunk: Node3D = chunks[coord]
         var existing_mesh := existing_chunk.get_node("Mesh") as MeshInstance3D
         var existing_collision := existing_chunk.get_node("Body/Collision") as CollisionShape3D
-        existing_mesh.mesh = _build_chunk_mesh(heights)
+        existing_mesh.mesh = _build_chunk_mesh(heights, surface)
         existing_collision.shape = shape
         existing_chunk.position = _chunk_local_position(coord)
+        _update_chunk_vegetation(existing_chunk, coord, heights, surface)
     else:
         var chunk := Node3D.new()
         chunk.name = "Chunk_%d_%d" % [coord.x, coord.y]
@@ -424,7 +450,7 @@ func _create_chunk(coord: Vector2i) -> void:
 
         var mesh_instance := MeshInstance3D.new()
         mesh_instance.name = "Mesh"
-        mesh_instance.mesh = _build_chunk_mesh(heights)
+        mesh_instance.mesh = _build_chunk_mesh(heights, surface)
         mesh_instance.material_override = terrain_material
         mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
         chunk.add_child(mesh_instance)
@@ -437,10 +463,36 @@ func _create_chunk(coord: Vector2i) -> void:
         collision.scale = Vector3.ONE * SAMPLE_SPACING_M
         body.add_child(collision)
         chunk.add_child(body)
+        _update_chunk_vegetation(chunk, coord, heights, surface)
 
         chunks[coord] = chunk
 
     dirty_chunks.erase(coord)
+
+func _observe_surface_revision() -> void:
+    var next_revision := sim.get_surface_revision()
+    if next_revision == pending_surface_revision:
+        return
+    pending_surface_revision = next_revision
+    distant_terrain.call("set_surface_revision", next_revision)
+
+func _refresh_surface_revision(delta: float) -> void:
+    if pending_surface_revision == surface_revision:
+        surface_refresh_elapsed = 0.0
+        return
+    surface_refresh_elapsed += delta
+    if surface_refresh_elapsed < SURFACE_REFRESH_INTERVAL_S:
+        return
+
+    surface_refresh_elapsed = fmod(
+        surface_refresh_elapsed,
+        SURFACE_REFRESH_INTERVAL_S
+    )
+    surface_revision = pending_surface_revision
+    for key in chunks.keys():
+        var coord: Vector2i = key
+        dirty_chunks[coord] = true
+    _queue_visible_chunks(current_chunk)
 
 func _refresh_terrain_revision(
     old_origin_height: float,
@@ -472,7 +524,10 @@ func _refresh_terrain_revision(
     _create_chunk(current_chunk)
     _queue_visible_chunks(current_chunk)
 
-func _build_chunk_mesh(heights: PackedFloat32Array) -> ArrayMesh:
+func _build_chunk_mesh(
+    heights: PackedFloat32Array,
+    surface: Dictionary
+) -> ArrayMesh:
     var vertex_count := CHUNK_RESOLUTION * CHUNK_RESOLUTION
     var vertices := PackedVector3Array()
     var normals := PackedVector3Array()
@@ -480,6 +535,14 @@ func _build_chunk_mesh(heights: PackedFloat32Array) -> ArrayMesh:
     vertices.resize(vertex_count)
     normals.resize(vertex_count)
     colors.resize(vertex_count)
+
+    var grass: PackedFloat32Array = surface["grass_density_kg_m2"]
+    var shrub: PackedFloat32Array = surface["shrub_density_kg_m2"]
+    var tree: PackedFloat32Array = surface["tree_density_kg_m2"]
+    var snow: PackedFloat32Array = surface["snow_cover_fraction"]
+    var flooded: PackedFloat32Array = surface["flooded_fraction"]
+    var fire_active: PackedFloat32Array = surface["fire_active_fraction"]
+    var fire_burned: PackedFloat32Array = surface["fire_burned_fraction"]
 
     var half := CHUNK_SIZE_M * 0.5
     for z in range(CHUNK_RESOLUTION):
@@ -502,12 +565,16 @@ func _build_chunk_mesh(heights: PackedFloat32Array) -> ArrayMesh:
                 down - up
             ).normalized()
 
-            if height < 0.0:
-                var depth_t := clampf(-height / 5000.0, 0.0, 1.0)
-                colors[i] = Color(0.25, 0.27, 0.28).lerp(Color(0.12, 0.14, 0.16), depth_t)
-            else:
-                var elevation_t := clampf(height / 4500.0, 0.0, 1.0)
-                colors[i] = Color(0.34, 0.31, 0.27).lerp(Color(0.62, 0.60, 0.56), elevation_t)
+            colors[i] = SurfaceVisual.terrain_color(
+                height,
+                float(grass[i]),
+                float(shrub[i]),
+                float(tree[i]),
+                float(snow[i]),
+                float(flooded[i]),
+                float(fire_active[i]),
+                float(fire_burned[i])
+            )
 
     # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is
     # (x, z) -> (x+1, z) -> (x, z+1), matching the official ArrayMesh example.
@@ -540,6 +607,161 @@ func _build_chunk_mesh(heights: PackedFloat32Array) -> ArrayMesh:
     var mesh := ArrayMesh.new()
     mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
     return mesh
+
+func _surface_packet_valid(surface: Dictionary, expected: int) -> bool:
+    for key in [
+        "grass_density_kg_m2",
+        "shrub_density_kg_m2",
+        "tree_density_kg_m2",
+        "snow_cover_fraction",
+        "flooded_fraction",
+        "fire_active_fraction",
+        "fire_burned_fraction",
+    ]:
+        var values: PackedFloat32Array = surface.get(key, PackedFloat32Array())
+        if values.size() != expected:
+            return false
+    return true
+
+func _initialize_vegetation_meshes() -> void:
+    var tree_material := StandardMaterial3D.new()
+    tree_material.albedo_color = Color(0.10, 0.25, 0.09)
+    tree_material.roughness = 0.95
+    tree_mesh = CylinderMesh.new()
+    tree_mesh.top_radius = 0.0
+    tree_mesh.bottom_radius = 2.2
+    tree_mesh.height = 7.0
+    tree_mesh.radial_segments = 5
+    tree_mesh.rings = 1
+    tree_mesh.material = tree_material
+
+    var shrub_material := StandardMaterial3D.new()
+    shrub_material.albedo_color = Color(0.18, 0.34, 0.13)
+    shrub_material.roughness = 0.95
+    shrub_mesh = CylinderMesh.new()
+    shrub_mesh.top_radius = 0.15
+    shrub_mesh.bottom_radius = 1.0
+    shrub_mesh.height = 1.5
+    shrub_mesh.radial_segments = 5
+    shrub_mesh.rings = 1
+    shrub_mesh.material = shrub_material
+
+func _update_chunk_vegetation(
+    chunk: Node3D,
+    coord: Vector2i,
+    heights: PackedFloat32Array,
+    surface: Dictionary
+) -> void:
+    var trees := chunk.get_node_or_null("Trees") as MultiMeshInstance3D
+    if trees == null:
+        trees = MultiMeshInstance3D.new()
+        trees.name = "Trees"
+        trees.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        chunk.add_child(trees)
+    var tree_density: PackedFloat32Array = surface["tree_density_kg_m2"]
+    trees.multimesh = _build_vegetation_multimesh(
+        coord,
+        heights,
+        tree_density,
+        TREE_CANDIDATES_PER_CHUNK,
+        SurfaceVisual.TREE_SATURATION_KG_M2,
+        tree_mesh,
+        tree_mesh.height,
+        101
+    )
+
+    var shrubs := chunk.get_node_or_null("Shrubs") as MultiMeshInstance3D
+    if shrubs == null:
+        shrubs = MultiMeshInstance3D.new()
+        shrubs.name = "Shrubs"
+        shrubs.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        chunk.add_child(shrubs)
+    var shrub_density: PackedFloat32Array = surface["shrub_density_kg_m2"]
+    shrubs.multimesh = _build_vegetation_multimesh(
+        coord,
+        heights,
+        shrub_density,
+        SHRUB_CANDIDATES_PER_CHUNK,
+        SurfaceVisual.SHRUB_SATURATION_KG_M2,
+        shrub_mesh,
+        shrub_mesh.height,
+        211
+    )
+
+func _build_vegetation_multimesh(
+    coord: Vector2i,
+    heights: PackedFloat32Array,
+    density: PackedFloat32Array,
+    candidate_count: int,
+    saturation_kg_m2: float,
+    visual_mesh: Mesh,
+    visual_height_m: float,
+    salt: int
+) -> MultiMesh:
+    var transforms: Array[Transform3D] = []
+    var half := CHUNK_SIZE_M * 0.5
+    for candidate in range(candidate_count):
+        var x_unit := _candidate_unit(coord, candidate, salt)
+        var z_unit := _candidate_unit(coord, candidate, salt + 1)
+        var local_x := (x_unit - 0.5) * CHUNK_SIZE_M
+        var local_z := (z_unit - 0.5) * CHUNK_SIZE_M
+        var grid_x := clampi(
+            roundi((local_x + half) / SAMPLE_SPACING_M),
+            0,
+            CHUNK_RESOLUTION - 1
+        )
+        var grid_z := clampi(
+            roundi((local_z + half) / SAMPLE_SPACING_M),
+            0,
+            CHUNK_RESOLUTION - 1
+        )
+        var index := grid_z * CHUNK_RESOLUTION + grid_x
+        var height_m := float(heights[index])
+        if height_m < 0.0:
+            continue
+
+        var cover := SurfaceVisual.cover_from_density(
+            float(density[index]),
+            saturation_kg_m2
+        )
+        if _candidate_unit(coord, candidate, salt + 2) >= cover:
+            continue
+
+        var scale := 0.65 + 0.70 * _candidate_unit(
+            coord,
+            candidate,
+            salt + 3
+        )
+        var yaw := TAU * _candidate_unit(coord, candidate, salt + 4)
+        var basis := Basis(Vector3.UP, yaw).scaled(Vector3.ONE * scale)
+        transforms.push_back(
+            Transform3D(
+                basis,
+                Vector3(
+                    local_x,
+                    height_m + 0.5 * visual_height_m * scale,
+                    local_z
+                )
+            )
+        )
+
+    var multimesh := MultiMesh.new()
+    multimesh.transform_format = MultiMesh.TRANSFORM_3D
+    multimesh.mesh = visual_mesh
+    multimesh.instance_count = transforms.size()
+    for i in range(transforms.size()):
+        multimesh.set_instance_transform(i, transforms[i])
+    return multimesh
+
+func _candidate_unit(
+    coord: Vector2i,
+    candidate: int,
+    salt: int
+) -> float:
+    var hash_value := (
+        "%d:%d:%d:%d" % [coord.x, coord.y, candidate, salt]
+    ).hash()
+    return float(posmod(hash_value, 1000003)) / 1000003.0
 
 func _chunk_local_position(coord: Vector2i) -> Vector3:
     return Vector3(
