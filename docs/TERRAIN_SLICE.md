@@ -129,7 +129,7 @@ The runtime uses a prevalidated spawn/target pair instead of rescanning the
 65 x 65 diagnostic patch before the first frame. The CI terrain regression still
 samples the 40 km x 40 km window centered at east 5,573 km / north -1,800.3 km
 and verifies that the fixed target remains a 3-cell-radius local summit with at
-least 700 m regional relief. The fixed dry viewpoint is about 2.6 km from the
+least 700 m regional relief. The fixed dry viewpoint is 2.5 km from the
 target ridge crest and must retain at least 950 m rise, fifteen degrees of
 elevation and 0.5 degrees of skyline separation. This removes 4,225 reconstructed-terrain queries
 from normal viewer startup while preserving an independently checked mountain
