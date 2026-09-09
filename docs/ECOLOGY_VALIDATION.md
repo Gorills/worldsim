@@ -38,28 +38,34 @@ Landlab's soil-moisture component provides the relevant modeling precedent: root
 - Landlab, `SoilMoisture`: https://landlab.readthedocs.io/en/latest/generated/api/landlab.components.soil_moisture.soil_moisture_dynamics.html
 - Laio, F., Porporato, A., Ridolfi, L. & Rodriguez-Iturbe, I. (2001), *Plants in water-controlled ecosystems: active role in hydrologic processes and response to water stress II*. https://doi.org/10.1016/S0309-1708(01)00005-7
 
-### Soil fertility, detritus and soil carbon
+### Soil carbon, mineral nitrogen and fertility
 
-The original living-soil fields remain:
+Soil carbon v1 retains persistent litter, fast and slow organic-carbon pools,
+their derived aggregate, a current heterotrophic-respiration flux and a
+cumulative respiration ledger. Nitrogen cycle v1 adds matching extensive
+organic-N pools, a finite mineral-N stock, per-PFT vegetation N, current
+mineralization/uptake rates, and explicit cumulative leaching/fire-emission
+boundary ledgers.
 
-- `ecology.soil_fertility`: intensive reduced fertility state in `[0,1]`;
-- `ecology.litter_carbon_kg`: extensive detrital carbon stock.
+Carbon decomposition now drives the fraction of each corresponding organic-N
+pool that turns over. Organic N transferred with litter/fast carbon remains in
+the next organic pool; the remainder becomes mineral N. Runoff removes only
+from the finite mineral pool and records the removal in
+`ecology.nitrogen_leached_kg`. The derived `ecology.soil_fertility` field
+remains an intensive `[0,1]` convenience signal, but it is now a monotonic
+projection of mineral-N density rather than an independently evolving stock.
 
-Soil carbon v1 adds persistent fast and slow soil-organic-carbon pools, their
-derived aggregate, a current heterotrophic-respiration flux and a cumulative
-respiration ledger. Litter transfers to fast carbon, fast carbon transfers to
-slow carbon, and each decomposition path partitions its remainder into the
-ledger. The isolated soil step therefore conserves litter + soil stocks +
-cumulative respired carbon. Exact rates, references, LOD semantics and limits
-are documented in [SOIL_CARBON.md](SOIL_CARBON.md).
+Vegetation growth requests N from the mineral pool according to reduced
+PFT-specific C:N ratios. When demand exceeds the donor stock, gross production
+is scaled before carbon is created. Turnover and crowding return their
+associated plant N to litter. Exact pool definitions, closure, LOD behavior and
+explicit limits are documented in [NITROGEN_CYCLE.md](NITROGEN_CYCLE.md);
+the carbon-only decomposition contract remains in
+[SOIL_CARBON.md](SOIL_CARBON.md).
 
-Regolith depth provides the mineral-substrate contribution to fertility. Plant turnover, herbivory waste and a reduced carcass-carbon return add litter. Litter and soil carbon decompose faster under warm/moist conditions. Labile litter and decomposition feed back into the reduced fertility state. Strong runoff leaches that state.
-
-This deliberately stops short of an elemental nitrogen/phosphorus budget.
-`soil_fertility` is an index, not kilograms of N or P. A later nutrient slice
-must introduce explicit reservoirs before any claim of elemental conservation.
-
-The conceptual basis is standard ecosystem-process practice: soil organic matter depends strongly on climate and substrate controls, while process models such as Biome-BGC couple water, vegetation, litter and soil state rather than treating plant productivity as independent of the substrate.
+The conceptual basis is standard ecosystem-process practice: soil organic
+matter and plant production are coupled to water, carbon and nutrient
+availability rather than treating fertility as an unconstrained multiplier.
 
 - Parton, W. J., Schimel, D. S., Cole, C. V. & Ojima, D. S. (1987), *Analysis of Factors Controlling Soil Organic Matter Levels in Great Plains Grasslands*. https://doi.org/10.2136/sssaj1987.03615995005100050015x
 - Thornton, P. E. et al. (2002), *Modeling and measuring the effects of disturbance history and climate on carbon and water budgets in evergreen needleleaf forests*. https://doi.org/10.1016/S0168-1923(02)00108-9
@@ -129,17 +135,28 @@ double-counting the cumulative audit ledgers. The fire-specific contract is in
 The core `worldsim_tests` suite continues to check living-soil, adaptive-cover and Flora v1 contracts:
 
 - soil water storage differs between bare/thin regolith and deep regolith under the same forcing;
-- low-fertility and high-fertility copies of the same world produce different vegetation NPP through the production scheduler;
-- vegetation turnover creates litter;
-- a litter-rich copy of the same soil increases reduced fertility relative to a litter-free copy;
+- finite mineral-N availability limits vegetation production through the production scheduler;
+- vegetation turnover creates litter and returns its associated nitrogen;
+- soil organic-N turnover mineralizes N and drainage moves finite mineral N into an explicit leaching ledger;
 - mixed-LOD active-cover weights close to one and resolve both fine-neighbor composites and coarse ancestors;
 - grass/shrub/tree carbon remains non-negative and sums to total vegetation after vegetation/fauna updates;
 - a globally sterile plant cover remains sterile without propagules;
 - neighboring grass establishes into an empty suitable cell;
 - woody canopy suppresses grass relative to an otherwise identical open cell;
-- fertility remains finite and in `[0,1]`, while litter, vegetation, water and cohort counts remain finite and non-negative;
+- fertility remains finite and in `[0,1]`, while carbon, tracked nitrogen, water and cohort counts remain finite and non-negative;
 - extensive litter carbon participates in the existing LOD split/sum semantics through the field store;
 - snapshot determinism and continuation include ecology state through the field schema.
+
+The dedicated `worldsim_nitrogen_tests` suite checks:
+
+- conservative organic/mineral/leached nitrogen transfers driven by the carbon decomposition step;
+- no same-step cascade of newly transferred organic N across multiple soil pools;
+- mineral-N-derived fertility and rejection of invalid state;
+- soil mineralization/leaching fluxes and full soil-system N closure;
+- finite mineral-N limitation of plant production and exact plant uptake debit;
+- 30-day coupled-scheduler nitrogen closure;
+- extensive N preservation through refine/coarsen plus aggregate reconstruction; and
+- snapshot epoch 31 round-trip and deterministic continuation.
 
 The dedicated `worldsim_soil_carbon_tests` suite checks:
 
@@ -149,7 +166,7 @@ The dedicated `worldsim_soil_carbon_tests` suite checks:
 - submerged stock remains dormant instead of being deleted;
 - all component pools and the cumulative ledger survive refine/coarsen; and
 - historical epoch-20 soil-carbon snapshots round-tripped and continued
-  deterministically; the current combined world uses epoch 28.
+  deterministically; the current combined world uses epoch 31.
 
 The dedicated `worldsim_fauna_v2_tests` suite checks the movement and fauna
 carbon contracts:
@@ -159,14 +176,12 @@ carbon contracts:
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- the integrated daily ecology carbon budget closes against reported NPP;
+- the integrated daily ecology carbon budget closes against reported NPP and the fauna pass preserves tracked nitrogen while recycling grazed plant N;
 - the forage-limited herbivore grazing ceiling scales with elapsed fauna-step
   time, so a controlled half-day pass removes half the forage of a one-day pass;
 - starvation cannot create population and over-capacity cohorts decline even
   when standing forage is abundant; and
-- the current epoch-28 snapshot includes the fauna-respiration ledger, rejects
-  version 26 after the field-command LOD semantic change, and round-trips
-  exactly.
+- the current epoch-31 snapshot includes the fauna-respiration and nitrogen fields, rejects stale authoritative epochs, and round-trips exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
@@ -178,18 +193,18 @@ The dedicated `worldsim_fire_tests` suite checks:
 - a wet root zone plus humid/rainy weather suppresses an otherwise identical active fire;
 - complete snow cover suppresses an otherwise identical active fire;
 - natural ignition is reproducible from equal seed/tick/cell state;
-- biomass, litter, emission and pyrogenic-carbon transfers close for a controlled fire;
+- biomass, litter, emission and pyrogenic-carbon transfers close for a controlled fire, while vegetation/litter/mineral/boundary nitrogen closes independently;
 - the aggregate vegetation field remains the exact sum of the PFT pools;
 - spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
 - extensive fire ledgers survive coarsening; and
-- snapshot epoch 28 round-trips authoritative fire, soil-carbon, fauna-carbon
-  and snow-coupled climate state.
+- snapshot epoch 31 round-trips authoritative fire, soil-carbon, nitrogen,
+  fauna-carbon and snow-coupled climate state.
 
 ## Explicitly unsupported ecology claims
 
 The current ecology slice does **not** yet provide:
 
-- explicit nitrogen, phosphorus or other elemental nutrient conservation;
+- phosphorus or other elemental nutrient conservation beyond nitrogen;
 - microbial biomass, soil horizons, texture classes or soil chemistry;
 - spatial aquifer-pressure and vadose-zone flow;
 - species-level plant physiology, explicit seed banks, long-distance dispersal kernels or evolutionary adaptation;

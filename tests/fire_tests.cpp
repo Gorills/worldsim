@@ -1,6 +1,7 @@
 #include "worldsim/climate.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/soil_nitrogen.hpp"
 
 #include <algorithm>
 #include <array>
@@ -84,7 +85,14 @@ void clear_and_dry(Simulation& simulation) {
                  "ecology.fire_burned_area_m2",
                  "ecology.fire_emitted_carbon_kg",
                  "ecology.fire_emission_kg_day",
-                 "ecology.pyrogenic_carbon_kg"
+                 "ecology.fire_emitted_nitrogen_kg",
+                 "ecology.pyrogenic_carbon_kg",
+                 "ecology.litter_nitrogen_kg",
+                 "ecology.mineral_nitrogen_kg",
+                 "ecology.grass_nitrogen_kg",
+                 "ecology.shrub_nitrogen_kg",
+                 "ecology.tree_nitrogen_kg",
+                 "ecology.vegetation_nitrogen_kg"
              }) {
             fields.set(cell,field(simulation,key),0.0);
         }
@@ -126,7 +134,29 @@ void set_fuel(Simulation& simulation, CellId cell) {
         cell,field(simulation,"ecology.vegetation_carbon_kg"),2.15*area
     );
     fields.set(
+        cell,field(simulation,"ecology.grass_nitrogen_kg"),
+        0.60*area/kPlantCarbonNitrogenRatio[0]
+    );
+    fields.set(
+        cell,field(simulation,"ecology.shrub_nitrogen_kg"),
+        0.35*area/kPlantCarbonNitrogenRatio[1]
+    );
+    fields.set(
+        cell,field(simulation,"ecology.tree_nitrogen_kg"),
+        1.20*area/kPlantCarbonNitrogenRatio[2]
+    );
+    fields.set(
+        cell,field(simulation,"ecology.vegetation_nitrogen_kg"),
+        0.60*area/kPlantCarbonNitrogenRatio[0]+
+        0.35*area/kPlantCarbonNitrogenRatio[1]+
+        1.20*area/kPlantCarbonNitrogenRatio[2]
+    );
+    fields.set(
         cell,field(simulation,"ecology.litter_carbon_kg"),0.45*area
+    );
+    fields.set(
+        cell,field(simulation,"ecology.litter_nitrogen_kg"),
+        0.45*area/kInitialLitterCarbonNitrogenRatio
     );
 }
 
@@ -158,9 +188,20 @@ void controlled_fire_closes_carbon() {
     ignite(*simulation,cell,0.08);
 
     const double before=fire_accounted_carbon(*simulation,cell);
+    const double nitrogen_before=total_ecology_nitrogen_accounted_kg(
+        simulation->world(),simulation->fields()
+    );
     run_fire(*simulation);
     const double after=fire_accounted_carbon(*simulation,cell);
     near(before,after,2.0e-15,"fire carbon transfers do not close");
+    near(
+        nitrogen_before,
+        total_ecology_nitrogen_accounted_kg(
+            simulation->world(),simulation->fields()
+        ),
+        3.0e-15,
+        "fire nitrogen transfers do not close"
+    );
     check(
         fields.get(
             cell,field(*simulation,"ecology.fire_burned_fraction")
@@ -188,6 +229,12 @@ void controlled_fire_closes_carbon() {
             cell,field(*simulation,"ecology.pyrogenic_carbon_kg")
         )>0.0,
         "controlled fire produced no pyrogenic carbon"
+    );
+    check(
+        fields.get(
+            cell,field(*simulation,"ecology.fire_emitted_nitrogen_kg")
+        )>0.0,
+        "controlled fire produced no nitrogen boundary emission"
     );
     near(
         fields.get(
@@ -589,7 +636,7 @@ void snapshot_continuation_includes_fire_state() {
 
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"fire snapshot header is unexpectedly short");
-    check(snapshot[8]==std::byte{30},"unexpected current snapshot epoch");
+    check(snapshot[8]==std::byte{31},"unexpected current snapshot epoch");
     auto restored=make_default_simulation(
         7004,SimulationConfig{1,2,3'600.0}
     );

@@ -49,7 +49,7 @@ The output directory contains each original yearly case CSV and log plus:
 - `resolution.csv`: adjacent-level absolute and symmetric relative deltas for
   represented land area, vegetation density/retention, PFT shares, litter,
   soil carbon, total and land-normalized NPP/fauna carbon, fire, fertility,
-  temperature and precipitation;
+  mineral-N density, tracked-N residual, temperature and precipitation;
 - `summary.json`: exact matrix inputs, failures and maximum observed
   adjacent-level deltas.
 
@@ -80,11 +80,12 @@ smaller and is not an Earth-system intercomparison:
 Each row is one simulation year. It includes:
 
 - global and connected-land-component vegetation retention;
-- functional-type shares, litter, soil carbon, fertility and NPP;
+- functional-type shares, litter, soil carbon, mineral-N density, derived fertility and NPP;
 - annual and cumulative burned area, emissions, char and active-fire area;
 - herbivore/carnivore counts plus derived fauna carbon;
 - cumulative fauna respiration;
-- area-weighted land climate, atmospheric CO2, closed planet-carbon residual, water/energy residuals and invalid values;
+- area-weighted land climate, atmospheric CO2, closed planet-carbon residual,
+  tracked-nitrogen residual, water/energy residuals and invalid values;
 - the fraction of initially vegetated land whose biomass fell below 10% of its
   own initial density.
 
@@ -102,6 +103,9 @@ conditions is violated at the end of the requested run:
 - any registered field is non-finite or outside its descriptor bounds;
 - the closed planet-carbon inventory drifts by more than `1e-10` relative to
   its initialized stock;
+- the tracked terrestrial nitrogen inventory plus explicit leaching/fire
+  boundary ledgers drifts by more than `1e-10` relative to its initialized
+  amount;
 - global vegetation is below 50% or above 400% of its initialized stock;
 - more than 25% of initially vegetated land falls below 10% of its own initial
   density;
@@ -229,5 +233,8 @@ After that gate, compare annual burned fraction, NPP, biome/PFT composition,
 soil-carbon turnover, atmospheric CO2 and trophic biomass against explicit game
 targets or observational datasets. Carbon cycle v1 is an engineering closure,
 not an Earth calibration: geologic/fossil carbon, carbonate chemistry, explicit
-ocean circulation, nutrient budgets, aquatic food webs and unique burn
-footprints remain out of scope.
+ocean circulation, phosphorus and other nutrient budgets, atmospheric
+nitrogen chemistry/fixation/deposition, aquatic nutrient transport/food webs
+and unique burn footprints remain out of scope. Nitrogen cycle v1 is likewise
+an engineering conservation/limitation closure, not a calibrated terrestrial
+biogeochemistry model.

@@ -43,7 +43,7 @@ struct Component {
 };
 
 struct FieldIds {
-    FieldId land,temperature,precipitation,fertility;
+    FieldId land,temperature,precipitation,fertility,mineral_nitrogen;
     FieldId vegetation,grass,shrub,tree,litter,fast_soil,slow_soil,npp;
     FieldId active_fire_area,burned_area,fire_emissions,pyrogenic_carbon;
     FieldId fauna_respired,atmospheric_co2;
@@ -174,6 +174,7 @@ int main(int argc, char** argv) {
             require_field(*simulation,"climate.surface_temperature_k"),
             require_field(*simulation,"climate.precipitation_mm_day"),
             require_field(*simulation,"ecology.soil_fertility"),
+            require_field(*simulation,"ecology.mineral_nitrogen_kg"),
             require_field(*simulation,"ecology.vegetation_carbon_kg"),
             require_field(*simulation,"ecology.grass_carbon_kg"),
             require_field(*simulation,"ecology.shrub_carbon_kg"),
@@ -266,6 +267,10 @@ int main(int argc, char** argv) {
         const double initial_carbon=total_planet_carbon_kg(
             world,simulation->fields()
         );
+        const double initial_nitrogen=
+            total_ecology_nitrogen_accounted_kg(
+                world,simulation->fields()
+            );
 
         double previous_burned=sum_field(fields,field.burned_area);
         double temperature_sum=0.0;
@@ -282,6 +287,7 @@ int main(int argc, char** argv) {
         double final_worst_component_ratio=1.0;
         double final_fauna_carbon_ratio=1.0;
         double final_carbon_rel_residual=0.0;
+        double final_nitrogen_rel_residual=0.0;
         unsigned final_invalid_values=0;
 
         *output << std::setprecision(10);
@@ -294,8 +300,10 @@ int main(int argc, char** argv) {
             << "collapsed_baseline_area_fraction,worst_component_veg_ratio,"
             << "max_component_annual_burn_fraction,herbivore_ratio,carnivore_ratio,"
             << "fauna_carbon_ratio,fauna_carbon_PgC,fauna_respired_PgC,"
-            << "mean_fertility,mean_land_temp_k,mean_land_precip_mm_day,"
+            << "mean_fertility,mineral_nitrogen_kg_m2,"
+            << "mean_land_temp_k,mean_land_precip_mm_day,"
             << "atmospheric_co2_ppm,planet_carbon_rel_residual,"
+            << "tracked_nitrogen_rel_residual,"
             << "planet_water_rel_residual,surface_energy_rel_residual,"
             << "min_veg_ratio_year,max_veg_ratio_year,ignitions,near_extinctions,invalid_values\n";
 
@@ -309,6 +317,8 @@ int main(int argc, char** argv) {
                 sum_field(fields,field.fast_soil)+
                 sum_field(fields,field.slow_soil);
             const double burned=sum_field(fields,field.burned_area);
+            const double mineral_nitrogen=
+                sum_field(fields,field.mineral_nitrogen);
             double current_land_area=0.0;
             double vegetated_area=0.0;
             double collapsed_area=0.0;
@@ -396,6 +406,15 @@ int main(int argc, char** argv) {
                 (carbon-initial_carbon)/
                 std::max(1.0,std::abs(initial_carbon));
             final_carbon_rel_residual=carbon_rel_residual;
+            const double nitrogen=
+                total_ecology_nitrogen_accounted_kg(
+                    world,simulation->fields()
+                );
+            const double nitrogen_rel_residual=
+                (nitrogen-initial_nitrogen)/
+                std::max(1.0,std::abs(initial_nitrogen));
+            final_nitrogen_rel_residual=
+                nitrogen_rel_residual;
             final_vegetation_ratio=
                 vegetation/std::max(1.0,initial_vegetation);
             final_collapsed_area_fraction=
@@ -438,6 +457,8 @@ int main(int argc, char** argv) {
                 << sum_field(fields,field.fauna_respired)/1.0e12 << ','
                 << area_weighted_fertility/
                     std::max(1.0,current_land_area) << ','
+                << mineral_nitrogen/
+                    std::max(1.0,current_land_area) << ','
                 << (samples
                     ? temperature_sum/static_cast<double>(samples)
                     : 0.0) << ','
@@ -446,6 +467,7 @@ int main(int argc, char** argv) {
                     : 0.0) << ','
                 << fields.column(field.atmospheric_co2).front() << ','
                 << carbon_rel_residual << ','
+                << nitrogen_rel_residual << ','
                 << (water-initial_water)/
                     std::max(1.0,std::abs(initial_water)) << ','
                 << (climate.total_surface_heat_j()-expected_heat)/
@@ -522,6 +544,7 @@ int main(int argc, char** argv) {
             if (
                 final_invalid_values!=0U ||
                 std::abs(final_carbon_rel_residual)>1.0e-10 ||
+                std::abs(final_nitrogen_rel_residual)>1.0e-10 ||
                 final_vegetation_ratio<0.50 ||
                 final_vegetation_ratio>4.0 ||
                 final_collapsed_area_fraction>0.25 ||

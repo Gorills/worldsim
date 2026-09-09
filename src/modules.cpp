@@ -3,6 +3,7 @@
 #include "worldsim/geology.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/soil_carbon.hpp"
+#include "worldsim/soil_nitrogen.hpp"
 #include "worldsim/terrain.hpp"
 
 #include <algorithm>
@@ -21,6 +22,9 @@ FieldId require_field(const FieldRegistry& r, std::string_view key) {
     if (!id) throw std::runtime_error("required field missing: "+std::string(key));
     return *id;
 }
+
+constexpr double fauna_nitrogen_to_mineral_fraction=0.35;
+constexpr double fire_nitrogen_volatilization_fraction=0.75;
 
 struct GeologyFieldIds {
     FieldId elevation{};
@@ -548,6 +552,24 @@ public:
               require_field(r,"ecology.soil_slow_carbon_kg")
           ),
           soil_carbon_(require_field(r,"ecology.soil_carbon_kg")),
+          litter_nitrogen_(
+              require_field(r,"ecology.litter_nitrogen_kg")
+          ),
+          fast_nitrogen_(
+              require_field(r,"ecology.soil_fast_nitrogen_kg")
+          ),
+          slow_nitrogen_(
+              require_field(r,"ecology.soil_slow_nitrogen_kg")
+          ),
+          mineral_nitrogen_(
+              require_field(r,"ecology.mineral_nitrogen_kg")
+          ),
+          nitrogen_mineralization_(require_field(
+              r,"ecology.nitrogen_mineralization_kg_day"
+          )),
+          nitrogen_leached_(
+              require_field(r,"ecology.nitrogen_leached_kg")
+          ),
           heterotrophic_respiration_(require_field(
               r,"ecology.heterotrophic_respiration_kg_day"
           )),
@@ -571,6 +593,11 @@ public:
                     "field:ecology.litter_carbon_kg",
                     "field:ecology.soil_fast_carbon_kg",
                     "field:ecology.soil_slow_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.soil_fast_nitrogen_kg",
+                    "field:ecology.soil_slow_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.nitrogen_leached_kg",
                     "field:ecology.soil_respired_carbon_kg"
                 },
                 {
@@ -579,6 +606,12 @@ public:
                     "field:ecology.soil_fast_carbon_kg",
                     "field:ecology.soil_slow_carbon_kg",
                     "field:ecology.soil_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.soil_fast_nitrogen_kg",
+                    "field:ecology.soil_slow_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.nitrogen_mineralization_kg_day",
+                    "field:ecology.nitrogen_leached_kg",
                     "field:ecology.heterotrophic_respiration_kg_day",
                     "field:ecology.soil_respired_carbon_kg",
                     "field:hydrology.drainage_since_soil_m3"
@@ -596,6 +629,7 @@ public:
             if (effective_area<=1.0) {
                 fs.set(cell,fertility_,0.0);
                 fs.set(cell,heterotrophic_respiration_,0.0);
+                fs.set(cell,nitrogen_mineralization_,0.0);
                 fs.set(
                     cell,
                     soil_carbon_,
@@ -617,19 +651,44 @@ public:
                 0.0,
                 1.0
             );
+            const SoilCarbonState carbon_before{
+                fs.get(cell,litter_),
+                fs.get(cell,fast_carbon_),
+                fs.get(cell,slow_carbon_)
+            };
             const SoilCarbonStep carbon=carbon_model_.advance(
-                {
-                    fs.get(cell,litter_),
-                    fs.get(cell,fast_carbon_),
-                    fs.get(cell,slow_carbon_)
-                },
+                carbon_before,
                 fs.get(cell,temp_),
                 moisture,
                 ctx.dt_days
             );
+            const double runoff_depth=
+                drained/std::max(1.0,effective_area);
+            const SoilNitrogenStep nitrogen=nitrogen_model_.advance(
+                {
+                    fs.get(cell,litter_nitrogen_),
+                    fs.get(cell,fast_nitrogen_),
+                    fs.get(cell,slow_nitrogen_),
+                    fs.get(cell,mineral_nitrogen_)
+                },
+                carbon_before,
+                carbon,
+                std::max(0.0,runoff_depth)
+            );
             fs.set(cell,litter_,carbon.state.litter_carbon_kg);
             fs.set(cell,fast_carbon_,carbon.state.fast_carbon_kg);
             fs.set(cell,slow_carbon_,carbon.state.slow_carbon_kg);
+            fs.set(cell,litter_nitrogen_,nitrogen.state.litter_nitrogen_kg);
+            fs.set(cell,fast_nitrogen_,nitrogen.state.fast_nitrogen_kg);
+            fs.set(cell,slow_nitrogen_,nitrogen.state.slow_nitrogen_kg);
+            fs.set(cell,mineral_nitrogen_,nitrogen.state.mineral_nitrogen_kg);
+            fs.set(
+                cell,nitrogen_mineralization_,
+                ctx.dt_days>0.0
+                    ? nitrogen.fluxes.mineralized_kg/ctx.dt_days
+                    : 0.0
+            );
+            fs.add(cell,nitrogen_leached_,nitrogen.fluxes.leached_kg);
             fs.set(
                 cell,
                 soil_carbon_,
@@ -649,53 +708,13 @@ public:
                 carbon.fluxes.respired_kg
             );
 
-            const double substrate_factor=
-                -std::expm1(-regolith/0.75);
-            const double litter_density=
-                carbon.state.litter_carbon_kg/
-                std::max(1.0,effective_area);
-            const double organic_factor=
-                -std::expm1(-litter_density/0.75);
-            const double target_fertility=std::clamp(
-                0.05+
-                0.60*substrate_factor+
-                0.35*organic_factor,
-                0.0,
-                1.0
-            );
-
-            double fertility=std::clamp(
-                fs.get(cell,fertility_),
-                0.0,
-                1.0
-            );
-            const double equilibration=
-                1.0-std::exp(-ctx.dt_days/365.2422);
-            fertility+=
-                (target_fertility-fertility)*equilibration;
-
-            // Decomposition gives a small mineralization pulse to the reduced
-            // fertility state. This is deliberately an index-level feedback,
-            // not an elemental N/P mass balance.
-            const double decomposed=
-                carbon.fluxes.litter_decomposed_kg+
-                carbon.fluxes.fast_decomposed_kg+
-                carbon.fluxes.slow_decomposed_kg;
-            fertility+=std::min(
-                0.05,
-                0.10*decomposed/std::max(1.0,effective_area)
-            );
-
-            // Strong drainage slowly leaches the reduced fertility state.
-            const double runoff_depth=
-                drained/
-                std::max(1.0,effective_area);
-            fertility*=std::exp(-0.5*std::max(0.0,runoff_depth));
-
             fs.set(
                 cell,
                 fertility_,
-                std::clamp(fertility,0.0,1.0)
+                mineral_nitrogen_fertility(
+                    nitrogen.state.mineral_nitrogen_kg/
+                    std::max(1.0,effective_area)
+                )
             );
         }
     }
@@ -703,8 +722,11 @@ public:
 private:
     FieldId temp_,land_,regolith_,water_,runoff_,fertility_,litter_;
     FieldId fast_carbon_,slow_carbon_,soil_carbon_;
+    FieldId litter_nitrogen_,fast_nitrogen_,slow_nitrogen_;
+    FieldId mineral_nitrogen_,nitrogen_mineralization_,nitrogen_leached_;
     FieldId heterotrophic_respiration_,respired_carbon_;
     SoilCarbonModel carbon_model_;
+    SoilNitrogenModel nitrogen_model_;
 };
 
 class VegetationSystem final : public ISimSystem {
@@ -723,13 +745,22 @@ public:
           growth_(r.find("magic.growth_factor")),
           fertility_(require_field(r,"ecology.soil_fertility")),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
+          litter_nitrogen_(require_field(r,"ecology.litter_nitrogen_kg")),
+          mineral_nitrogen_(require_field(r,"ecology.mineral_nitrogen_kg")),
           pft_{
               require_field(r,"ecology.grass_carbon_kg"),
               require_field(r,"ecology.shrub_carbon_kg"),
               require_field(r,"ecology.tree_carbon_kg")
           },
+          pft_nitrogen_{
+              require_field(r,"ecology.grass_nitrogen_kg"),
+              require_field(r,"ecology.shrub_nitrogen_kg"),
+              require_field(r,"ecology.tree_nitrogen_kg")
+          },
           carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
-          npp_(require_field(r,"ecology.npp_kg_day")) {}
+          vegetation_nitrogen_(require_field(r,"ecology.vegetation_nitrogen_kg")),
+          npp_(require_field(r,"ecology.npp_kg_day")),
+          nitrogen_uptake_(require_field(r,"ecology.nitrogen_uptake_kg_day")) {}
 
     std::string_view id() const override { return "ecology.vegetation"; }
     Tick cadence_ticks() const override { return 24; }
@@ -750,6 +781,11 @@ public:
                     "field:climate.snow_cover_fraction",
                     "field:ecology.soil_fertility",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg"
@@ -760,6 +796,14 @@ public:
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
                     "field:ecology.vegetation_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
+                    "field:ecology.nitrogen_uptake_kg_day",
+                    "field:ecology.soil_fertility",
                     "field:ecology.npp_kg_day"
                 }};
         if (growth_)
@@ -774,11 +818,17 @@ public:
         // the start of the vegetation step so iteration order cannot propagate
         // a plant through multiple cells in one day.
         std::map<CellId,std::array<double,3>> before;
+        std::map<CellId,std::array<double,3>> nitrogen_before;
         for (CellId cell:ctx.world.active_cells()) {
             before[cell]={
                 fs.get(cell,pft_[0]),
                 fs.get(cell,pft_[1]),
                 fs.get(cell,pft_[2])
+            };
+            nitrogen_before[cell]={
+                fs.get(cell,pft_nitrogen_[0]),
+                fs.get(cell,pft_nitrogen_[1]),
+                fs.get(cell,pft_nitrogen_[2])
             };
         }
 
@@ -810,9 +860,17 @@ public:
             const double land=fs.get(cell,land_);
             const double effective_area=area*land;
             if (effective_area<=1.0) {
-                for (FieldId field:pft_) fs.set(cell,field,0.0);
+                double stranded_nitrogen=0.0;
+                for (std::size_t i=0;i<pft_.size();++i) {
+                    fs.set(cell,pft_[i],0.0);
+                    stranded_nitrogen+=fs.get(cell,pft_nitrogen_[i]);
+                    fs.set(cell,pft_nitrogen_[i],0.0);
+                }
+                fs.add(cell,litter_nitrogen_,stranded_nitrogen);
                 fs.set(cell,carbon_,0.0);
+                fs.set(cell,vegetation_nitrogen_,0.0);
                 fs.set(cell,npp_,0.0);
+                fs.set(cell,nitrogen_uptake_,0.0);
                 continue;
             }
 
@@ -913,10 +971,8 @@ public:
                 1.0
             };
 
-            double total_after=0.0;
-            double total_npp_rate=0.0;
-            double litter_addition=0.0;
-
+            std::array<double,3> potential_gross_rate{};
+            double requested_nitrogen=0.0;
             for (std::size_t i=0;i<pft_.size();++i) {
                 const double temperature_factor=std::exp(
                     -std::pow(
@@ -947,8 +1003,7 @@ public:
                     0.0,
                     1.0
                 );
-
-                const double gross_rate=
+                potential_gross_rate[i]=
                     effective_area*
                     productivity_kg_m2_day[i]*
                     temperature_factor*
@@ -962,7 +1017,29 @@ public:
                     light_factor[i]*
                     snow_exposure[i]*
                     (1.0-flooded);
+                requested_nitrogen+=
+                    potential_gross_rate[i]*ctx.dt_days/
+                    kPlantCarbonNitrogenRatio[i];
+            }
+            const double mineral_before=fs.get(cell,mineral_nitrogen_);
+            const double nitrogen_scale=
+                requested_nitrogen>mineral_before
+                    ? mineral_before/requested_nitrogen
+                    : 1.0;
 
+            double total_after=0.0;
+            double total_nitrogen_after=0.0;
+            double total_npp_rate=0.0;
+            double litter_addition=0.0;
+            double litter_nitrogen_addition=0.0;
+            double total_nitrogen_uptake=0.0;
+
+            for (std::size_t i=0;i<pft_.size();++i) {
+                const double gross_rate=
+                    potential_gross_rate[i]*nitrogen_scale;
+                const double nitrogen_uptake=
+                    gross_rate*ctx.dt_days/
+                    kPlantCarbonNitrogenRatio[i];
                 const double temperature_respiration=std::clamp(
                     std::pow(2.0,(temp-283.0)/10.0),
                     0.2,
@@ -1004,15 +1081,68 @@ public:
                     unconstrained-updated
                 );
 
+                const double plant_nitrogen_before=
+                    nitrogen_before.at(cell)[i];
+                const double turnover_nitrogen=
+                    before.at(cell)[i]>0.0
+                        ? plant_nitrogen_before*
+                            std::clamp(
+                                turnover/before.at(cell)[i],
+                                0.0,
+                                1.0
+                            )
+                        : 0.0;
+                const double nitrogen_before_crowding=
+                    plant_nitrogen_before+
+                    nitrogen_uptake-
+                    turnover_nitrogen;
+                const double crowding_nitrogen=
+                    unconstrained>0.0
+                        ? nitrogen_before_crowding*
+                            std::clamp(
+                                crowding_loss/unconstrained,
+                                0.0,
+                                1.0
+                            )
+                        : 0.0;
+                const double updated_nitrogen=std::max(
+                    0.0,
+                    nitrogen_before_crowding-crowding_nitrogen
+                );
+
                 fs.set(cell,pft_[i],updated);
+                fs.set(cell,pft_nitrogen_[i],updated_nitrogen);
                 total_after+=updated;
+                total_nitrogen_after+=updated_nitrogen;
                 total_npp_rate+=npp_rate;
                 litter_addition+=turnover+crowding_loss;
+                litter_nitrogen_addition+=
+                    turnover_nitrogen+crowding_nitrogen;
+                total_nitrogen_uptake+=nitrogen_uptake;
             }
 
             fs.add(cell,litter_,litter_addition);
+            fs.add(cell,litter_nitrogen_,litter_nitrogen_addition);
+            fs.set(
+                cell,mineral_nitrogen_,
+                std::max(0.0,mineral_before-total_nitrogen_uptake)
+            );
             fs.set(cell,carbon_,total_after);
+            fs.set(cell,vegetation_nitrogen_,total_nitrogen_after);
             fs.set(cell,npp_,total_npp_rate);
+            fs.set(
+                cell,nitrogen_uptake_,
+                ctx.dt_days>0.0
+                    ? total_nitrogen_uptake/ctx.dt_days
+                    : 0.0
+            );
+            fs.set(
+                cell,fertility_,
+                mineral_nitrogen_fertility(
+                    fs.get(cell,mineral_nitrogen_)/
+                    std::max(1.0,effective_area)
+                )
+            );
         }
     }
 
@@ -1020,9 +1150,10 @@ private:
     FieldId temp_,solar_,land_,regolith_,water_,flooded_,inundation_;
     FieldId snow_cover_;
     std::optional<FieldId> growth_;
-    FieldId fertility_,litter_;
+    FieldId fertility_,litter_,litter_nitrogen_,mineral_nitrogen_;
     std::array<FieldId,3> pft_;
-    FieldId carbon_,npp_;
+    std::array<FieldId,3> pft_nitrogen_;
+    FieldId carbon_,vegetation_nitrogen_,npp_,nitrogen_uptake_;
 };
 
 class FireSystem final : public ISimSystem {
@@ -1043,12 +1174,22 @@ public:
               require_field(r,"climate.snow_cover_fraction")
           ),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
+          litter_nitrogen_(require_field(r,"ecology.litter_nitrogen_kg")),
+          mineral_nitrogen_(require_field(r,"ecology.mineral_nitrogen_kg")),
           pft_{
               require_field(r,"ecology.grass_carbon_kg"),
               require_field(r,"ecology.shrub_carbon_kg"),
               require_field(r,"ecology.tree_carbon_kg")
           },
+          pft_nitrogen_{
+              require_field(r,"ecology.grass_nitrogen_kg"),
+              require_field(r,"ecology.shrub_nitrogen_kg"),
+              require_field(r,"ecology.tree_nitrogen_kg")
+          },
           carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+          vegetation_nitrogen_(
+              require_field(r,"ecology.vegetation_nitrogen_kg")
+          ),
           active_area_(require_field(r,"ecology.fire_active_area_m2")),
           active_(require_field(r,"ecology.fire_active_fraction")),
           danger_(require_field(r,"ecology.fire_danger")),
@@ -1059,6 +1200,9 @@ public:
           ),
           emission_rate_(
               require_field(r,"ecology.fire_emission_kg_day")
+          ),
+          emitted_nitrogen_(
+              require_field(r,"ecology.fire_emitted_nitrogen_kg")
           ),
           char_(require_field(r,"ecology.pyrogenic_carbon_kg")) {}
 
@@ -1080,6 +1224,12 @@ public:
                     "field:hydrology.flooded_fraction",
                     "field:climate.snow_cover_fraction",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
@@ -1091,6 +1241,12 @@ public:
                 },
                 {
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
@@ -1102,6 +1258,7 @@ public:
                     "field:ecology.fire_burned_area_m2",
                     "field:ecology.fire_emitted_carbon_kg",
                     "field:ecology.fire_emission_kg_day",
+                    "field:ecology.fire_emitted_nitrogen_kg",
                     "field:ecology.pyrogenic_carbon_kg"
                 }};
     }
@@ -1313,10 +1470,16 @@ public:
             if (!(fraction>0.0)) continue;
 
             const double litter_before=fs.get(cell,litter_);
+            const double litter_nitrogen_before=
+                fs.get(cell,litter_nitrogen_);
             double litter_after=litter_before;
+            double litter_nitrogen_after=litter_nitrogen_before;
             double emitted=0.0;
+            double emitted_nitrogen=0.0;
+            double mineral_nitrogen_addition=0.0;
             double charred=0.0;
             double vegetation_after=0.0;
+            double vegetation_nitrogen_after=0.0;
             for (std::size_t i=0;i<pft_.size();++i) {
                 const double before=fs.get(cell,pft_[i]);
                 const double killed=std::min(
@@ -1328,9 +1491,45 @@ public:
                 litter_after+=killed-combusted-pft_char;
                 emitted+=combusted;
                 charred+=pft_char;
+                const double nitrogen_before=
+                    fs.get(cell,pft_nitrogen_[i]);
+                const double killed_nitrogen=
+                    before>0.0
+                        ? nitrogen_before*
+                            std::clamp(killed/before,0.0,1.0)
+                        : 0.0;
+                const double litter_carbon_from_kill=
+                    killed-combusted-pft_char;
+                const double litter_nitrogen_from_kill=
+                    killed>0.0
+                        ? killed_nitrogen*
+                            std::clamp(
+                                litter_carbon_from_kill/killed,
+                                0.0,
+                                1.0
+                            )
+                        : 0.0;
+                const double altered_nitrogen=
+                    killed_nitrogen-litter_nitrogen_from_kill;
+                litter_nitrogen_after+=litter_nitrogen_from_kill;
+                emitted_nitrogen+=
+                    altered_nitrogen*
+                    fire_nitrogen_volatilization_fraction;
+                mineral_nitrogen_addition+=
+                    altered_nitrogen*
+                    (1.0-fire_nitrogen_volatilization_fraction);
+
                 const double after=before-killed;
+                const double nitrogen_after=
+                    nitrogen_before-killed_nitrogen;
                 fs.set(cell,pft_[i],after);
+                fs.set(
+                    cell,pft_nitrogen_[i],
+                    std::max(0.0,nitrogen_after)
+                );
                 vegetation_after+=after;
+                vegetation_nitrogen_after+=
+                    std::max(0.0,nitrogen_after);
             }
 
             const double litter_affected=std::min(
@@ -1341,10 +1540,40 @@ public:
             emitted+=litter_affected*(1.0-litter_char_fraction);
             charred+=litter_affected*litter_char_fraction;
 
+            const double litter_nitrogen_affected=
+                litter_before>0.0
+                    ? litter_nitrogen_before*
+                        std::clamp(
+                            litter_affected/litter_before,
+                            0.0,
+                            1.0
+                        )
+                    : 0.0;
+            litter_nitrogen_after-=litter_nitrogen_affected;
+            emitted_nitrogen+=
+                litter_nitrogen_affected*
+                fire_nitrogen_volatilization_fraction;
+            mineral_nitrogen_addition+=
+                litter_nitrogen_affected*
+                (1.0-fire_nitrogen_volatilization_fraction);
+
             fs.set(cell,litter_,std::max(0.0,litter_after));
+            fs.set(
+                cell,litter_nitrogen_,
+                std::max(0.0,litter_nitrogen_after)
+            );
+            fs.add(
+                cell,mineral_nitrogen_,
+                mineral_nitrogen_addition
+            );
             fs.set(cell,carbon_,vegetation_after);
+            fs.set(
+                cell,vegetation_nitrogen_,
+                vegetation_nitrogen_after
+            );
             fs.add(cell,emitted_,emitted);
             fs.add(cell,emission_rate_,emitted/ctx.dt_days);
+            fs.add(cell,emitted_nitrogen_,emitted_nitrogen);
             fs.add(cell,char_,charred);
             fs.add(
                 cell,
@@ -1431,9 +1660,12 @@ public:
 private:
     FieldId temp_,precipitation_,humidity_,east_wind_,north_wind_;
     FieldId land_,regolith_,water_,flooded_,snow_cover_,litter_;
+    FieldId litter_nitrogen_,mineral_nitrogen_;
     std::array<FieldId,3> pft_;
-    FieldId carbon_,active_area_,active_,danger_,burned_,burned_area_;
-    FieldId emitted_,emission_rate_,char_;
+    std::array<FieldId,3> pft_nitrogen_;
+    FieldId carbon_,vegetation_nitrogen_;
+    FieldId active_area_,active_,danger_,burned_,burned_area_;
+    FieldId emitted_,emission_rate_,emitted_nitrogen_,char_;
 };
 
 // Reduced standing-biomass pyramid used to bound the two demo trophic guilds.
@@ -1451,8 +1683,22 @@ public:
               require_field(r,"ecology.shrub_carbon_kg"),
               require_field(r,"ecology.tree_carbon_kg")
           },
+          pft_nitrogen_{
+              require_field(r,"ecology.grass_nitrogen_kg"),
+              require_field(r,"ecology.shrub_nitrogen_kg"),
+              require_field(r,"ecology.tree_nitrogen_kg")
+          },
           carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+          vegetation_nitrogen_(
+              require_field(r,"ecology.vegetation_nitrogen_kg")
+          ),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
+          litter_nitrogen_(
+              require_field(r,"ecology.litter_nitrogen_kg")
+          ),
+          mineral_nitrogen_(
+              require_field(r,"ecology.mineral_nitrogen_kg")
+          ),
           respired_(require_field(
               r,"ecology.fauna_respired_carbon_kg"
           )),
@@ -1474,8 +1720,14 @@ public:
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
                     "field:ecology.fauna_respired_carbon_kg",
                     "store:ecology.cohorts"
                 },
@@ -1483,8 +1735,14 @@ public:
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
                     "field:ecology.fauna_respired_carbon_kg",
                     "field:ecology.fauna_respiration_kg_day",
                     "store:ecology.cohorts"
@@ -1549,6 +1807,11 @@ public:
                 fs.get(cell,pft_[1]),
                 fs.get(cell,pft_[2])
             };
+            std::array<double,3> vegetation_nitrogen{
+                fs.get(cell,pft_nitrogen_[0]),
+                fs.get(cell,pft_nitrogen_[1]),
+                fs.get(cell,pft_nitrogen_[2])
+            };
             double weighted_forage=0.0;
             for (std::size_t i=0;i<pft_.size();++i)
                 weighted_forage+=
@@ -1588,16 +1851,32 @@ public:
                     1.0
                 )
             );
+            double consumed_nitrogen=0.0;
             if (weighted_forage>0.0 && consumed>0.0) {
                 for (std::size_t i=0;i<pft_.size();++i) {
                     const double share=
                         vegetation[i]*
                         forage_preference[i]/
                         weighted_forage;
+                    const double removed_carbon=consumed*share;
+                    const double removed_nitrogen=
+                        vegetation[i]>0.0
+                            ? vegetation_nitrogen[i]*
+                                std::clamp(
+                                    removed_carbon/vegetation[i],
+                                    0.0,
+                                    1.0
+                                )
+                            : 0.0;
                     vegetation[i]=std::max(
                         0.0,
-                        vegetation[i]-consumed*share
+                        vegetation[i]-removed_carbon
                     );
+                    vegetation_nitrogen[i]=std::max(
+                        0.0,
+                        vegetation_nitrogen[i]-removed_nitrogen
+                    );
+                    consumed_nitrogen+=removed_nitrogen;
                 }
             }
 
@@ -1654,6 +1933,16 @@ public:
                 consumed-herbivore_assimilated+
                     herbivore_background_mortality+
                     herbivore_density_mortality
+            );
+            fs.add(
+                cell,litter_nitrogen_,
+                consumed_nitrogen*
+                (1.0-fauna_nitrogen_to_mineral_fraction)
+            );
+            fs.add(
+                cell,mineral_nitrogen_,
+                consumed_nitrogen*
+                fauna_nitrogen_to_mineral_fraction
             );
             fs.add(cell,respired_,herbivore_respired);
             fs.add(
@@ -1787,11 +2076,22 @@ public:
             }
 
             double total_vegetation=0.0;
+            double total_vegetation_nitrogen=0.0;
             for (std::size_t i=0;i<pft_.size();++i) {
                 fs.set(cell,pft_[i],vegetation[i]);
+                fs.set(
+                    cell,pft_nitrogen_[i],
+                    vegetation_nitrogen[i]
+                );
                 total_vegetation+=vegetation[i];
+                total_vegetation_nitrogen+=
+                    vegetation_nitrogen[i];
             }
             fs.set(cell,carbon_,total_vegetation);
+            fs.set(
+                cell,vegetation_nitrogen_,
+                total_vegetation_nitrogen
+            );
         }
 
         struct HabitatState {
@@ -1959,7 +2259,10 @@ public:
 private:
     FieldId land_;
     std::array<FieldId,3> pft_;
-    FieldId carbon_,litter_,respired_,respiration_rate_;
+    std::array<FieldId,3> pft_nitrogen_;
+    FieldId carbon_,vegetation_nitrogen_,litter_;
+    FieldId litter_nitrogen_,mineral_nitrogen_;
+    FieldId respired_,respiration_rate_;
     bool fire_enabled_{};
 };
 
@@ -2040,6 +2343,34 @@ private:
 
 } // namespace
 
+double total_ecology_nitrogen_accounted_kg(
+    const WorldState& world,
+    const FieldRegistry& r
+) {
+    const auto& fields=world.stores().get<FieldStore>();
+    double total=0.0;
+    for (std::string_view key:{
+             "ecology.litter_nitrogen_kg",
+             "ecology.soil_fast_nitrogen_kg",
+             "ecology.soil_slow_nitrogen_kg",
+             "ecology.mineral_nitrogen_kg",
+             "ecology.grass_nitrogen_kg",
+             "ecology.shrub_nitrogen_kg",
+             "ecology.tree_nitrogen_kg",
+             "ecology.nitrogen_leached_kg",
+             "ecology.fire_emitted_nitrogen_kg"
+         }) {
+        const auto id=r.find(key);
+        if (!id) continue;
+        total=std::accumulate(
+            fields.column(*id).begin(),
+            fields.column(*id).end(),
+            total
+        );
+    }
+    return total;
+}
+
 void GeographyModule::register_fields(FieldRegistry& r) {
     r.register_field({"geography.elevation_m","m",FieldSemantics::Intensive,0.0,-11000.0,9000.0});
     r.register_field({"geography.land_fraction","1",FieldSemantics::Intensive,0.5,0.0,1.0});
@@ -2091,15 +2422,26 @@ void MagicModule::initialize(WorldState& world, const FieldRegistry& r) {
 void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.soil_fertility","1",FieldSemantics::Intensive,0.25,0.0,1.0});
     r.register_field({"ecology.litter_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.litter_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_fast_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_slow_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.soil_fast_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.soil_slow_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.mineral_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.nitrogen_mineralization_kg_day","kgN/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.nitrogen_leached_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.heterotrophic_respiration_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_respired_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.grass_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.shrub_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.tree_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.grass_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.shrub_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.tree_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.vegetation_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.vegetation_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.nitrogen_uptake_kg_day","kgN/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.npp_kg_day","kgC/day",FieldSemantics::Extensive,0.0,-1.0e30,1.0e30});
     r.register_field({"ecology.fauna_respired_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fauna_respiration_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
@@ -2110,6 +2452,7 @@ void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.fire_burned_area_m2","m2",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_emitted_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_emission_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.fire_emitted_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.pyrogenic_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
 }
 void EcologyModule::register_stores(StateStoreRegistry& stores, const FieldRegistry&) { stores.emplace<CohortStore>(); }
@@ -2132,6 +2475,7 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
     const auto regolith=require_field(r,"geology.regolith_thickness_m");
     const auto fertility=require_field(r,"ecology.soil_fertility");
     const auto litter=require_field(r,"ecology.litter_carbon_kg");
+    const auto litter_nitrogen=require_field(r,"ecology.litter_nitrogen_kg");
     const auto fast_carbon=require_field(
         r,"ecology.soil_fast_carbon_kg"
     );
@@ -2139,12 +2483,23 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
         r,"ecology.soil_slow_carbon_kg"
     );
     const auto soil_carbon=require_field(r,"ecology.soil_carbon_kg");
+    const auto fast_nitrogen=require_field(r,"ecology.soil_fast_nitrogen_kg");
+    const auto slow_nitrogen=require_field(r,"ecology.soil_slow_nitrogen_kg");
+    const auto mineral_nitrogen=require_field(r,"ecology.mineral_nitrogen_kg");
     const std::array<FieldId,3> pft{
         require_field(r,"ecology.grass_carbon_kg"),
         require_field(r,"ecology.shrub_carbon_kg"),
         require_field(r,"ecology.tree_carbon_kg")
     };
+    const std::array<FieldId,3> pft_nitrogen{
+        require_field(r,"ecology.grass_nitrogen_kg"),
+        require_field(r,"ecology.shrub_nitrogen_kg"),
+        require_field(r,"ecology.tree_nitrogen_kg")
+    };
     const auto carbon=require_field(r,"ecology.vegetation_carbon_kg");
+    const auto vegetation_nitrogen=require_field(
+        r,"ecology.vegetation_nitrogen_kg"
+    );
 
     for (CellId c:world.active_cells()) {
         const double area=world.topology().area_m2(c);
@@ -2186,17 +2541,26 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
         const double pft_score_sum=
             pft_score[0]+pft_score[1]+pft_score[2];
 
-        fs.set(c,fertility,soil_fertility);
         double pft_total=0.0;
+        double pft_nitrogen_total=0.0;
         for (std::size_t i=0;i<pft.size();++i) {
             const double pool=pft_score_sum>0.0
                 ? initial_carbon*pft_score[i]/pft_score_sum
                 : 0.0;
+            const double nitrogen=pool/kPlantCarbonNitrogenRatio[i];
             fs.set(c,pft[i],pool);
+            fs.set(c,pft_nitrogen[i],nitrogen);
             pft_total+=pool;
+            pft_nitrogen_total+=nitrogen;
         }
         fs.set(c,carbon,pft_total);
-        fs.set(c,litter,0.08*pft_total);
+        fs.set(c,vegetation_nitrogen,pft_nitrogen_total);
+        const double initial_litter=0.08*pft_total;
+        fs.set(c,litter,initial_litter);
+        fs.set(
+            c,litter_nitrogen,
+            initial_litter/kInitialLitterCarbonNitrogenRatio
+        );
         const double soil_suitability=
             substrate_factor*(0.25+0.75*suitability);
         const double initial_fast_carbon=
@@ -2205,6 +2569,25 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
             effective*3.50*soil_suitability;
         fs.set(c,fast_carbon,initial_fast_carbon);
         fs.set(c,slow_carbon,initial_slow_carbon);
+        fs.set(
+            c,fast_nitrogen,
+            initial_fast_carbon/kInitialFastSoilCarbonNitrogenRatio
+        );
+        fs.set(
+            c,slow_nitrogen,
+            initial_slow_carbon/kInitialSlowSoilCarbonNitrogenRatio
+        );
+        const double initial_mineral_nitrogen=
+            effective*0.004*substrate_factor;
+        fs.set(c,mineral_nitrogen,initial_mineral_nitrogen);
+        fs.set(
+            c,fertility,
+            effective>1.0
+                ? mineral_nitrogen_fertility(
+                    initial_mineral_nitrogen/effective
+                )
+                : 0.0
+        );
         fs.set(
             c,
             soil_carbon,
@@ -2271,6 +2654,18 @@ void EcologyModule::on_spatial_cover_changed(
     const FieldId soil_carbon=require_field(
         r,"ecology.soil_carbon_kg"
     );
+    const FieldId fertility=require_field(r,"ecology.soil_fertility");
+    const FieldId mineral_nitrogen=require_field(
+        r,"ecology.mineral_nitrogen_kg"
+    );
+    const std::array<FieldId,3> pft_nitrogen{
+        require_field(r,"ecology.grass_nitrogen_kg"),
+        require_field(r,"ecology.shrub_nitrogen_kg"),
+        require_field(r,"ecology.tree_nitrogen_kg")
+    };
+    const FieldId vegetation_nitrogen=require_field(
+        r,"ecology.vegetation_nitrogen_kg"
+    );
     for (CellId cell:world.active_cells()) {
         const double land_area=
             world.topology().area_m2(cell)*fs.get(cell,land);
@@ -2285,6 +2680,18 @@ void EcologyModule::on_spatial_cover_changed(
             cell,
             soil_carbon,
             fs.get(cell,fast_carbon)+fs.get(cell,slow_carbon)
+        );
+        double total_vegetation_nitrogen=0.0;
+        for (FieldId field:pft_nitrogen)
+            total_vegetation_nitrogen+=fs.get(cell,field);
+        fs.set(cell,vegetation_nitrogen,total_vegetation_nitrogen);
+        fs.set(
+            cell,fertility,
+            land_area>1.0
+                ? mineral_nitrogen_fertility(
+                    fs.get(cell,mineral_nitrogen)/land_area
+                )
+                : 0.0
         );
     }
 }

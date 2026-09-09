@@ -154,6 +154,16 @@ reservoir.
 - Interactive performance and visual layout on target player hardware are
   **NOT VERIFIED**.
 
+## Nitrogen coupling added after Wildfire v1
+
+Nitrogen cycle v1 tracks the N associated with vegetation and litter removed by
+fire. N returned with uncombusted mortality stays in litter; the remainder is
+split between a reduced mineral-ash return and cumulative
+`ecology.fire_emitted_nitrogen_kg` boundary ledger. This closes tracked
+nitrogen through fire without claiming smoke chemistry, NOx speciation or
+atmospheric nitrogen transport. The authoritative contract is in
+`NITROGEN_CYCLE.md`.
+
 ## Explicitly unsupported claims
 
 Wildfire v1 does not provide sub-cell fire fronts, flame intensity, crown-fire

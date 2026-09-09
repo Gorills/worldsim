@@ -130,11 +130,12 @@ provide a non-zero memory state for the reduced model, not to reconstruct a
 historical spin-up. Production calibration should replace this initialization
 with a spin-up or data assimilation workflow.
 
-The existing dimensionless fertility index retains litter as its labile organic
-substrate signal. Decomposition of all three pools contributes a small
-mineralization pulse, so persistent soil carbon affects fertility through
-turnover rather than being treated as immediately available. No elemental
-nitrogen or phosphorus conservation is claimed.
+This section describes the historical Soil-carbon-v1 fertility coupling.
+Nitrogen cycle v1 now supersedes that index-only closure: corresponding organic
+N pools turn over with carbon, decomposition mineralizes finite N, runoff
+leaches that stock to an explicit boundary ledger, and vegetation uptake debits
+mineral N. `ecology.soil_fertility` is now derived from mineral-N density.
+Phosphorus is still not conserved. See `NITROGEN_CYCLE.md`.
 
 ## Persistence and validation
 
@@ -174,10 +175,12 @@ Regression coverage must verify:
 
 ## Explicit limits
 
-There is no atmospheric CO2 reservoir or radiative feedback, dissolved/eroded
-organic carbon transport, peat/wetland anaerobic pathway, permafrost, vertical
-soil profile, microbial biomass, priming, or C:N:P limitation. Fauna carbon is
-also outside this soil accounting boundary. Parameters and initial stock
+The current combined world now has an atmospheric/ocean carbon reservoir and a
+reduced terrestrial nitrogen limitation layer, but Soil carbon v1 itself still
+does not model dissolved/eroded organic carbon transport, peat/wetland
+anaerobic pathways, permafrost, vertical soil profiles, microbial biomass,
+priming, phosphorus limitation, or calibrated flexible stoichiometry. Fauna
+carbon remains outside this soil accounting boundary. Parameters and initial stock
 densities are **NOT CALIBRATED** against observations. Soil carbon v1 establishes
 conservative state transitions and persistent memory on which those later slices
 can be built.
