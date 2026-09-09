@@ -98,8 +98,8 @@ snapshot continuation.
 
 Snapshot epoch 30 is the first combined-world format with authoritative carbon
 reservoirs. `ClimateStore` state version 3 serializes both carbon reservoirs
-and the cumulative CO2 forcing-energy ledger. Nitrogen cycle v1 later advances
-the combined-world epoch to 31 without changing the ClimateStore v3 binary
+and the cumulative CO2 forcing-energy ledger. Nitrogen cycle v1 later advances the combined-world epoch to 31, and Planetary
+nitrogen v2 advances it to 32; neither changes the ClimateStore v3 binary
 layout. Older combined snapshots are rejected until an explicit migration
 exists.
 

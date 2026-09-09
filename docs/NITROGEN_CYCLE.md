@@ -1,14 +1,13 @@
-# Nitrogen cycle v1
+# Nitrogen cycle v2
 
-Nitrogen cycle v1 replaces WorldSim's independent fertility index with a
-conservative reduced terrestrial nitrogen boundary. Its purpose is to make
-plant production depend on a finite donor nutrient stock and to preserve that
-element through the existing soil, vegetation, fire and grazing transfer paths.
-It is not an Earth-calibrated C:N biogeochemistry model.
+Nitrogen v1 introduced explicit terrestrial N stocks and finite-N plant
+limitation. Planetary nitrogen v2 closes the remaining one-way boundary by
+adding non-spatial atmospheric and ocean reservoirs plus reduced return
+processes. The goal is conservative long-run causality, not Earth calibration.
 
-## Authoritative tracked nitrogen
+## Authoritative stocks
 
-The active terrestrial inventory uses ordinary extensive fields:
+Terrestrial authoritative stocks remain extensive fields:
 
 - `ecology.litter_nitrogen_kg`;
 - `ecology.soil_fast_nitrogen_kg`;
@@ -18,126 +17,140 @@ The active terrestrial inventory uses ordinary extensive fields:
 - `ecology.shrub_nitrogen_kg`;
 - `ecology.tree_nitrogen_kg`.
 
-`ecology.vegetation_nitrogen_kg` is a derived sum of the three PFT pools and
-must not be counted again. `ecology.soil_fertility` is likewise a diagnostic:
-it is a bounded monotonic function of mineral-N density, not an elemental stock.
+`ecology.vegetation_nitrogen_kg` is the derived sum of PFT N and is not an
+additional stock. `ecology.soil_fertility` is a bounded diagnostic of
+mineral-N density.
 
-Two cumulative extensive fields close explicit exits from the active
-terrestrial inventory:
+`NitrogenStore` owns three global reservoirs independently of adaptive LOD:
+
+- reduced atmospheric N2 donor;
+- reactive atmospheric nitrogen;
+- ocean dissolved nitrogen.
+
+The reduced initialization uses 0.50 kgN/m2 of total planetary surface for the
+N2 donor and 0.05 kgN/m2 of initialized ocean area for dissolved ocean N.
+These deliberately compressed reservoirs keep the model numerically useful;
+they are not claimed Earth inventories.
+
+## Boundary rates versus audit ledgers
+
+Nitrogen v1 cumulative fields remain immutable audit histories:
 
 - `ecology.nitrogen_leached_kg`;
 - `ecology.fire_emitted_nitrogen_kg`.
 
-`total_ecology_nitrogen_accounted_kg()` counts active stocks plus these
-boundary ledgers exactly once. Without an implemented aquatic or atmospheric N
-recipient, the ledgers preserve conservation and make the missing destination
-visible rather than silently deleting nutrient mass.
+Planetary transfers never infer a daily flux by differencing those histories.
+Soil and fire now expose current extensive rates:
 
-## Soil turnover and mineralization
+- `ecology.nitrogen_leaching_kg_day`;
+- `ecology.fire_nitrogen_emission_kg_day`.
 
-`SoilNitrogenModel` consumes the realized carbon decomposition step. For each
-litter/fast/slow source pool, the same fraction that decomposes in carbon is
-applied to its N stock. N accompanying carbon transferred to the next organic
-pool stays organic; the remainder is mineralized.
+At the final daily `ecology.nitrogen_cycle` pass, realized leaching enters the
+ocean reservoir and realized fire emission enters the reactive atmosphere.
+The cumulative ledgers are excluded from `total_planet_nitrogen_kg()` because
+the recipient reservoir already owns the transferred mass.
 
-This deliberately stages transfers: newly moved litter N cannot decompose
-again from the fast pool during the same soil step, matching the existing
-carbon-time integration contract.
+`total_ecology_nitrogen_accounted_kg()` remains useful as a terrestrial
+boundary audit: active terrestrial stocks plus cumulative exits. Under v2 it is
+not expected to stay constant, because fixation and deposition are explicit
+inputs from global reservoirs.
 
-Drainage removes a bounded fraction of the post-mineralization mineral pool.
-The reduced leaching response is
+## Return processes
 
-`1 - exp(-runoff_depth / 1 m)`.
+### Atmospheric fixation
 
-That scale is an engineering control, not a calibrated nitrate transport
-coefficient.
+Each land cell requests reduced fixation according to effective land area,
+temperature and current nutrient scarcity:
 
-## Plant uptake and limitation
+`2e-6 kgN/m2/day * temperature_factor * (1 - fertility)`.
 
-The three reduced PFT target C:N ratios are:
+The sum is capped by the finite atmospheric N2 donor, debited once, then
+distributed back to local mineral N. `ecology.nitrogen_fixation_kg_day`
+reports the realized extensive rate. This combines biological/abiotic fixation
+into one engineering closure; no fixer species or symbiosis is implied.
 
-- grass: 25;
-- shrub: 40;
-- tree: 60.
+### Reactive deposition
 
-Potential gross carbon production is computed from the existing climate,
-water, light, competition and magic controls. The corresponding N request is
-`gross_C / target_C:N`. If the combined request exceeds local mineral N, all
-PFT gross production is scaled by the same donor-limited factor before carbon
-is created. Realized uptake debits mineral N and is exposed as
-`ecology.nitrogen_uptake_kg_day`.
+Fire-emitted reactive N is deposited back to land with a 45-day exponential
+relaxation timescale and distributed by represented land area. The donor
+reservoir is debited exactly by the amount added to mineral N.
+`ecology.nitrogen_deposition_kg_day` reports the realized rate.
 
-Plant respiration removes carbon but no N in this reduced representation, so
-realized tissue C:N can evolve after initialization. Turnover and crowding move
-the associated fraction of plant N into litter. A full flexible-stoichiometry
-physiology model is outside v1.
+### Ocean return
 
-## Disturbance and fauna boundary
+Leached N enters the global ocean dissolved reservoir. A 30-year exponential
+denitrification closure transfers dissolved ocean N back to atmospheric N2.
+This is a single global box: no river nitrate routing, estuaries, marine
+primary production, oxygen limitation or nitrate/ammonium chemistry is
+resolved.
 
-Fire removes N proportional to the affected vegetation/litter material.
-N associated with uncombusted vegetation mortality returns to litter. Of the
-remaining altered N, 75% enters the cumulative fire-emission boundary ledger
-and 25% returns to local mineral N as reduced ash recycling. These fractions
-are engineering parameters and do not represent NOx/N2/NH3 chemistry.
+## Terrestrial process contract retained from v1
 
-Fauna does not own a persistent N reservoir in v1. When herbivores remove plant
-material, its N is immediately returned in the same fauna pass: 65% to litter N
-and 35% to mineral N. This keeps the tracked boundary conservative while making
-the simplification explicit. Carnivore/prey nitrogen, body stoichiometry,
-excretion timing and migration of animal-bound N require a future cohort-N
-state extension.
+Carbon decomposition drives the fraction of litter/fast/slow organic N that
+turns over. N following transferred carbon stays organic; the remainder
+mineralizes. Runoff removes only finite mineral N. Plant gross production
+requests N using reduced target C:N ratios 25/40/60 for grass/shrub/tree and is
+scaled before carbon creation when the mineral donor is insufficient.
 
-## Initialization and LOD
+Plant turnover/crowding returns associated N to litter. Fire returns
+uncombusted mortality to litter, sends 25% of altered N to mineral ash and 75%
+to the reactive-atmosphere boundary. Grazed plant N is immediately recycled
+65% to litter and 35% to mineral N because persistent fauna N remains outside
+this slice.
 
-Initial vegetation N uses the PFT C:N targets. Initial litter, fast-soil and
-slow-soil C:N ratios are 40, 14 and 12 respectively. Initial mineral N is a
-small regolith-substrate-dependent stock. These values warm-start the reduced
-model and are **not calibrated observations**.
+## LOD and scheduling
 
-All tracked N stocks and ledgers use extensive FieldStore semantics, so
-refinement splits them and coarsening sums them. After a cover change,
-`ecology.vegetation_nitrogen_kg` and the mineral-density-derived fertility
-diagnostic are reconstructed from authoritative component fields.
+All spatial N stocks/rates use ordinary extensive FieldStore split/sum
+semantics. The global `NitrogenStore` ignores refine/coarsen events, so focus
+LOD cannot duplicate atmosphere/ocean nitrogen. The final nitrogen system runs
+after the post-fire/fauna ecology state. Carbon and nitrogen final closures are
+resource-independent siblings and do not require an ordering between them.
 
-## Validation contract
+## Conservation and validation
 
-The dedicated `worldsim_nitrogen_tests` suite verifies:
+`total_planet_nitrogen_kg()` counts exactly one copy of each active
+terrestrial N stock plus the three global reservoirs. It excludes aggregate
+vegetation N, fertility, current rates and cumulative leaching/fire histories.
 
-- pure soil-N transfer closure and staged organic transfers;
-- finite and monotonic mineral-N fertility projection;
-- soil-system mineralization/leaching closure;
-- production reduction when mineral N is absent;
-- exact mineral-N debit for realized plant uptake;
-- coupled 30-day nitrogen closure;
-- refine/coarsen preservation and aggregate reconstruction; and
-- snapshot round-trip/continuation at epoch 31.
+Regression coverage verifies:
 
-Fire and fauna regressions additionally carry internally consistent N fixtures
-through their existing carbon-transfer tests. The long-run harness reports
-mineral-N density and `tracked_nitrogen_rel_residual`; `--assert-stable`
-rejects relative drift above `1e-10`.
+- soil organic/mineral transfer closure and staged decomposition;
+- current leaching rate equals its one-day ledger increment;
+- finite-N vegetation limitation and uptake debit;
+- fire N current-rate/ledger agreement;
+- terrestrial loss transfer into ocean/reactive reservoirs;
+- positive fixation/deposition under controlled scarcity/emission;
+- coupled 30-day planetary N conservation;
+- LOD preservation of spatial stocks with invariant global reservoirs; and
+- snapshot round-trip/continuation.
+
+The long-run harness reports terrestrial N retention, atmospheric-N2 ratio,
+ocean N, cumulative fixation/deposition and
+`planet_nitrogen_rel_residual`. `--assert-stable` rejects planetary N drift
+above 1e-10 relative.
 
 ## Snapshot epoch
 
-Snapshot epoch 31 is the first combined-world format with authoritative
-nitrogen fields and finite-N production semantics. Epoch 30 and older combined
-snapshots are rejected until explicit migrations exist.
+Snapshot epoch 31 was the first combined-world format with explicit
+terrestrial-N fields. Epoch 32 adds `NitrogenStore`, current boundary rates
+and return-flux fields. The store's own snapshot version is 1. Combined epochs
+2 through 31 are rejected until explicit migrations exist.
 
 ## Explicit limits
 
-Nitrogen cycle v1 does not model:
+Nitrogen v2 does not model:
 
-- atmospheric N2, fixation, lightning or deposition;
-- nitrification, denitrification, ammonia/NOx speciation or gaseous soil loss;
-- dissolved nitrate transport into an aquatic nutrient reservoir;
-- marine nutrient cycling;
+- resolved atmospheric N2/NOx/NH3 chemistry or transport;
+- lightning versus biological fixation pathways;
+- fixer species, symbiosis or species-specific nutrient physiology;
+- nitrification or explicit terrestrial denitrification;
+- river/aquifer nitrate routing or estuarine retention;
+- marine primary production or nutrient-limited aquatic food webs;
 - phosphorus or other limiting elements;
-- microbial biomass or enzyme pools;
-- vertical soil horizons and vadose-zone chemistry;
+- microbial biomass/enzyme pools and vertical soil chemistry;
 - persistent fauna nitrogen/body stoichiometry;
-- symbiotic plant traits or species-specific nutrient physiology;
-- calibrated fertilization response, C:N ratios or leaching coefficients.
+- calibrated reservoir sizes, fixation/deposition rates or leaching response.
 
-The invariant is narrower and testable: every implemented nitrogen transfer
-must name a finite donor and recipient stock, or an explicit cumulative boundary
-ledger.
+The invariant is conservative ownership: every implemented nitrogen transfer
+has one finite donor and one recipient stock; cumulative ledgers remain audit
+history rather than substitute reservoirs.
