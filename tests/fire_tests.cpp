@@ -646,7 +646,7 @@ void snapshot_continuation_includes_fire_state() {
 
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"fire snapshot header is unexpectedly short");
-    check(snapshot[8]==std::byte{32},"unexpected current snapshot epoch");
+    check(snapshot[8]==std::byte{33},"unexpected current snapshot epoch");
     auto restored=make_default_simulation(
         7004,SimulationConfig{1,2,3'600.0}
     );
