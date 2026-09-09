@@ -41,7 +41,7 @@ CellId land_cell(Simulation& simulation) {
     const auto land=field(simulation,"geography.land_fraction");
     const auto& fields=simulation.world().stores().get<FieldStore>();
     for (CellId cell:simulation.world().active_cells()) {
-        if (fields.get(cell,land)>0.70) return cell;
+        if (fields.get(cell,land)>0.10) return cell;
     }
     throw std::runtime_error("nitrogen fixture found no land cell");
 }
