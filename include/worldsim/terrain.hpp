@@ -24,6 +24,15 @@ public:
     [[nodiscard]] TerrainSample sample_projected(double east_m, double north_m) const;
     [[nodiscard]] TerrainSample sample_direction(Vec3d direction) const;
 
+    // Presentation-only sub-cell orography for walking/rendering. This keeps
+    // authoritative simulation terrain unchanged while giving convergent
+    // mountain belts peak-scale relief below the adaptive cell size.
+    [[nodiscard]] TerrainSample sample_visual_projected(
+        double east_m,
+        double north_m
+    ) const;
+    [[nodiscard]] TerrainSample sample_visual_direction(Vec3d direction) const;
+
     [[nodiscard]] static Vec3d projected_to_direction(double east_m, double north_m);
     [[nodiscard]] static std::pair<double,double> direction_to_projected(Vec3d direction);
 

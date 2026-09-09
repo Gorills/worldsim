@@ -61,6 +61,32 @@ func _process(_delta: float) -> bool:
         quit(42)
         return true
 
+    var mountain_probe := viewer_sim.sample_terrain_patch(
+        5_573_000.0,
+        -1_800_300.0,
+        625.0,
+        65
+    )
+    if mountain_probe.size() != 65 * 65:
+        push_error("Mountain diagnostic patch failed")
+        quit(52)
+        return true
+    var mountain_min := float(mountain_probe[0])
+    var mountain_max := mountain_min
+    for value in mountain_probe:
+        mountain_min = minf(mountain_min, float(value))
+        mountain_max = maxf(mountain_max, float(value))
+    var mountain_center := float(mountain_probe[32 * 65 + 32])
+    var mountain_span := mountain_max - mountain_min
+    var mountain_prominence := mountain_center - mountain_min
+    if mountain_span < 1_000.0 or mountain_prominence < 800.0:
+        push_error(
+            "Reported mountain regressed to broad highland: span=%.2f prominence=%.2f"
+            % [mountain_span, mountain_prominence]
+        )
+        quit(53)
+        return true
+
     var trees := terrain.get_node_or_null(
         "Chunk_0_0/Trees"
     ) as MultiMeshInstance3D
@@ -247,8 +273,14 @@ func _process(_delta: float) -> bool:
         return true
 
     print(
-        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f"
-        % [aabb.position.y, aabb.end.y, sea_drop_m]
+        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f"
+        % [
+            aabb.position.y,
+            aabb.end.y,
+            sea_drop_m,
+            mountain_span,
+            mountain_prominence,
+        ]
     )
     quit(0)
     return true

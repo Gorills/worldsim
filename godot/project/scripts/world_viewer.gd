@@ -292,7 +292,10 @@ func _ground_local_y() -> float:
     return sim.sample_terrain_height(east_m, north_m) - origin_height_m
 
 func _create_world_minimap() -> bool:
-    var heights := sim.sample_terrain_equirectangular(MINIMAP_WIDTH, MINIMAP_HEIGHT)
+    var heights := sim.sample_preview_terrain_equirectangular(
+        MINIMAP_WIDTH,
+        MINIMAP_HEIGHT
+    )
     if heights.size() != MINIMAP_WIDTH * MINIMAP_HEIGHT:
         return false
 
