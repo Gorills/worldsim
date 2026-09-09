@@ -179,7 +179,7 @@ double visual_orographic_relief_m(
     // noise lookup instead of the rejected multi-FBM crag/gully/spur stack.
     // The expensive broad 60/28/16 km fields above already place the mountain;
     // this term only breaks smooth uplifted faces into local alpine structure.
-    const double detail_frequency=kEarthRadiusM/6'500.0;
+    const double detail_frequency=kEarthRadiusM/3'200.0;
     const double detail_source=value_noise3(
         seed,
         fnv1a64("terrain.visual.orography.detail"),
@@ -193,7 +193,7 @@ double visual_orographic_relief_m(
             0.0,
             1.0
         ),
-        4.0
+        5.0
     );
     const double alpine_gate=smoothstep(
         0.12,
@@ -201,7 +201,7 @@ double visual_orographic_relief_m(
         std::max(broad_relief,summit_relief)
     );
     const double local_relief=
-        460.0*
+        620.0*
         land_gate*
         mountain_strength*
         alpine_gate*
