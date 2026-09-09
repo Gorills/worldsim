@@ -115,12 +115,36 @@ double land_fraction_from_elevation(double elevation_m) {
 }
 
 constexpr std::uint8_t kCoastalReferenceLevel=4;
+constexpr std::uint8_t kFireIgnitionReferenceLevel=4;
 constexpr double kFlexuralCoupling=0.15;
 
 std::vector<CellId> geography_reference_cells(CellId cell) {
     std::vector<CellId> cells{cell};
     while (!cells.empty() &&
            cells.front().level()<kCoastalReferenceLevel) {
+        std::vector<CellId> refined;
+        refined.reserve(cells.size()*4U);
+        for (CellId current:cells) {
+            const auto children=current.children();
+            refined.insert(
+                refined.end(),
+                children.begin(),
+                children.end()
+            );
+        }
+        cells=std::move(refined);
+    }
+    return cells;
+}
+
+std::vector<CellId> fire_ignition_reference_cells(CellId cell) {
+    if (cell.level()>=kFireIgnitionReferenceLevel) {
+        while (cell.level()>kFireIgnitionReferenceLevel)
+            cell=cell.parent();
+        return {cell};
+    }
+    std::vector<CellId> cells{cell};
+    while (cells.front().level()<kFireIgnitionReferenceLevel) {
         std::vector<CellId> refined;
         refined.reserve(cells.size()*4U);
         for (CellId current:cells) {
@@ -1557,8 +1581,10 @@ public:
             double danger{};
             double east_wind_m_s{};
             double north_wind_m_s{};
+            double active_fraction{};
             double burned_fraction{};
             double next_active_fraction{};
+            bool natural_ignition{};
         };
         std::map<CellId,FireState> state;
 
@@ -1578,6 +1604,9 @@ public:
         );
         const std::uint64_t size_stream=fnv1a64(
             "ecology.fire.ignition_area"
+        );
+        const std::uint64_t target_stream=fnv1a64(
+            "ecology.fire.ignition_target"
         );
 
         // Freeze danger and today's burning fraction before applying either
@@ -1653,60 +1682,122 @@ public:
             );
             fs.set(cell,danger_,local.danger);
 
-            double active=std::clamp(
+            local.active_fraction=std::clamp(
                 fs.get(cell,active_area_)/local.land_area_m2,
                 0.0,
                 1.0
             );
-            bool natural_ignition=false;
-            if (local.danger>0.0) {
+            state.emplace(cell,local);
+        }
+
+        struct IgnitionContribution {
+            CellId cell;
+            double hazard{};
+        };
+        std::map<CellId,std::vector<IgnitionContribution>>
+            ignition_contributions;
+        for (CellId cell:ctx.world.active_cells()) {
+            const FireState& local=state.at(cell);
+            if (!(local.danger>0.0) || !(local.land_area_m2>1.0))
+                continue;
+
+            const double cell_area=ctx.world.topology().area_m2(cell);
+            const double land_fraction=std::clamp(
+                local.land_area_m2/std::max(1.0,cell_area),
+                0.0,
+                1.0
+            );
+            const auto references=fire_ignition_reference_cells(cell);
+            for (CellId reference:references) {
+                const double represented_land_area=
+                    cell.level()<kFireIgnitionReferenceLevel
+                        ? ctx.world.topology().area_m2(reference)*
+                            land_fraction
+                        : local.land_area_m2;
                 const double hazard=
                     ignition_hazard_m2_day*
-                    local.land_area_m2*
+                    represented_land_area*
                     std::pow(local.danger,4.0)*
                     ctx.dt_days;
-                const double probability=-std::expm1(-hazard);
-                const double draw=deterministic_unit(
+                if (hazard>0.0)
+                    ignition_contributions[reference].push_back({
+                        cell,hazard
+                    });
+            }
+        }
+
+        std::map<CellId,double> ignition_area_m2;
+        for (const auto& [reference,contributions]:
+            ignition_contributions) {
+            double total_hazard=0.0;
+            for (const IgnitionContribution& contribution:contributions)
+                total_hazard+=contribution.hazard;
+            const double probability=-std::expm1(-total_hazard);
+            const double draw=deterministic_unit(
+                ctx.world.seed(),
+                ignition_stream,
+                ctx.world.tick(),
+                reference.raw()
+            );
+            if (!(draw<probability)) continue;
+
+            const double size_draw=deterministic_unit(
+                ctx.world.seed(),
+                size_stream,
+                ctx.world.tick(),
+                reference.raw()
+            );
+            const double ignition_area=
+                minimum_ignition_area_m2+
+                (
+                    maximum_ignition_area_m2-
+                    minimum_ignition_area_m2
+                )*size_draw;
+
+            CellId target=contributions.front().cell;
+            if (contributions.size()>1U) {
+                const double selector=deterministic_unit(
                     ctx.world.seed(),
-                    ignition_stream,
+                    target_stream,
                     ctx.world.tick(),
-                    cell.raw()
-                );
-                if (draw<probability) {
-                    const double size_draw=deterministic_unit(
-                        ctx.world.seed(),
-                        size_stream,
-                        ctx.world.tick(),
-                        cell.raw()
-                    );
-                    const double ignition_area=
-                        minimum_ignition_area_m2+
-                        (
-                            maximum_ignition_area_m2-
-                            minimum_ignition_area_m2
-                        )*size_draw;
-                    active=std::max(
-                        active,
-                        std::min(
-                            1.0,
-                            ignition_area/local.land_area_m2
-                        )
-                    );
-                    natural_ignition=true;
+                    reference.raw()
+                )*total_hazard;
+                double cumulative=0.0;
+                for (const IgnitionContribution& contribution:
+                    contributions) {
+                    cumulative+=contribution.hazard;
+                    if (selector<=cumulative) {
+                        target=contribution.cell;
+                        break;
+                    }
                 }
+            }
+            ignition_area_m2[target]+=ignition_area;
+            state.at(target).natural_ignition=true;
+        }
+
+        for (CellId cell:ctx.world.active_cells()) {
+            FireState& local=state.at(cell);
+            if (!(local.land_area_m2>1.0)) continue;
+            const double natural_area=ignition_area_m2[cell];
+            if (natural_area>0.0) {
+                local.active_fraction=std::max(
+                    local.active_fraction,
+                    std::min(1.0,natural_area/local.land_area_m2)
+                );
             }
 
             const double wind_speed=std::hypot(
                 local.east_wind_m_s,
                 local.north_wind_m_s
             );
-            if (active>0.0 && local.danger>0.0) {
+            if (local.active_fraction>0.0 && local.danger>0.0) {
                 const double growth_rate=
                     0.25+
                     0.65*local.danger+
                     0.015*std::min(20.0,wind_speed);
                 local.burned_fraction=std::clamp(
-                    active*std::exp(
+                    local.active_fraction*std::exp(
                         std::min(3.0,growth_rate*ctx.dt_days)
                     )*local.danger,
                     0.0,
@@ -1725,7 +1816,10 @@ public:
             );
             local.next_active_fraction=
                 local.burned_fraction*persistence;
-            if (natural_ignition && local.burned_fraction>0.0) {
+            if (
+                local.natural_ignition &&
+                local.burned_fraction>0.0
+            ) {
                 ctx.world.emit({
                     ctx.world.tick(),
                     "ecology.fire_ignited",
@@ -1734,7 +1828,6 @@ public:
                     local.land_area_m2*local.burned_fraction
                 });
             }
-            state.emplace(cell,local);
         }
 
         constexpr std::array<double,3> mortality_fraction{
