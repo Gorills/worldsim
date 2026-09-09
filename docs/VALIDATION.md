@@ -12,13 +12,14 @@ The 2026-09-08 correctness audit, reproduced failures, design references and act
 
 - scheduler cadence/elapsed-time alignment;
 - cube-sphere global area closure;
+- L2/L3 represented-land-area consistency for the same deterministic geology, with coarse coastal fractions integrated from a fixed level-4 subcell support;
 - same-level cross-face neighbor validity;
 - extensive-field conservation on refine/coarsen;
 - intensive-field preservation/aggregation;
 - cohort population conservation;
 - deterministic same-seed/same-input snapshot equality within the tested build;
 - snapshot continuation including future commands and pending events;
-- rejection of stale authoritative-world snapshot epochs (versions 2 through 31);
+- rejection of stale authoritative-world snapshot epochs (versions 2 through 33);
 - adaptive LOD stability;
 - snapshot restore from a different current LOD cover;
 - command routing when the addressed coarse cell has been refined;
