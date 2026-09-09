@@ -121,16 +121,16 @@ walking chunks remain the only physics terrain:
 
 For the fixed seed-42 walking demonstration, startup placement is intentionally
 inside the existing mountain regression region instead of the projection origin.
-The viewer samples the same 40 km x 40 km reconstructed-terrain window centered
-at east 5,573 km / north -1,800.3 km and finds local summit candidates on the
-625 m diagnostic grid. A summit must be a 3-cell-radius local maximum and retain
-at least 700 m of regional relief. The viewer jointly chooses a dry viewpoint
-3-7 km away and a summit with at least 450 m rise, seven degrees of elevation
-and 0.5 degrees of visible separation above the intermediate terrain skyline. The line
-of sight is sampled twice per diagnostic grid interval with bilinear patch
-heights. This avoids targeting the absolute regional maximum when that point lies
-inside a broader ridge and is not actually visible as a summit. Terrain authority,
-simulation focus, snapshots and the reconstruction formula are unchanged.
+The runtime uses a prevalidated spawn/target pair instead of rescanning the
+65 x 65 diagnostic patch before the first frame. The CI terrain regression still
+samples the 40 km x 40 km window centered at east 5,573 km / north -1,800.3 km
+and verifies that the fixed target remains a 3-cell-radius local summit with at
+least 700 m regional relief. The fixed dry viewpoint is about 7 km from the
+summit and must retain at least 1 km rise, nine degrees of elevation and a
+non-negative skyline margin. This removes 4,225 reconstructed-terrain queries
+from normal viewer startup while preserving an independently checked mountain
+frame. Terrain authority, simulation focus, snapshots and the reconstruction
+formula are unchanged.
 
 The walker also renders visual-only nested spherical terrain rings. Every
 ring is a 33 x 33 regular grid, sample spacing doubles from 64 m through
@@ -140,10 +140,13 @@ so 256 m sampling still covers the visible target range without paying the
 4x per-ring vertex/sampling cost of the rejected 65 x 65 pass. Heights come
 from the same reconstructed terrain adapter used by walking collision. The
 regional baseline remains authoritative geology; the adapter retains the
-existing deterministic presentation-only 60/28/16 km ridge and summit
-orography in convergent dry-land belts. That visual/collision relief is
-bounded, sphere-native and never mutates simulation fields, conserved stores
-or snapshots. The adapter converts the sampled sphere directions to a
+deterministic presentation-only 60/28/16 km ridge and summit orography in
+convergent dry-land belts. Summit amplitude is slightly stronger than the broad
+ridge term, using the already-computed 16 km profile rather than adding more
+noise fields. This keeps a readable local summit without restoring the rejected
+crag/gully/spur sampling cost. The visual/collision relief remains bounded,
+sphere-native and never mutates simulation fields, conserved stores or
+snapshots. The adapter converts the sampled sphere directions to a
 player-local tangent frame in double precision before returning float scene
 coordinates, so the stock single-precision Godot scene tree never stores
 planet-radius coordinates.
