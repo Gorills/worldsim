@@ -496,6 +496,41 @@ double flat_surface_l2_l3_temperature_mae_k() {
     return absolute_error_area/std::max(1.0,total_area);
 }
 
+double cumulative_flat_precipitation_m3(
+    std::uint64_t seed,
+    std::uint8_t level
+) {
+    auto simulation=climate_fixture(seed,level,level,86'400.0);
+    simulation->step(365);
+    const ClimateBudget& budget=
+        simulation->world().stores().get<ClimateStore>().budget();
+    return budget.land_precipitation_m3+budget.ocean_precipitation_m3;
+}
+
+void flat_moisture_transport_resolution_diagnostic() {
+    double maximum_relative_delta=0.0;
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const double coarse=cumulative_flat_precipitation_m3(seed,2);
+        const double fine=cumulative_flat_precipitation_m3(seed,3);
+        const double relative_delta=
+            std::abs(coarse-fine)/std::max({1.0,coarse,fine});
+        maximum_relative_delta=std::max(
+            maximum_relative_delta,
+            relative_delta
+        );
+        std::cerr
+            <<"flat moisture diagnostic: seed="<<seed
+            <<" l2_precip_m3="<<coarse
+            <<" l3_precip_m3="<<fine
+            <<" relative_delta="<<relative_delta
+            <<'\n';
+    }
+    check(
+        maximum_relative_delta<1.0e-12,
+        "flat L2/L3 cumulative precipitation is resolution-dependent"
+    );
+}
+
 void horizontal_heat_transport_is_resolution_consistent() {
     const double error=flat_surface_l2_l3_temperature_mae_k();
     check(
@@ -827,6 +862,7 @@ int main() {
         snow_burial_suppresses_short_vegetation();
         orographic_precipitation();
         horizontal_heat_transport_is_resolution_consistent();
+        flat_moisture_transport_resolution_diagnostic();
         orographic_reference_elevation_is_resolution_consistent();
         stochastic_weather_forcing_is_resolution_consistent();
         lod_independent_reference_state();
