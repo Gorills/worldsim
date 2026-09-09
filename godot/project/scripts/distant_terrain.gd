@@ -408,6 +408,12 @@ func _build_mesh(
         for x in range(LOD_RESOLUTION):
             var index := z * LOD_RESOLUTION + x
             if use_elevation_colors:
+                var east_m := queued_center_east_m + (
+                    float(x) - half_cells
+                ) * spacing_m
+                var north_m := queued_center_north_m + (
+                    float(z) - half_cells
+                ) * spacing_m
                 colors[index] = SurfaceVisual.terrain_color(
                     float(heights[index]),
                     float(grass[index]),
@@ -419,7 +425,8 @@ func _build_mesh(
                     float(fire_burned[index]),
                     Vector2(normals[index].x, normals[index].z).length()
                     / maxf(normals[index].y, 0.001),
-                    SurfaceVisual.relief_light(normals[index])
+                    SurfaceVisual.relief_light(normals[index]),
+                    SurfaceVisual.terrain_detail(east_m, north_m)
                 )
 
     var indices := PackedInt32Array()
