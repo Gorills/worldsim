@@ -499,6 +499,27 @@ func _process(_delta: float) -> bool:
         quit(62)
         return true
 
+    var detail_a := SurfaceVisual.terrain_detail(
+        spawn_east_m,
+        spawn_north_m
+    )
+    var detail_repeat := SurfaceVisual.terrain_detail(
+        spawn_east_m,
+        spawn_north_m
+    )
+    var detail_b := SurfaceVisual.terrain_detail(
+        spawn_east_m + 700.0,
+        spawn_north_m
+    )
+    if absf(detail_a - detail_repeat) > 1e-12:
+        push_error("World-space terrain material variation is not deterministic")
+        quit(69)
+        return true
+    if absf(detail_a - detail_b) < 0.10:
+        push_error("World-space terrain material variation lost visible spatial detail")
+        quit(69)
+        return true
+
     # The first focused simulation step refines the authoritative cover. Its
     # terrain revision must replace both resources under the player immediately.
     var sim := root.get_node("WorldViewer/Simulation") as WorldSimulationNode
