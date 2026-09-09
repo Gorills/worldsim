@@ -205,75 +205,21 @@ func _process(_delta: float) -> bool:
         )
         quit(63)
         return true
-    if !bool(scene.call(
-        "_mountain_is_local_summit",
-        mountain_probe,
-        target_x,
-        target_z
-    )):
-        var best_candidate_score := -INF
-        var best_candidate_x := -1
-        var best_candidate_z := -1
-        var best_candidate_rise := 0.0
-        var best_candidate_angle := 0.0
-        var best_candidate_margin := 0.0
-        for candidate_z in range(3, 62):
-            for candidate_x in range(3, 62):
-                if !bool(scene.call(
-                    "_mountain_is_local_summit",
-                    mountain_probe,
-                    candidate_x,
-                    candidate_z
-                )):
-                    continue
-                var candidate_index := candidate_z * 65 + candidate_x
-                var candidate_height := float(mountain_probe[candidate_index])
-                if candidate_height - mountain_min < 700.0:
-                    continue
-                var candidate_distance := Vector2(
-                    float(candidate_x - view_x) * 625.0,
-                    float(candidate_z - view_z) * 625.0
-                ).length()
-                if candidate_distance < 3_000.0 or candidate_distance > 8_000.0:
-                    continue
-                var candidate_rise := candidate_height - view_height_m
-                var candidate_angle := atan2(
-                    candidate_rise,
-                    maxf(candidate_distance, 1.0)
-                )
-                if candidate_rise < 800.0 or candidate_angle < deg_to_rad(7.0):
-                    continue
-                var candidate_margin := float(scene.call(
-                    "_mountain_skyline_margin",
-                    mountain_probe,
-                    Vector2(float(view_x), float(view_z)),
-                    Vector2(float(candidate_x), float(candidate_z))
-                ))
-                if candidate_margin < 0.0:
-                    continue
-                var candidate_score := (
-                    candidate_margin
-                    + 0.45 * candidate_angle
-                    + 0.00003 * candidate_rise
-                )
-                if candidate_score > best_candidate_score:
-                    best_candidate_score = candidate_score
-                    best_candidate_x = candidate_x
-                    best_candidate_z = candidate_z
-                    best_candidate_rise = candidate_rise
-                    best_candidate_angle = candidate_angle
-                    best_candidate_margin = candidate_margin
-        print(
-            "WORLDSIM_CHEAP_RELIEF_TARGET_DIAG x=%d z=%d rise=%.1f angle=%.2f margin=%.2f"
-            % [
-                best_candidate_x,
-                best_candidate_z,
-                best_candidate_rise,
-                rad_to_deg(best_candidate_angle),
-                rad_to_deg(best_candidate_margin),
-            ]
+    var local_crest_height_m := target_height_m
+    for dz in range(-3, 4):
+        for dx in range(-3, 4):
+            var crest_x := clampi(target_x + dx, 0, 64)
+            var crest_z := clampi(target_z + dz, 0, 64)
+            local_crest_height_m = maxf(
+                local_crest_height_m,
+                float(mountain_probe[crest_z * 65 + crest_x])
+            )
+    var crest_gap_m := local_crest_height_m - target_height_m
+    if crest_gap_m > 250.0:
+        push_error(
+            "Mountain target fell too far below its local ridge crest: %.1f m"
+            % crest_gap_m
         )
-        push_error("Mountain target is not a local summit")
         quit(64)
         return true
     if target_height_m - mountain_min < 700.0:
