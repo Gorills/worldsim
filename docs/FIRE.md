@@ -3,11 +3,9 @@
 > Soil carbon v1 subsequently raised the snapshot epoch to 20 and added
 > conservative decomposition pools. Snow-albedo coupling v1 introduced epoch
 > 21 and suppresses fire danger under projected snow cover. Fauna carbon
-> accounting introduced epoch 22; the grazing-timestep correction introduced
-> epoch 23, the magic forcing timebase correction introduced epoch 24, and the
-> wildfire burn-cap timebase correction introduced epoch 25, and the active-fire
-> persistence timebase correction introduced epoch 26, and LOD-invariant field-command
-> routing introduced epoch 27, and the parent-consistent LOD hysteresis correction raises the current combined-world epoch to 28.
+> accounting introduced epoch 22; later timebase, LOD, climate, carbon,
+> nitrogen and geography corrections advanced the combined-world epoch through
+> 36. Fixed-support natural-fire ignition raises the current epoch to 37.
 > The Wildfire-v1 execution record below is retained as historical evidence for
 > epoch 19.
 
