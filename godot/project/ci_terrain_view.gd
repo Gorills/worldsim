@@ -1,5 +1,7 @@
 extends SceneTree
 
+const SurfaceVisual = preload("res://scripts/surface_visual.gd")
+
 # Catches the inverted-winding failure: Godot 4.7 uses clockwise front faces,
 # so a +Y right-hand winding was culled and the terrain collapsed to a noisy
 # horizon line. https://docs.godotengine.org/en/4.7/classes/class_arraymesh.html
@@ -103,15 +105,33 @@ func _process(_delta: float) -> bool:
         return true
 
     var mountain_half := 32.0
-    var mountain_min_x := mountain_min_index % 65
-    var mountain_min_z := floori(float(mountain_min_index) / 65.0)
     var mountain_max_x := mountain_max_index % 65
     var mountain_max_z := floori(float(mountain_max_index) / 65.0)
+    var view_index := -1
+    for i in range(mountain_probe.size()):
+        var x := i % 65
+        var z := floori(float(i) / 65.0)
+        var distance_m := Vector2(
+            float(x - mountain_max_x) * 625.0,
+            float(z - mountain_max_z) * 625.0
+        ).length()
+        var height_m := float(mountain_probe[i])
+        if distance_m < 8_000.0 or distance_m > 12_000.0 or height_m < 0.0:
+            continue
+        if view_index < 0 or height_m < float(mountain_probe[view_index]):
+            view_index = i
+    if view_index < 0:
+        push_error("Mountain diagnostic has no dry 8-12 km viewing point")
+        quit(54)
+        return true
+
+    var view_x := view_index % 65
+    var view_z := floori(float(view_index) / 65.0)
     var expected_spawn_east_m := 5_573_000.0 + (
-        float(mountain_min_x) - mountain_half
+        float(view_x) - mountain_half
     ) * 625.0
     var expected_spawn_north_m := -1_800_300.0 + (
-        float(mountain_min_z) - mountain_half
+        float(view_z) - mountain_half
     ) * 625.0
     var expected_target_east_m := 5_573_000.0 + (
         float(mountain_max_x) - mountain_half
@@ -119,13 +139,17 @@ func _process(_delta: float) -> bool:
     var expected_target_north_m := -1_800_300.0 + (
         float(mountain_max_z) - mountain_half
     ) * 625.0
+    var mountain_view_distance_m := Vector2(
+        expected_target_east_m - expected_spawn_east_m,
+        expected_target_north_m - expected_spawn_north_m
+    ).length()
     if (
         absf(spawn_east_m - expected_spawn_east_m) > 0.1
         or absf(spawn_north_m - expected_spawn_north_m) > 0.1
         or absf(mountain_target_east_m - expected_target_east_m) > 0.1
         or absf(mountain_target_north_m - expected_target_north_m) > 0.1
     ):
-        push_error("Walker does not start at the mountain-window low point facing its peak")
+        push_error("Walker does not use the nearby dry mountain viewpoint facing its peak")
         quit(54)
         return true
 
@@ -284,9 +308,11 @@ func _process(_delta: float) -> bool:
 
     var sea_arrays := (distant_ocean.mesh as ArrayMesh).surface_get_arrays(0)
     var sea_verts: PackedVector3Array = sea_arrays[Mesh.ARRAY_VERTEX]
-    var distant_resolution := 33
-    var center_index := 16 * distant_resolution + 16
-    var edge_index := 16 * distant_resolution + 32
+    var distant_resolution := 65
+    var center_index := 32 * distant_resolution + 32
+    # Lod8 spacing is 16,384 m. Sixteen samples remain the existing 262.144 km
+    # curvature probe while the denser grid keeps mountain-scale detail longer.
+    var edge_index := 32 * distant_resolution + 48
     if sea_verts.size() != distant_resolution * distant_resolution:
         push_error("Unexpected distant ocean vertex count: %d" % sea_verts.size())
         quit(13)
@@ -299,9 +325,14 @@ func _process(_delta: float) -> bool:
 
     var camera := root.get_node("WorldViewer/Player/Head/Camera3D") as Camera3D
     var world_environment := root.get_node("WorldViewer/WorldEnvironment") as WorldEnvironment
+    var sun := root.get_node("WorldViewer/DirectionalLight3D") as DirectionalLight3D
     if camera.far < 300000.0:
         push_error("Camera far plane does not expose planetary terrain: %.1f" % camera.far)
         quit(15)
+        return true
+    if camera.fov > 68.0:
+        push_error("Walking camera framing is too wide for mountain-scale terrain: %.1f" % camera.fov)
+        quit(56)
         return true
     if (
         world_environment.environment.fog_mode != Environment.FOG_MODE_DEPTH
@@ -309,6 +340,26 @@ func _process(_delta: float) -> bool:
     ):
         push_error("Environment does not use long-range depth fog")
         quit(16)
+        return true
+    if world_environment.environment.ambient_light_energy > 0.5 or sun.light_energy < 1.4:
+        push_error("Terrain lighting regressed to flat ambient-dominated shading")
+        quit(57)
+        return true
+
+    var flat_rock := SurfaceVisual.terrain_color(
+        2600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    )
+    var steep_rock := SurfaceVisual.terrain_color(
+        2600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.45
+    )
+    var slope_color_delta := (
+        absf(flat_rock.r - steep_rock.r)
+        + absf(flat_rock.g - steep_rock.g)
+        + absf(flat_rock.b - steep_rock.b)
+    )
+    if slope_color_delta < 0.08:
+        push_error("Steep terrain no longer receives a visible rock presentation cue")
+        quit(58)
         return true
 
     # The first focused simulation step refines the authoritative cover. Its
@@ -338,13 +389,16 @@ func _process(_delta: float) -> bool:
         return true
 
     print(
-        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
+        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f view_distance_km=%.2f distant_resolution=%d fov=%.1f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
         % [
             aabb.position.y,
             aabb.end.y,
             sea_drop_m,
             mountain_span,
             mountain_prominence,
+            mountain_view_distance_m / 1000.0,
+            distant_resolution,
+            camera.fov,
             spawn_east_m,
             spawn_north_m,
             mountain_target_east_m,
