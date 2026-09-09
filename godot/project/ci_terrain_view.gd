@@ -77,26 +77,15 @@ func _process(_delta: float) -> bool:
         mountain_min = minf(mountain_min, float(value))
         mountain_max = maxf(mountain_max, float(value))
     var mountain_center := float(mountain_probe[32 * 65 + 32])
-    var mountain_direction := viewer_sim.projected_to_direction(
-        5_573_000.0,
-        -1_800_300.0
-    )
-    var mountain_inspect := viewer_sim.inspect_direction(mountain_direction)
-    var mountain_values: Dictionary = mountain_inspect.get("values", {})
-    var mountain_cell_elevation := float(
-        mountain_values.get("geography.elevation_m", NAN)
-    )
-    print(
-        "WORLDSIM_MOUNTAIN_PROBE center=(5573km,-1800.3km) span_40km=%.2f center_h=%.2f min=%.2f max=%.2f active_cell_h=%.2f level=%d"
-        % [
-            mountain_max - mountain_min,
-            mountain_center,
-            mountain_min,
-            mountain_max,
-            mountain_cell_elevation,
-            int(mountain_inspect.get("level", -1)),
-        ]
-    )
+    var mountain_span := mountain_max - mountain_min
+    var mountain_prominence := mountain_center - mountain_min
+    if mountain_span < 1_000.0 or mountain_prominence < 800.0:
+        push_error(
+            "Reported mountain regressed to broad highland: span=%.2f prominence=%.2f"
+            % [mountain_span, mountain_prominence]
+        )
+        quit(53)
+        return true
 
     var trees := terrain.get_node_or_null(
         "Chunk_0_0/Trees"
@@ -284,8 +273,14 @@ func _process(_delta: float) -> bool:
         return true
 
     print(
-        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f"
-        % [aabb.position.y, aabb.end.y, sea_drop_m]
+        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f"
+        % [
+            aabb.position.y,
+            aabb.end.y,
+            sea_drop_m,
+            mountain_span,
+            mountain_prominence,
+        ]
     )
     quit(0)
     return true
