@@ -198,11 +198,13 @@ LocalPlanetFrame local_planet_frame(
         throw std::runtime_error("projected north axis is degenerate");
     z=worldsim::normalized(z);
 
+    // Godot's right-handed terrain convention is +X east, +Y up, -Z north.
+    // The projected simulation uses +north, so scene +Z must point south.
     return {
         up*(worldsim::kEarthRadiusM+origin_height_m),
         x,
         up,
-        z
+        z*(-1.0)
     };
 }
 

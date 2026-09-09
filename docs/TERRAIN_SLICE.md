@@ -94,11 +94,12 @@ states they contain.
 
 ## Godot large-world strategy
 
-The stock Godot project remains a normal single-precision build. Logical projected coordinates are kept as GDScript scalar values while scene-tree coordinates are periodically shifted back near the origin. Terrain chunk transforms are rebuilt relative to that logical origin.
+The stock Godot project remains a normal single-precision build. Logical projected coordinates are kept as GDScript scalar values while scene-tree coordinates are periodically shifted back near the origin. Terrain chunk transforms are rebuilt relative to that logical origin. Scene cardinal axes follow Godot's right-handed convention: +X is east and -Z is north, so projected north is reflected into negative scene Z before rendering or movement is compared with a north-up map.
 
 This follows Godot's documented precision limits for large single-precision worlds and uses origin shifting instead of requiring a custom double-precision engine build:
 
 - https://docs.godotengine.org/en/4.7/tutorials/physics/large_world_coordinates.html
+- https://docs.godotengine.org/en/4.7/tutorials/assets_pipeline/importing_3d_scenes/model_export_considerations.html
 
 The initial shift threshold is 1,024 m, comfortably inside the range where Godot documents high positional precision for first-person gameplay.
 

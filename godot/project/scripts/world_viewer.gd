@@ -22,6 +22,8 @@ const ORIGIN_SHIFT_THRESHOLD_M := 1024.0
 const SURFACE_REFRESH_INTERVAL_S := 1.0
 const TREE_CANDIDATES_PER_CHUNK := 64
 const SHRUB_CANDIDATES_PER_CHUNK := 48
+const TREE_VISUAL_HEIGHT_M := 7.0
+const SHRUB_VISUAL_HEIGHT_M := 1.4
 
 const WALK_SPEED_M_S := 8.0
 const JUMP_SPEED_M_S := 7.0
@@ -37,8 +39,8 @@ const MINIMAP_HEIGHT := 160
 const MINIMAP_HEADING_SAMPLE_M := 50000.0
 
 var terrain_material: StandardMaterial3D
-var tree_mesh: CylinderMesh
-var shrub_mesh: CylinderMesh
+var tree_mesh: Mesh
+var shrub_mesh: Mesh
 var chunks: Dictionary = {}
 var dirty_chunks: Dictionary = {}
 var pending_chunks: Array[Vector2i] = []
@@ -108,7 +110,7 @@ func _process(delta: float) -> void:
     if sim_focus_elapsed >= SIM_FOCUS_INTERVAL:
         sim_focus_elapsed = fmod(sim_focus_elapsed, SIM_FOCUS_INTERVAL)
         var east_m := origin_east_m + float(player.position.x)
-        var north_m := origin_north_m + float(player.position.z)
+        var north_m := origin_north_m - float(player.position.z)
         var old_origin_height := origin_height_m
         var old_ground_height := sim.sample_terrain_height(east_m, north_m)
         var was_grounded := !survey_flight_enabled and player.is_on_floor()
@@ -138,7 +140,7 @@ func _physics_process(delta: float) -> void:
     distant_terrain.call(
         "set_view_state",
         origin_east_m + float(player.position.x),
-        origin_north_m + float(player.position.z),
+        origin_north_m - float(player.position.z),
         origin_east_m,
         origin_north_m,
         origin_height_m,
@@ -191,7 +193,7 @@ func _move_survey_flight(input_2d: Vector2, delta: float) -> void:
     # the stock single-precision scene tree for one frame.
     var old_origin_height := origin_height_m
     origin_east_m += travel.x
-    origin_north_m += travel.z
+    origin_north_m -= travel.z
     origin_height_m = sim.sample_terrain_height(origin_east_m, origin_north_m)
     player.position.y += travel.y + old_origin_height - origin_height_m
     for key in chunks.keys():
@@ -202,7 +204,7 @@ func _move_survey_flight(input_2d: Vector2, delta: float) -> void:
 func _refresh_streaming_center() -> void:
     var next_chunk := _world_chunk(
         origin_east_m + float(player.position.x),
-        origin_north_m + float(player.position.z)
+        origin_north_m - float(player.position.z)
     )
     if next_chunk != current_chunk:
         current_chunk = next_chunk
@@ -264,7 +266,7 @@ func _set_survey_flight_enabled(enabled: bool) -> void:
         # The destination collision must exist before grounded movement resumes.
         current_chunk = _world_chunk(
             origin_east_m + float(player.position.x),
-            origin_north_m + float(player.position.z)
+            origin_north_m - float(player.position.z)
         )
         _create_chunk(current_chunk)
         player.position.y = _ground_local_y() + PLAYER_GROUND_CLEARANCE_M
@@ -286,7 +288,7 @@ func _survey_speed_m_s() -> float:
 
 func _ground_local_y() -> float:
     var east_m := origin_east_m + float(player.position.x)
-    var north_m := origin_north_m + float(player.position.z)
+    var north_m := origin_north_m - float(player.position.z)
     return sim.sample_terrain_height(east_m, north_m) - origin_height_m
 
 func _create_world_minimap() -> bool:
@@ -349,7 +351,7 @@ func _minimap_elevation_color(height_m: float) -> Color:
 
 func _update_minimap_marker() -> void:
     var east_m := origin_east_m + float(player.position.x)
-    var north_m := origin_north_m + float(player.position.z)
+    var north_m := origin_north_m - float(player.position.z)
     var forward := -player.global_transform.basis.z
     forward.y = 0.0
     forward = forward.normalized()
@@ -357,7 +359,7 @@ func _update_minimap_marker() -> void:
     var current_direction := sim.projected_to_direction(east_m, north_m)
     var ahead_direction := sim.projected_to_direction(
         east_m + forward.x * MINIMAP_HEADING_SAMPLE_M,
-        north_m + forward.z * MINIMAP_HEADING_SAMPLE_M
+        north_m - forward.z * MINIMAP_HEADING_SAMPLE_M
     )
     var marker_uv := _sphere_direction_to_map_uv(current_direction)
     var ahead_uv := _sphere_direction_to_map_uv(ahead_direction)
@@ -430,8 +432,15 @@ func _create_chunk(coord: Vector2i) -> void:
     shape.map_depth = CHUNK_RESOLUTION
     var collision_heights := PackedFloat32Array()
     collision_heights.resize(heights.size())
-    for i in range(heights.size()):
-        collision_heights[i] = heights[i] / SAMPLE_SPACING_M
+    for z in range(CHUNK_RESOLUTION):
+        for x in range(CHUNK_RESOLUTION):
+            var scene_index := z * CHUNK_RESOLUTION + x
+            var source_index := (
+                (CHUNK_RESOLUTION - 1 - z) * CHUNK_RESOLUTION + x
+            )
+            collision_heights[scene_index] = (
+                heights[source_index] / SAMPLE_SPACING_M
+            )
     shape.map_data = collision_heights
 
     if chunks.has(coord):
@@ -506,7 +515,7 @@ func _refresh_terrain_revision(
     terrain_revision = next_revision
     distant_terrain.call("set_terrain_revision", terrain_revision)
     var east_m := origin_east_m + float(player.position.x)
-    var north_m := origin_north_m + float(player.position.z)
+    var north_m := origin_north_m - float(player.position.z)
     origin_height_m = sim.sample_terrain_height(origin_east_m, origin_north_m)
     player.position.y += old_origin_height - origin_height_m
     if was_grounded:
@@ -548,32 +557,43 @@ func _build_chunk_mesh(
     for z in range(CHUNK_RESOLUTION):
         for x in range(CHUNK_RESOLUTION):
             var i := z * CHUNK_RESOLUTION + x
-            var height := float(heights[i])
+            var source_z := CHUNK_RESOLUTION - 1 - z
+            var source_i := source_z * CHUNK_RESOLUTION + x
+            var height := float(heights[source_i])
             vertices[i] = Vector3(
                 float(x) * SAMPLE_SPACING_M - half,
                 height,
                 float(z) * SAMPLE_SPACING_M - half
             )
 
-            var left := float(heights[z * CHUNK_RESOLUTION + maxi(x - 1, 0)])
-            var right_h := float(heights[z * CHUNK_RESOLUTION + mini(x + 1, CHUNK_RESOLUTION - 1)])
-            var down := float(heights[maxi(z - 1, 0) * CHUNK_RESOLUTION + x])
-            var up := float(heights[mini(z + 1, CHUNK_RESOLUTION - 1) * CHUNK_RESOLUTION + x])
+            var left := float(
+                heights[source_z * CHUNK_RESOLUTION + maxi(x - 1, 0)]
+            )
+            var right_h := float(
+                heights[source_z * CHUNK_RESOLUTION + mini(
+                    x + 1,
+                    CHUNK_RESOLUTION - 1
+                )]
+            )
+            var north_z := mini(source_z + 1, CHUNK_RESOLUTION - 1)
+            var south_z := maxi(source_z - 1, 0)
+            var north_h := float(heights[north_z * CHUNK_RESOLUTION + x])
+            var south_h := float(heights[south_z * CHUNK_RESOLUTION + x])
             normals[i] = Vector3(
                 left - right_h,
                 2.0 * SAMPLE_SPACING_M,
-                down - up
+                north_h - south_h
             ).normalized()
 
             colors[i] = SurfaceVisual.terrain_color(
                 height,
-                float(grass[i]),
-                float(shrub[i]),
-                float(tree[i]),
-                float(snow[i]),
-                float(flooded[i]),
-                float(fire_active[i]),
-                float(fire_burned[i])
+                float(grass[source_i]),
+                float(shrub[source_i]),
+                float(tree[source_i]),
+                float(snow[source_i]),
+                float(flooded[source_i]),
+                float(fire_active[source_i]),
+                float(fire_burned[source_i])
             )
 
     # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is
@@ -624,27 +644,83 @@ func _surface_packet_valid(surface: Dictionary, expected: int) -> bool:
     return true
 
 func _initialize_vegetation_meshes() -> void:
-    var tree_material := StandardMaterial3D.new()
-    tree_material.albedo_color = Color(0.10, 0.25, 0.09)
-    tree_material.roughness = 0.95
-    tree_mesh = CylinderMesh.new()
-    tree_mesh.top_radius = 0.0
-    tree_mesh.bottom_radius = 2.2
-    tree_mesh.height = 7.0
-    tree_mesh.radial_segments = 5
-    tree_mesh.rings = 1
-    tree_mesh.material = tree_material
+    var trunk_material := StandardMaterial3D.new()
+    trunk_material.albedo_color = Color(0.25, 0.14, 0.07)
+    trunk_material.roughness = 0.95
+
+    var leaf_material := StandardMaterial3D.new()
+    leaf_material.albedo_color = Color(0.10, 0.27, 0.09)
+    leaf_material.roughness = 0.95
+
+    var trunk := CylinderMesh.new()
+    trunk.top_radius = 0.30
+    trunk.bottom_radius = 0.42
+    trunk.height = 3.0
+    trunk.radial_segments = 6
+    trunk.rings = 1
+
+    var crown := SphereMesh.new()
+    crown.radius = 2.15
+    crown.height = 4.5
+    crown.radial_segments = 8
+    crown.rings = 4
+
+    tree_mesh = _combine_primitive_surfaces([
+        {
+            "mesh": trunk,
+            "transform": Transform3D(
+                Basis.IDENTITY,
+                Vector3(0.0, -2.0, 0.0)
+            ),
+            "material": trunk_material,
+        },
+        {
+            "mesh": crown,
+            "transform": Transform3D(
+                Basis.IDENTITY,
+                Vector3(0.0, 1.0, 0.0)
+            ),
+            "material": leaf_material,
+        },
+    ])
 
     var shrub_material := StandardMaterial3D.new()
     shrub_material.albedo_color = Color(0.18, 0.34, 0.13)
     shrub_material.roughness = 0.95
-    shrub_mesh = CylinderMesh.new()
-    shrub_mesh.top_radius = 0.15
-    shrub_mesh.bottom_radius = 1.0
-    shrub_mesh.height = 1.5
-    shrub_mesh.radial_segments = 5
-    shrub_mesh.rings = 1
-    shrub_mesh.material = shrub_material
+
+    var shrub := SphereMesh.new()
+    shrub.radius = 1.0
+    shrub.height = SHRUB_VISUAL_HEIGHT_M
+    shrub.radial_segments = 7
+    shrub.rings = 3
+    shrub_mesh = _combine_primitive_surfaces([
+        {
+            "mesh": shrub,
+            "transform": Transform3D.IDENTITY,
+            "material": shrub_material,
+        },
+    ])
+
+func _combine_primitive_surfaces(parts: Array) -> ArrayMesh:
+    var combined := ArrayMesh.new()
+    for part_variant in parts:
+        var part: Dictionary = part_variant
+        var primitive := part["mesh"] as PrimitiveMesh
+        var part_transform: Transform3D = part["transform"]
+        var part_material: Material = part["material"]
+        var surface_tool := SurfaceTool.new()
+        surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+        surface_tool.append_from(
+            primitive,
+            0,
+            part_transform
+        )
+        surface_tool.commit(combined)
+        combined.surface_set_material(
+            combined.get_surface_count() - 1,
+            part_material
+        )
+    return combined
 
 func _update_chunk_vegetation(
     chunk: Node3D,
@@ -666,7 +742,7 @@ func _update_chunk_vegetation(
         TREE_CANDIDATES_PER_CHUNK,
         SurfaceVisual.TREE_SATURATION_KG_M2,
         tree_mesh,
-        tree_mesh.height,
+        TREE_VISUAL_HEIGHT_M,
         101
     )
 
@@ -684,7 +760,7 @@ func _update_chunk_vegetation(
         SHRUB_CANDIDATES_PER_CHUNK,
         SurfaceVisual.SHRUB_SATURATION_KG_M2,
         shrub_mesh,
-        shrub_mesh.height,
+        SHRUB_VISUAL_HEIGHT_M,
         211
     )
 
@@ -715,7 +791,8 @@ func _build_vegetation_multimesh(
             0,
             CHUNK_RESOLUTION - 1
         )
-        var index := grid_z * CHUNK_RESOLUTION + grid_x
+        var source_z := CHUNK_RESOLUTION - 1 - grid_z
+        var index := source_z * CHUNK_RESOLUTION + grid_x
         var height_m := float(heights[index])
         if height_m < 0.0:
             continue
@@ -767,7 +844,7 @@ func _chunk_local_position(coord: Vector2i) -> Vector3:
     return Vector3(
         float(coord.x) * CHUNK_SIZE_M - origin_east_m,
         -origin_height_m,
-        float(coord.y) * CHUNK_SIZE_M - origin_north_m
+        origin_north_m - float(coord.y) * CHUNK_SIZE_M
     )
 
 func _maybe_shift_origin() -> void:
@@ -776,7 +853,7 @@ func _maybe_shift_origin() -> void:
 
     var old_origin_height := origin_height_m
     origin_east_m += float(player.position.x)
-    origin_north_m += float(player.position.z)
+    origin_north_m -= float(player.position.z)
     origin_height_m = sim.sample_terrain_height(origin_east_m, origin_north_m)
 
     player.position.x = 0.0
@@ -790,7 +867,7 @@ func _maybe_shift_origin() -> void:
 
 func _update_status() -> void:
     var east_m := origin_east_m + float(player.position.x)
-    var north_m := origin_north_m + float(player.position.z)
+    var north_m := origin_north_m - float(player.position.z)
     var mode_text := tr("HUD_MODE_SURVEY") if survey_flight_enabled else tr("HUD_MODE_WALK")
     var speed_m_s := _survey_speed_m_s() if survey_flight_enabled else WALK_SPEED_M_S
     if survey_flight_enabled and Input.is_action_pressed("survey_boost"):

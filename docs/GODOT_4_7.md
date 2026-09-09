@@ -121,9 +121,9 @@ data, interaction, reference and performance contracts.
 
 ## Viewer baseline
 
-The main scene is now a first-person terrain walker backed by the terrain-only simulation factory. It streams regular 256 m terrain chunks around the player, uses `ArrayMesh` for rendering and `HeightMapShape3D` for collision, and bounds foreground work to one missing or dirty chunk per rendered frame after the initial player chunk. The adapter fingerprints the active cell ids and authoritative elevation values around each simulation step; a changed fingerprint advances `get_terrain_revision()`. The chunk under the player is then rebuilt synchronously so visible geometry and collision cannot disagree there, while the rest of the visible set is refreshed under the normal per-frame budget. Chunk triangles use Godot 4.7 clockwise winding so the ground faces +Y; the editor preview environment is not used at runtime, so the scene includes a `WorldEnvironment` with `ProceduralSkyMaterial`.
+The main scene is a first-person terrain walker backed by the full authoritative simulation. It streams regular 256 m terrain chunks around the player, uses `ArrayMesh` for rendering and `HeightMapShape3D` for collision, and bounds foreground work to one missing or dirty chunk per rendered frame after the initial player chunk. The adapter fingerprints the active cell ids and authoritative elevation values around each simulation step; a changed fingerprint advances `get_terrain_revision()`. The chunk under the player is then rebuilt synchronously so visible geometry and collision cannot disagree there, while the rest of the visible set is refreshed under the normal per-frame budget. Chunk triangles use Godot 4.7 clockwise winding so the ground faces +Y; the editor preview environment is not used at runtime, so the scene includes a `WorldEnvironment` with `ProceduralSkyMaterial`.
 
-Logical projected world coordinates remain in 64-bit GDScript scalar values while scene nodes are origin-shifted at a 1,024 m threshold. The stock single-precision Godot build therefore does not need to place scene nodes millions of meters from the origin.
+Logical projected world coordinates remain in 64-bit GDScript scalar values while scene nodes are origin-shifted at a 1,024 m threshold. The stock single-precision Godot build therefore does not need to place scene nodes millions of meters from the origin. The scene follows Godot's right-handed terrain convention: +X is east, +Y is up, +Z is south, and -Z is north. Projected north therefore maps to negative scene Z in near chunks, distant spherical terrain, flight integration, and map heading.
 
 The viewer defines InputMap actions for WASD movement and jump. Mouse look is handled through `_unhandled_input()`; Escape releases/captures the mouse.
 
@@ -154,6 +154,7 @@ practice represented by Unreal Engine's `ADebugCameraController::SpeedScale`:
 - https://docs.godotengine.org/en/4.7/classes/class_input.html
 - https://docs.godotengine.org/en/4.7/tutorials/inputs/input_examples.html
 - https://docs.godotengine.org/en/4.7/classes/class_characterbody3d.html
+- https://docs.godotengine.org/en/4.7/tutorials/assets_pipeline/importing_3d_scenes/model_export_considerations.html
 - https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Engine/ADebugCameraController/SpeedScale?application_version=5.5
 
 HUD text is localized through gettext PO catalogs (English and Russian) and styled by a shared `Theme` resource.
@@ -171,8 +172,9 @@ dedicated global-map scene remains the live exact-cell diagnostic.
 
 The live marker layer converts the walker's 64-bit projected coordinates through
 `TerrainGenerator::projected_to_direction()`, then maps that unit direction to
-equirectangular UV. A second projected point 50 km ahead supplies the arrow
-heading; the horizontal delta wraps across the longitude seam. The overlay is
+equirectangular UV. Camera forward is converted from Godot scene axes using +X =
+east and -Z = north; a second projected point 50 km ahead supplies the arrow
+heading. The horizontal delta wraps across the longitude seam. The overlay is
 redrawn without rebuilding the terrain texture. This follows the usual minimap
 separation between a static base map and live position/orientation markers while
 keeping engine/UI state non-authoritative.
@@ -187,7 +189,7 @@ north-up overview with a heading arrow in the requested top-right corner:
 - https://docs.godotengine.org/en/4.7/classes/class_control.html
 - https://www.mdpi.com/2220-9964/12/2/58
 
-The scene is intentionally terrain-only. There is no rendered water, atmosphere, vegetation, fauna, content/entity presentation, or distant terrain render LOD. See `docs/TERRAIN_SLICE.md` for the architecture and scaling decision.
+The scene keeps terrain/collision authoritative while projecting the living surface into terrain colors and visual-only near vegetation; distant spherical terrain and a sea-level ocean are presentation-only. See `docs/TERRAIN_SLICE.md` and `docs/LIVING_SURFACE.md` for the current boundaries.
 
 ## CI build strategy
 

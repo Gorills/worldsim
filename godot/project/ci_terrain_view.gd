@@ -76,6 +76,59 @@ func _process(_delta: float) -> bool:
         push_error("Near authoritative vegetation MultiMeshes were not created")
         quit(43)
         return true
+    if trees.multimesh.mesh == null or trees.multimesh.mesh.get_surface_count() < 2:
+        push_error("Tree presentation regressed to a single diagnostic cone surface")
+        quit(46)
+        return true
+
+    # Godot's right-handed terrain convention is +X east and -Z north.
+    # The sampled patch is ordered south-to-north, so its north row must appear
+    # on the chunk's negative-Z side.
+    var source_heights := viewer_sim.sample_terrain_patch(0.0, 0.0, 8.0, 33)
+    var scene_north_index := 16
+    var source_north_index := 32 * 33 + 16
+    if absf(verts[scene_north_index].y - float(source_heights[source_north_index])) > 0.01:
+        push_error("Near terrain north row is mirrored in scene Z")
+        quit(47)
+        return true
+
+    var player := root.get_node("WorldViewer/Player") as CharacterBody3D
+    var minimap_overlay := root.get_node(
+        "WorldViewer/HUD/MiniMapPanel/Margin/VBox/MapFrame/Inset/Layers/Overlay"
+    )
+    player.rotation.y = 0.0
+    scene.call("_update_minimap_marker")
+    var north_heading: Vector2 = minimap_overlay.heading_uv_delta
+    if north_heading.y >= 0.0:
+        push_error("Zero-yaw camera does not point north/up on minimap")
+        quit(48)
+        return true
+    player.rotation.y = -PI * 0.5
+    scene.call("_update_minimap_marker")
+    var east_heading: Vector2 = minimap_overlay.heading_uv_delta
+    if east_heading.x <= 0.0:
+        push_error("Right camera turn does not turn minimap arrow east/right")
+        quit(49)
+        return true
+    player.rotation.y = 0.0
+
+    var visual_patch := viewer_sim.sample_terrain_visual_patch(
+        0.0,
+        0.0,
+        64.0,
+        3,
+        0.0,
+        0.0,
+        viewer_sim.sample_terrain_height(0.0, 0.0)
+    )
+    var visual_positions: PackedVector3Array = visual_patch.get(
+        "positions",
+        PackedVector3Array()
+    )
+    if visual_positions.size() != 9 or visual_positions[7].z >= visual_positions[4].z:
+        push_error("Distant local planet frame does not map projected north to -Z")
+        quit(50)
+        return true
 
     var n0 := _face_normal(verts, indices, 0)
     var n1 := _face_normal(verts, indices, 3)
@@ -125,9 +178,17 @@ func _process(_delta: float) -> bool:
     var distant_arrays := (distant_terrain.mesh as ArrayMesh).surface_get_arrays(0)
     var distant_verts: PackedVector3Array = distant_arrays[Mesh.ARRAY_VERTEX]
     var distant_colors: PackedColorArray = distant_arrays[Mesh.ARRAY_COLOR]
+    var distant_indices: PackedInt32Array = distant_arrays[Mesh.ARRAY_INDEX]
     if distant_colors.size() != distant_verts.size():
         push_error("Distant terrain does not carry living-surface vertex colors")
         quit(44)
+        return true
+    if (
+        distant_indices.size() < 3
+        or _face_normal(distant_verts, distant_indices, 0).y >= 0.0
+    ):
+        push_error("Distant terrain winding is not front-facing after north/-Z mapping")
+        quit(51)
         return true
 
     var sea_arrays := (distant_ocean.mesh as ArrayMesh).surface_get_arrays(0)
