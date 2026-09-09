@@ -48,8 +48,9 @@ The output directory contains each original yearly case CSV and log plus:
 - `matrix.csv`: the final row of every successful case;
 - `resolution.csv`: adjacent-level absolute and symmetric relative deltas for
   represented land area, vegetation density/retention, PFT shares, litter,
-  soil carbon, total and land-normalized NPP/fauna carbon, fire, fertility,
-  mineral-N density, tracked-N residual, temperature and precipitation;
+  soil carbon, total and land-normalized NPP/fauna carbon, fauna nitrogen,
+  fire, fertility, mineral-N density, planetary-N residual, temperature and
+  precipitation;
 - `summary.json`: exact matrix inputs, failures and maximum observed
   adjacent-level deltas.
 
@@ -82,7 +83,7 @@ Each row is one simulation year. It includes:
 - global and connected-land-component vegetation retention;
 - functional-type shares, litter, soil carbon, mineral-N density, derived fertility and NPP;
 - annual and cumulative burned area, emissions, char and active-fire area;
-- herbivore/carnivore counts plus derived fauna carbon;
+- herbivore/carnivore counts plus derived fauna carbon and nitrogen;
 - cumulative fauna respiration;
 - area-weighted land climate, atmospheric CO2, closed planet-carbon residual,
   terrestrial-N retention, atmospheric/ocean N reservoirs, cumulative
@@ -174,7 +175,9 @@ expensive hidden simulation to every constructor.
 Fauna previously multiplied cohort counts directly from a food-satisfaction
 ratio. New animal bodies did not debit any carbon reservoir, ordinary death
 did not return biomass, and a 100-year run could grow herbivores by roughly
-26,000 times. Fauna now uses the following explicit reduced closure:
+26,000 times. Carbon accounting fixed that failure; fauna nitrogen
+stoichiometry now applies the same material-ownership rule to N. Fauna uses the
+following explicit reduced closure:
 
 - cohort carbon is `count * (body mass + reserve) * 0.15`;
 - herbivore and carnivore growth can use only carbon assimilated from removed
@@ -185,7 +188,13 @@ did not return biomass, and a 100-year run could grow herbivores by roughly
   forage per simulated day and scales with the elapsed fauna-step interval;
 - standing herbivore carbon is density-regulated around `1e-4` of
   preference-weighted forage carbon;
-- carnivore carbon is density-regulated around 8% of herbivore carbon.
+- carnivore carbon is density-regulated around 8% of herbivore carbon;
+- cohort nitrogen is derived at fixed body C:N=4 and participates in the closed
+  planetary N inventory;
+- final animal biomass cannot retain more N than prior body N plus consumed
+  plant/prey N; excess assimilated carbon is respired;
+- dietary N not retained in body biomass, plus N released by net mortality, is
+  recycled 65% to litter and 35% to mineral N.
 
 New worlds initialize the herbivore guild at one tenth of its single-guild
 forage ceiling, then initialize carnivores from the same 8% trophic ratio. This
@@ -200,8 +209,8 @@ excluding cumulative respiration/fire ledgers from the inventory. A separate
 overcrowding regression verifies that abundant food no longer implies
 unbounded population growth.
 
-The wet-mass carbon fraction, assimilation efficiencies and biomass-pyramid
-ratios are reduced game-model parameters. They are intentionally labeled as
+The wet-mass carbon fraction, fixed fauna C:N, assimilation efficiencies and
+biomass-pyramid ratios are reduced game-model parameters. They are intentionally labeled as
 not Earth-calibrated and should later be replaced or calibrated per functional
 guild when species physiology becomes an actual domain.
 
@@ -236,7 +245,8 @@ targets or observational datasets. Carbon cycle v1 is an engineering closure,
 not an Earth calibration: geologic/fossil carbon, carbonate chemistry, explicit
 ocean circulation, phosphorus and other nutrient budgets, resolved reactive-N
 chemistry/speciation, aquatic nutrient transport/food webs and unique burn
-footprints remain out of scope. Planetary nitrogen v2 adds a conservative
-reduced N2/reactive/ocean box with fixation/deposition/denitrification, but its
-reservoir sizes and exchange coefficients remain engineering parameters rather
-than calibrated terrestrial or marine biogeochemistry.
+footprints remain out of scope. Planetary nitrogen v2 adds a conservative reduced N2/reactive/ocean box with
+fixation/deposition/denitrification. Fauna stoichiometry v1 additionally makes
+animal biomass an N reservoir with homeostatic trophic transfers. Reservoir
+sizes, exchange coefficients and fauna C:N remain engineering parameters
+rather than calibrated terrestrial or marine biogeochemistry.

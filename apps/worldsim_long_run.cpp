@@ -147,6 +147,7 @@ struct FaunaTotals {
     double herbivore_count{};
     double carnivore_count{};
     double carbon{};
+    double nitrogen{};
 };
 
 FaunaTotals fauna_totals(const CohortStore& cohorts) {
@@ -158,6 +159,7 @@ FaunaTotals fauna_totals(const CohortStore& cohorts) {
         else if (cohort.functional_group==2)
             totals.carnivore_count+=cohort.count;
         totals.carbon+=cohort_carbon_kg(cohort);
+        totals.nitrogen+=cohort_nitrogen_kg(cohort);
     }
     return totals;
 }
@@ -310,7 +312,8 @@ int main(int argc, char** argv) {
             << "pyrogenic_PgC,peak_active_land_fraction,vegetated_area_fraction,"
             << "collapsed_baseline_area_fraction,worst_component_veg_ratio,"
             << "max_component_annual_burn_fraction,herbivore_ratio,carnivore_ratio,"
-            << "fauna_carbon_ratio,fauna_carbon_PgC,fauna_respired_PgC,"
+            << "fauna_carbon_ratio,fauna_carbon_PgC,fauna_nitrogen_PgN,"
+            << "fauna_respired_PgC,"
             << "mean_fertility,mineral_nitrogen_kg_m2,"
             << "mean_land_temp_k,mean_land_precip_mm_day,"
             << "atmospheric_co2_ppm,planet_carbon_rel_residual,"
@@ -476,6 +479,7 @@ int main(int argc, char** argv) {
                     std::max(1.0,initial_fauna.carnivore_count) << ','
                 << fauna.carbon/std::max(1.0,initial_fauna.carbon) << ','
                 << fauna.carbon/1.0e12 << ','
+                << fauna.nitrogen/1.0e12 << ','
                 << sum_field(fields,field.fauna_respired)/1.0e12 << ','
                 << area_weighted_fertility/
                     std::max(1.0,current_land_area) << ','

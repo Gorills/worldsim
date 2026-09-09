@@ -103,15 +103,15 @@ The representation follows the large-scale simplification used by dynamic global
 
 Total vegetation NPP remains limited by living-soil fertility, temperature, solar forcing, root-zone water and magic growth forcing, but production and turnover are now resolved per functional type. Turnover returns carbon to litter. Respiration and turnover are jointly limited by available carbon before committing the step, and NPP reports realized respiration. This keeps the isolated vegetation budget closed even when a long step would otherwise overdraw the pool; it does not imply that the large-step nonlinear ecosystem trajectory is accurate.
 
-The reduced herbivore cohorts preferentially consume grass, then shrubs, with a smaller tree forage contribution. Fauna removes carbon from the same PFT pools and then recomputes total vegetation, preventing the aggregate field from drifting away from functional-type state. Cohort wet mass is converted to an explicit derived carbon stock; growth is limited by assimilated food, unassimilated food and mortality return to litter, and maintenance is accumulated in `ecology.fauna_respired_carbon_kg`. Density regulation bounds herbivores against preference-weighted forage and carnivores against herbivore carbon. Exact closure, parameters, long-run evidence and unsupported claims are recorded in [LONG_RUN_STABILITY.md](LONG_RUN_STABILITY.md).
+The reduced herbivore cohorts preferentially consume grass, then shrubs, with a smaller tree forage contribution. Fauna removes carbon from the same PFT pools and then recomputes total vegetation, preventing the aggregate field from drifting away from functional-type state. Cohort wet mass is converted to derived carbon and nitrogen stocks; fauna N uses a fixed reduced body C:N of 4. Growth is limited by both assimilated food carbon and the N available to support final body biomass. Unretained dietary/mortality N returns to litter/mineral pools, while carbon that cannot be retained under the body C:N constraint is accumulated in `ecology.fauna_respired_carbon_kg`. Density regulation bounds herbivores against preference-weighted forage and carnivores against herbivore carbon. Exact closure, parameters, long-run evidence and unsupported claims are recorded in [LONG_RUN_STABILITY.md](LONG_RUN_STABILITY.md).
 
-### Fauna v3: carbon accounting, trophic bounds and local migration
+### Fauna v4: carbon/nitrogen accounting, trophic bounds and local migration
 
 After the daily local feeding/predation update, the fauna system computes a reduced habitat-quality field for each trophic group. Herbivore quality rises with preference-weighted plant forage per effective land area; carnivore quality rises with herbivore biomass density. Each cohort compares its current cell with the four adjacent spatial regions and redistributes only toward a side whose area-weighted quality is materially better.
 
 Movement uses the same `WorldState::active_neighbors4()` mixed-LOD contract as geology and plant dispersal. If the preferred neighboring region is represented by multiple fine cells, movers are distributed across those active cells according to adaptive-cover weight multiplied by local habitat quality.
 
-Migration is applied from a frozen post-feeding cohort snapshot. Arriving animals therefore cannot immediately move again in the same fauna tick, making results independent of cohort-map iteration order. `CohortStore::transfer_count()` performs the actual redistribution so `Cohort::cell` and the store's spatial index cannot diverge. A destination cohort of the same lineage/species/functional group is merged rather than duplicated.
+Migration is applied from a frozen post-feeding cohort snapshot. Arriving animals therefore cannot immediately move again in the same fauna tick, making results independent of cohort-map iteration order. `CohortStore::transfer_count()` performs the actual redistribution so `Cohort::cell` and the store's spatial index cannot diverge. A destination cohort of the same lineage/species/functional group is merged rather than duplicated. Because fauna N is derived from the same cohort carbon, count splitting/merging/migration conserves both elements without a parallel spatial nutrient field.
 
 This is a reduced population redistribution model, not a trajectory-level movement model. The design follows the core movement-ecology principle that movement capacity/state and environmental resource selection are coupled. Integrated step-selection methods likewise treat movement and resource selection jointly rather than as independent processes.
 
@@ -162,7 +162,7 @@ The dedicated `worldsim_nitrogen_tests` suite checks:
 - finite mineral-N limitation of plant production and exact plant uptake debit;
 - 30-day coupled-scheduler nitrogen closure;
 - extensive N preservation through refine/coarsen plus aggregate reconstruction; and
-- snapshot epoch 31 round-trip and deterministic continuation.
+- snapshot epoch 33 round-trip and deterministic continuation.
 
 The dedicated `worldsim_soil_carbon_tests` suite checks:
 
@@ -172,7 +172,7 @@ The dedicated `worldsim_soil_carbon_tests` suite checks:
 - submerged stock remains dormant instead of being deleted;
 - all component pools and the cumulative ledger survive refine/coarsen; and
 - historical epoch-20 soil-carbon snapshots round-tripped and continued
-  deterministically; the current combined world uses epoch 31.
+  deterministically; the current combined world uses epoch 33.
 
 The dedicated `worldsim_fauna_v2_tests` suite checks the movement and fauna
 carbon contracts:
@@ -182,12 +182,12 @@ carbon contracts:
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
 - coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
-- the integrated daily ecology carbon budget closes against reported NPP and the fauna pass preserves tracked nitrogen while recycling grazed plant N;
+- the integrated daily ecology carbon budget closes against reported NPP, while controlled grazing/predation retain N in fauna biomass, recycle only unretained N and close planetary nitrogen;
 - the forage-limited herbivore grazing ceiling scales with elapsed fauna-step
   time, so a controlled half-day pass removes half the forage of a one-day pass;
 - starvation cannot create population and over-capacity cohorts decline even
   when standing forage is abundant; and
-- the current epoch-31 snapshot includes the fauna-respiration and nitrogen fields, rejects stale authoritative epochs, and round-trips exactly.
+- the current epoch-33 snapshot includes fauna respiration plus cohort-derived fauna nitrogen semantics, rejects stale authoritative epochs, and round-trips exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
@@ -203,8 +203,8 @@ The dedicated `worldsim_fire_tests` suite checks:
 - the aggregate vegetation field remains the exact sum of the PFT pools;
 - spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
 - extensive fire ledgers survive coarsening; and
-- snapshot epoch 31 round-trips authoritative fire, soil-carbon, nitrogen,
-  fauna-carbon and snow-coupled climate state.
+- snapshot epoch 33 round-trips authoritative fire, soil-carbon, planetary
+  nitrogen, fauna carbon/N and snow-coupled climate state.
 
 ## Explicitly unsupported ecology claims
 
@@ -214,7 +214,7 @@ The current ecology slice does **not** yet provide:
 - microbial biomass, soil horizons, texture classes or soil chemistry;
 - spatial aquifer-pressure and vadose-zone flow;
 - species-level plant physiology, explicit seed banks, long-distance dispersal kernels or evolutionary adaptation;
-- species-specific physiology, genetics or evolution;
+- species-specific physiology, variable animal body stoichiometry, genetics or evolution;
 - operational or calibrated wildfire, storm damage, grazing-driven state transitions or species-specific disturbance regimes (reduced wildfire and inundation mortality are implemented);
 - individual trajectories, home ranges, movement memory, explicit barriers, long-distance dispersal or seasonal migration;
 - aquatic food webs;

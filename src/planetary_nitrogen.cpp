@@ -296,6 +296,11 @@ double total_planet_nitrogen_kg(
             total
         );
     }
+    for (const auto& [id,cohort]:
+        world.stores().get<CohortStore>().all()) {
+        (void)id;
+        total+=cohort_nitrogen_kg(cohort);
+    }
     return total;
 }
 

@@ -158,6 +158,24 @@ double tracked_ecology_carbon(const Simulation& simulation) {
     return total;
 }
 
+double fauna_nitrogen(
+    const Simulation& simulation,
+    std::uint32_t functional_group=0
+) {
+    double total=0.0;
+    for (const auto& [id,cohort]:
+        simulation.world().stores().get<CohortStore>().all()) {
+        (void)id;
+        if (
+            functional_group==0 ||
+            cohort.functional_group==functional_group
+        ) {
+            total+=cohort_nitrogen_kg(cohort);
+        }
+    }
+    return total;
+}
+
 void test_indexed_transfer_conserves_population() {
     FieldRegistry registry;
     registry.freeze();
@@ -497,6 +515,132 @@ void test_grazing_rate_scales_with_elapsed_time() {
     );
 }
 
+void test_fauna_nitrogen_stoichiometry() {
+    struct Result {
+        double fauna_before{};
+        double fauna_after{};
+        double planet_before{};
+        double planet_after{};
+        double respiration_delta{};
+    };
+
+    const auto run_fixture=[](double plant_nitrogen_scale) {
+        auto simulation=make_default_simulation(
+            5051,SimulationConfig{1,1,3600.0}
+        );
+        const auto [source,target]=find_land_pair(*simulation);
+        (void)target;
+        clear_fauna(*simulation);
+        clear_plants(*simulation);
+        set_grass_density(*simulation,source,0.50);
+
+        auto& fields=simulation->world().stores().get<FieldStore>();
+        const FieldId grass_n=
+            *simulation->fields().find("ecology.grass_nitrogen_kg");
+        const FieldId vegetation_n=
+            *simulation->fields().find("ecology.vegetation_nitrogen_kg");
+        const double scaled_nitrogen=
+            fields.get(source,grass_n)*plant_nitrogen_scale;
+        fields.set(source,grass_n,scaled_nitrogen);
+        fields.set(source,vegetation_n,scaled_nitrogen);
+
+        auto& cohorts=simulation->world().stores().get<CohortStore>();
+        cohorts.add({
+            0,0,source,9460,1,
+            1'000.0,35.0,2.0
+        });
+
+        Result result;
+        result.fauna_before=fauna_nitrogen(*simulation,1);
+        result.planet_before=total_planet_nitrogen_kg(
+            simulation->world(),simulation->fields()
+        );
+        const double respiration_before=sum_field(
+            *simulation,"ecology.fauna_respired_carbon_kg"
+        );
+        run_system(*simulation,"ecology.fauna",1.0);
+        result.fauna_after=fauna_nitrogen(*simulation,1);
+        result.planet_after=total_planet_nitrogen_kg(
+            simulation->world(),simulation->fields()
+        );
+        result.respiration_delta=
+            sum_field(
+                *simulation,"ecology.fauna_respired_carbon_kg"
+            )-
+            respiration_before;
+        return result;
+    };
+
+    const Result nitrogen_poor=run_fixture(0.0);
+    const Result nitrogen_rich=run_fixture(1.0);
+    near(
+        nitrogen_poor.planet_before,nitrogen_poor.planet_after,
+        3.0e-12,
+        "nitrogen-poor grazing did not close planetary nitrogen"
+    );
+    near(
+        nitrogen_rich.planet_before,nitrogen_rich.planet_after,
+        3.0e-12,
+        "nitrogen-rich grazing did not close planetary nitrogen"
+    );
+    check(
+        nitrogen_rich.fauna_after>nitrogen_rich.fauna_before,
+        "feeding fauna retained no nitrogen in new body biomass"
+    );
+    check(
+        nitrogen_rich.fauna_after>nitrogen_poor.fauna_after,
+        "animal growth ignored forage nitrogen availability"
+    );
+    check(
+        nitrogen_poor.fauna_after<=
+            nitrogen_poor.fauna_before*(1.0+1.0e-12),
+        "nitrogen-free forage created net fauna nitrogen"
+    );
+    check(
+        nitrogen_poor.respiration_delta>
+            nitrogen_rich.respiration_delta,
+        "nitrogen-limited fauna did not dispose of excess carbon"
+    );
+}
+
+void test_predation_transfers_fauna_nitrogen() {
+    auto simulation=make_default_simulation(
+        5052,SimulationConfig{1,1,3600.0}
+    );
+    const auto [source,target]=find_land_pair(*simulation);
+    (void)target;
+    clear_fauna(*simulation);
+    clear_plants(*simulation);
+    auto& cohorts=simulation->world().stores().get<CohortStore>();
+    cohorts.add({
+        0,0,source,9461,1,
+        100'000.0,35.0,2.0
+    });
+    cohorts.add({
+        0,0,source,9462,2,
+        100.0,70.0,4.0
+    });
+
+    const double carnivore_before=fauna_nitrogen(*simulation,2);
+    const double planet_before=total_planet_nitrogen_kg(
+        simulation->world(),simulation->fields()
+    );
+    run_system(*simulation,"ecology.fauna",1.0);
+    const double carnivore_after=fauna_nitrogen(*simulation,2);
+    check(
+        carnivore_after>carnivore_before,
+        "predation transferred no prey nitrogen into carnivore biomass"
+    );
+    near(
+        planet_before,
+        total_planet_nitrogen_kg(
+            simulation->world(),simulation->fields()
+        ),
+        3.0e-12,
+        "predation did not close planetary nitrogen"
+    );
+}
+
 void test_fauna_carbon_budget_and_starvation() {
     const SimulationConfig config{1,1,3600.0};
     auto simulation=make_default_simulation(5050,config);
@@ -601,7 +745,7 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{32},
+        snapshot[8]==std::byte{33},
         "unexpected authoritative snapshot epoch"
     );
 
@@ -635,6 +779,8 @@ int main() {
         test_uniform_habitat_selection();
         test_migration_resolves_refined_neighbor_region();
         test_grazing_rate_scales_with_elapsed_time();
+        test_fauna_nitrogen_stoichiometry();
+        test_predation_transfers_fauna_nitrogen();
         test_fauna_carbon_budget_and_starvation();
         test_snapshot_epoch_current();
         std::cout << "fauna_v2_tests: OK\n";

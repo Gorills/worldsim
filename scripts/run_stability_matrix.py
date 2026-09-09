@@ -31,6 +31,7 @@ COMPARISON_METRICS = (
     "annual_burn_land_fraction",
     "fauna_carbon_ratio",
     "fauna_carbon_PgC",
+    "fauna_nitrogen_PgN",
     "fauna_carbon_density_kg_m2",
     "mean_fertility",
     "mineral_nitrogen_kg_m2",
