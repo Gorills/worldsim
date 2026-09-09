@@ -4,6 +4,7 @@ const CAPTURE_WIDTH := 1600
 const CAPTURE_HEIGHT := 900
 const NEAR_BUILD_STEPS := 64
 const DISTANT_BUILD_STEPS := 16
+const BENCHMARK_FRAMES := 60
 
 var scene: Node
 var capture_start_ms := 0
@@ -97,6 +98,36 @@ func _prepare_and_capture() -> void:
         quit(8)
         return
 
+    var benchmark_start_ms := Time.get_ticks_msec()
+    for _i in range(BENCHMARK_FRAMES):
+        await RenderingServer.frame_post_draw
+    var benchmark_elapsed_ms := maxi(
+        Time.get_ticks_msec() - benchmark_start_ms,
+        1
+    )
+    var rendered_fps := (
+        1000.0 * float(BENCHMARK_FRAMES) / float(benchmark_elapsed_ms)
+    )
+
+    var spawn_chunk: Vector2i = scene.get("current_chunk")
+    var dirty_chunks: Dictionary = scene.get("dirty_chunks")
+    dirty_chunks[spawn_chunk] = true
+    scene.set("dirty_chunks", dirty_chunks)
+    var terrain_rebuild_start_ms := Time.get_ticks_msec()
+    scene.call("_create_chunk", spawn_chunk)
+    var terrain_rebuild_ms := (
+        Time.get_ticks_msec() - terrain_rebuild_start_ms
+    )
+
+    var surface_dirty_chunks: Dictionary = scene.get("surface_dirty_chunks")
+    surface_dirty_chunks[spawn_chunk] = true
+    scene.set("surface_dirty_chunks", surface_dirty_chunks)
+    var surface_refresh_start_ms := Time.get_ticks_msec()
+    scene.call("_create_chunk", spawn_chunk)
+    var surface_refresh_ms := (
+        Time.get_ticks_msec() - surface_refresh_start_ms
+    )
+
     var output_path := output_dir.path_join("walk_spawn.png")
     var save_error := image.save_png(output_path)
     if save_error != OK:
@@ -108,14 +139,16 @@ func _prepare_and_capture() -> void:
         return
 
     print(
-        "WORLDSIM_GODOT_VISUAL_OK display=%s size=%dx%d luminance_range=%.4f capture_ms=%d fps=%d path=%s"
+        "WORLDSIM_GODOT_VISUAL_OK display=%s size=%dx%d luminance_range=%.4f capture_ms=%d rendered_fps=%.2f terrain_rebuild_ms=%d surface_refresh_ms=%d path=%s"
         % [
             DisplayServer.get_name(),
             image.get_width(),
             image.get_height(),
             luminance_max - luminance_min,
             Time.get_ticks_msec() - capture_start_ms,
-            Engine.get_frames_per_second(),
+            rendered_fps,
+            terrain_rebuild_ms,
+            surface_refresh_ms,
             output_path,
         ]
     )
