@@ -1,5 +1,6 @@
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/planetary_nitrogen.hpp"
 #include "worldsim/soil_carbon.hpp"
 #include "worldsim/soil_nitrogen.hpp"
 
@@ -202,6 +203,9 @@ void soil_system_closes_and_reports_fluxes() {
     const double before=total_ecology_nitrogen_accounted_kg(
         simulation->world(),simulation->fields()
     );
+    const double leached_before=fields.get(
+        cell,field(*simulation,"ecology.nitrogen_leached_kg")
+    );
     run_system(*simulation,"ecology.soil",1.0);
     const double after=total_ecology_nitrogen_accounted_kg(
         simulation->world(),simulation->fields()
@@ -217,8 +221,18 @@ void soil_system_closes_and_reports_fluxes() {
     check(
         fields.get(
             cell,field(*simulation,"ecology.nitrogen_leached_kg")
-        )>0.0,
+        )>leached_before,
         "soil drainage did not enter the nitrogen leaching ledger"
+    );
+    near(
+        fields.get(
+            cell,field(*simulation,"ecology.nitrogen_leaching_kg_day")
+        ),
+        fields.get(
+            cell,field(*simulation,"ecology.nitrogen_leached_kg")
+        )-leached_before,
+        2.0e-15,
+        "soil nitrogen leaching rate disagrees with its one-day ledger delta"
     );
 }
 
@@ -344,20 +358,141 @@ void vegetation_is_limited_by_finite_nitrogen() {
     );
 }
 
-void coupled_scheduler_closes_tracked_nitrogen() {
+void planetary_reservoirs_close_boundary_and_return_fluxes() {
     auto simulation=make_default_simulation(
         8203,SimulationConfig{1,1,3'600.0}
     );
-    const double before=total_ecology_nitrogen_accounted_kg(
+    const CellId cell=land_cell(*simulation);
+    auto& fields=simulation->world().stores().get<FieldStore>();
+    auto& store=simulation->world().stores().get<NitrogenStore>();
+
+    const FieldId mineral=field(
+        *simulation,"ecology.mineral_nitrogen_kg"
+    );
+    const FieldId litter=field(
+        *simulation,"ecology.litter_nitrogen_kg"
+    );
+    const FieldId fertility=field(
+        *simulation,"ecology.soil_fertility"
+    );
+    const double leached=std::min(10.0,0.10*fields.get(cell,mineral));
+    const double fire_loss=std::min(5.0,0.10*fields.get(cell,litter));
+    check(
+        leached>0.0 && fire_loss>0.0,
+        "planetary nitrogen fixture lacks terrestrial donor stocks"
+    );
+
+    const double before=total_planet_nitrogen_kg(
+        simulation->world(),simulation->fields()
+    );
+    const double leaching_budget_before=
+        store.budget().terrestrial_leached_to_ocean_kg;
+    fields.add(cell,mineral,-leached);
+    fields.add(cell,litter,-fire_loss);
+    fields.set(cell,fertility,0.0);
+    store.advance(
+        simulation->world(),
+        simulation->fields(),
+        leached,
+        fire_loss,
+        1.0
+    );
+
+    near(
+        before,
+        total_planet_nitrogen_kg(
+            simulation->world(),simulation->fields()
+        ),
+        3.0e-15,
+        "planetary nitrogen reservoirs did not close boundary transfers"
+    );
+    near(
+        store.budget().terrestrial_leached_to_ocean_kg-
+            leaching_budget_before,
+        leached,
+        2.0e-15,
+        "terrestrial leaching did not enter the ocean nitrogen reservoir"
+    );
+    check(
+        store.atmospheric_reactive_nitrogen_kg()>0.0,
+        "fire nitrogen did not enter the reactive atmospheric reservoir"
+    );
+    check(
+        store.budget().fixed_from_atmosphere_kg>0.0,
+        "nitrogen scarcity did not trigger atmospheric fixation"
+    );
+    check(
+        store.budget().reactive_deposited_kg>0.0,
+        "reactive atmospheric nitrogen did not redeposit to land"
+    );
+    check(
+        sum_field(*simulation,"ecology.nitrogen_fixation_kg_day")>0.0,
+        "planetary nitrogen system did not expose fixation flux"
+    );
+    check(
+        sum_field(*simulation,"ecology.nitrogen_deposition_kg_day")>0.0,
+        "planetary nitrogen system did not expose deposition flux"
+    );
+}
+
+void fixation_uses_authoritative_mineral_stock() {
+    auto make_fixture=[](double mineral_density) {
+        auto simulation=make_default_simulation(
+            8206,SimulationConfig{1,1,3'600.0}
+        );
+        const CellId cell=land_cell(*simulation);
+        auto& fields=simulation->world().stores().get<FieldStore>();
+        const double area=
+            simulation->world().topology().area_m2(cell)*
+            fields.get(
+                cell,field(*simulation,"geography.land_fraction")
+            );
+        fields.set(
+            cell,field(*simulation,"ecology.mineral_nitrogen_kg"),
+            mineral_density*area
+        );
+        // Deliberately stale diagnostic: the planetary cycle must use the
+        // authoritative mineral stock rather than trusting this value.
+        fields.set(
+            cell,field(*simulation,"ecology.soil_fertility"),0.0
+        );
+        run_system(*simulation,"ecology.nitrogen_cycle",1.0);
+        return std::pair{
+            std::move(simulation),
+            cell
+        };
+    };
+
+    auto [poor,poor_cell]=make_fixture(0.0);
+    auto [rich,rich_cell]=make_fixture(0.03);
+    const auto& poor_fields=poor->world().stores().get<FieldStore>();
+    const auto& rich_fields=rich->world().stores().get<FieldStore>();
+    const double poor_fixation=poor_fields.get(
+        poor_cell,field(*poor,"ecology.nitrogen_fixation_kg_day")
+    );
+    const double rich_fixation=rich_fields.get(
+        rich_cell,field(*rich,"ecology.nitrogen_fixation_kg_day")
+    );
+    check(
+        poor_fixation>rich_fixation,
+        "nitrogen fixation trusted stale fertility instead of mineral stock"
+    );
+}
+
+void coupled_scheduler_closes_planetary_nitrogen() {
+    auto simulation=make_default_simulation(
+        8205,SimulationConfig{1,1,3'600.0}
+    );
+    const double before=total_planet_nitrogen_kg(
         simulation->world(),simulation->fields()
     );
     simulation->step(24U*30U);
-    const double after=total_ecology_nitrogen_accounted_kg(
+    const double after=total_planet_nitrogen_kg(
         simulation->world(),simulation->fields()
     );
     near(
         before,after,2.0e-12,
-        "coupled daily scheduler drifted tracked nitrogen"
+        "coupled daily scheduler drifted planetary nitrogen"
     );
     check(
         sum_field(*simulation,"ecology.nitrogen_uptake_kg_day")>0.0,
@@ -368,6 +503,11 @@ void coupled_scheduler_closes_tracked_nitrogen() {
             *simulation,"ecology.nitrogen_mineralization_kg_day"
         )>0.0,
         "coupled ecology reported no nitrogen mineralization"
+    );
+    check(
+        simulation->world().stores().get<NitrogenStore>()
+            .budget().fixed_from_atmosphere_kg>0.0,
+        "coupled ecology performed no atmospheric nitrogen fixation"
     );
 }
 
@@ -426,7 +566,7 @@ void lod_and_snapshot_preserve_nitrogen() {
     simulation->step(48);
     const auto snapshot=simulation->save_snapshot();
     check(
-        snapshot.size()>11U && snapshot[8]==std::byte{31},
+        snapshot.size()>11U && snapshot[8]==std::byte{32},
         "unexpected nitrogen-cycle snapshot epoch"
     );
     auto restored=make_default_simulation(
@@ -454,7 +594,9 @@ int main() {
         fertility_tracks_finite_mineral_stock();
         soil_system_closes_and_reports_fluxes();
         vegetation_is_limited_by_finite_nitrogen();
-        coupled_scheduler_closes_tracked_nitrogen();
+        planetary_reservoirs_close_boundary_and_return_fluxes();
+        fixation_uses_authoritative_mineral_stock();
+        coupled_scheduler_closes_planetary_nitrogen();
         lod_and_snapshot_preserve_nitrogen();
         std::cout<<"nitrogen_tests: OK\n";
         return EXIT_SUCCESS;

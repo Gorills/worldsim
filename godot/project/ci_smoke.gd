@@ -93,12 +93,16 @@ func _initialize() -> void:
                 "ecology.mineral_nitrogen_kg",
                 "ecology.nitrogen_mineralization_kg_day",
                 "ecology.nitrogen_leached_kg",
+                "ecology.nitrogen_leaching_kg_day",
+                "ecology.nitrogen_fixation_kg_day",
+                "ecology.nitrogen_deposition_kg_day",
                 "ecology.grass_nitrogen_kg",
                 "ecology.shrub_nitrogen_kg",
                 "ecology.tree_nitrogen_kg",
                 "ecology.vegetation_nitrogen_kg",
                 "ecology.nitrogen_uptake_kg_day",
-                "ecology.fire_emitted_nitrogen_kg"]:
+                "ecology.fire_emitted_nitrogen_kg",
+                "ecology.fire_nitrogen_emission_kg_day"]:
         var soil_values := sim.get_field_values(key)
         if soil_values.size() != packet["positions"].size():
             push_error("Soil-carbon field is missing or misaligned: %s" % key)

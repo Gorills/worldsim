@@ -85,7 +85,9 @@ Each row is one simulation year. It includes:
 - herbivore/carnivore counts plus derived fauna carbon;
 - cumulative fauna respiration;
 - area-weighted land climate, atmospheric CO2, closed planet-carbon residual,
-  tracked-nitrogen residual, water/energy residuals and invalid values;
+  terrestrial-N retention, atmospheric/ocean N reservoirs, cumulative
+  fixation/deposition, closed planet-N residual, water/energy residuals and
+  invalid values;
 - the fraction of initially vegetated land whose biomass fell below 10% of its
   own initial density.
 
@@ -103,9 +105,8 @@ conditions is violated at the end of the requested run:
 - any registered field is non-finite or outside its descriptor bounds;
 - the closed planet-carbon inventory drifts by more than `1e-10` relative to
   its initialized stock;
-- the tracked terrestrial nitrogen inventory plus explicit leaching/fire
-  boundary ledgers drifts by more than `1e-10` relative to its initialized
-  amount;
+- the closed planetary nitrogen inventory drifts by more than `1e-10`
+  relative to its initialized stock;
 - global vegetation is below 50% or above 400% of its initialized stock;
 - more than 25% of initially vegetated land falls below 10% of its own initial
   density;
@@ -233,8 +234,9 @@ After that gate, compare annual burned fraction, NPP, biome/PFT composition,
 soil-carbon turnover, atmospheric CO2 and trophic biomass against explicit game
 targets or observational datasets. Carbon cycle v1 is an engineering closure,
 not an Earth calibration: geologic/fossil carbon, carbonate chemistry, explicit
-ocean circulation, phosphorus and other nutrient budgets, atmospheric
-nitrogen chemistry/fixation/deposition, aquatic nutrient transport/food webs
-and unique burn footprints remain out of scope. Nitrogen cycle v1 is likewise
-an engineering conservation/limitation closure, not a calibrated terrestrial
-biogeochemistry model.
+ocean circulation, phosphorus and other nutrient budgets, resolved reactive-N
+chemistry/speciation, aquatic nutrient transport/food webs and unique burn
+footprints remain out of scope. Planetary nitrogen v2 adds a conservative
+reduced N2/reactive/ocean box with fixation/deposition/denitrification, but its
+reservoir sizes and exchange coefficients remain engineering parameters rather
+than calibrated terrestrial or marine biogeochemistry.

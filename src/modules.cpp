@@ -2,6 +2,7 @@
 #include "worldsim/climate.hpp"
 #include "worldsim/geology.hpp"
 #include "worldsim/hydrology.hpp"
+#include "worldsim/planetary_nitrogen.hpp"
 #include "worldsim/soil_carbon.hpp"
 #include "worldsim/soil_nitrogen.hpp"
 #include "worldsim/terrain.hpp"
@@ -570,6 +571,9 @@ public:
           nitrogen_leached_(
               require_field(r,"ecology.nitrogen_leached_kg")
           ),
+          nitrogen_leaching_rate_(
+              require_field(r,"ecology.nitrogen_leaching_kg_day")
+          ),
           heterotrophic_respiration_(require_field(
               r,"ecology.heterotrophic_respiration_kg_day"
           )),
@@ -612,6 +616,7 @@ public:
                     "field:ecology.mineral_nitrogen_kg",
                     "field:ecology.nitrogen_mineralization_kg_day",
                     "field:ecology.nitrogen_leached_kg",
+                    "field:ecology.nitrogen_leaching_kg_day",
                     "field:ecology.heterotrophic_respiration_kg_day",
                     "field:ecology.soil_respired_carbon_kg",
                     "field:hydrology.drainage_since_soil_m3"
@@ -630,6 +635,7 @@ public:
                 fs.set(cell,fertility_,0.0);
                 fs.set(cell,heterotrophic_respiration_,0.0);
                 fs.set(cell,nitrogen_mineralization_,0.0);
+                fs.set(cell,nitrogen_leaching_rate_,0.0);
                 fs.set(
                     cell,
                     soil_carbon_,
@@ -690,6 +696,12 @@ public:
             );
             fs.add(cell,nitrogen_leached_,nitrogen.fluxes.leached_kg);
             fs.set(
+                cell,nitrogen_leaching_rate_,
+                ctx.dt_days>0.0
+                    ? nitrogen.fluxes.leached_kg/ctx.dt_days
+                    : 0.0
+            );
+            fs.set(
                 cell,
                 soil_carbon_,
                 carbon.state.fast_carbon_kg+
@@ -724,6 +736,7 @@ private:
     FieldId fast_carbon_,slow_carbon_,soil_carbon_;
     FieldId litter_nitrogen_,fast_nitrogen_,slow_nitrogen_;
     FieldId mineral_nitrogen_,nitrogen_mineralization_,nitrogen_leached_;
+    FieldId nitrogen_leaching_rate_;
     FieldId heterotrophic_respiration_,respired_carbon_;
     SoilCarbonModel carbon_model_;
     SoilNitrogenModel nitrogen_model_;
@@ -1204,6 +1217,9 @@ public:
           emitted_nitrogen_(
               require_field(r,"ecology.fire_emitted_nitrogen_kg")
           ),
+          nitrogen_emission_rate_(
+              require_field(r,"ecology.fire_nitrogen_emission_kg_day")
+          ),
           char_(require_field(r,"ecology.pyrogenic_carbon_kg")) {}
 
     std::string_view id() const override { return "ecology.fire"; }
@@ -1259,14 +1275,17 @@ public:
                     "field:ecology.fire_emitted_carbon_kg",
                     "field:ecology.fire_emission_kg_day",
                     "field:ecology.fire_emitted_nitrogen_kg",
+                    "field:ecology.fire_nitrogen_emission_kg_day",
                     "field:ecology.pyrogenic_carbon_kg"
                 }};
     }
 
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
-        for (CellId cell:ctx.world.active_cells())
+        for (CellId cell:ctx.world.active_cells()) {
             fs.set(cell,emission_rate_,0.0);
+            fs.set(cell,nitrogen_emission_rate_,0.0);
+        }
 
         struct FireState {
             double land_area_m2{};
@@ -1574,6 +1593,10 @@ public:
             fs.add(cell,emitted_,emitted);
             fs.add(cell,emission_rate_,emitted/ctx.dt_days);
             fs.add(cell,emitted_nitrogen_,emitted_nitrogen);
+            fs.add(
+                cell,nitrogen_emission_rate_,
+                emitted_nitrogen/ctx.dt_days
+            );
             fs.add(cell,char_,charred);
             fs.add(
                 cell,
@@ -1665,7 +1688,8 @@ private:
     std::array<FieldId,3> pft_nitrogen_;
     FieldId carbon_,vegetation_nitrogen_;
     FieldId active_area_,active_,danger_,burned_,burned_area_;
-    FieldId emitted_,emission_rate_,emitted_nitrogen_,char_;
+    FieldId emitted_,emission_rate_,emitted_nitrogen_;
+    FieldId nitrogen_emission_rate_,char_;
 };
 
 // Reduced standing-biomass pyramid used to bound the two demo trophic guilds.
@@ -2266,6 +2290,76 @@ private:
     bool fire_enabled_{};
 };
 
+class NitrogenCycleSystem final : public ISimSystem {
+public:
+    NitrogenCycleSystem(
+        const FieldRegistry& r,
+        bool fire_enabled,
+        bool fauna_enabled
+    ):
+        leaching_(require_field(
+            r,"ecology.nitrogen_leaching_kg_day"
+        )),
+        fire_emission_(require_field(
+            r,"ecology.fire_nitrogen_emission_kg_day"
+        )),
+        fire_enabled_(fire_enabled),
+        fauna_enabled_(fauna_enabled) {}
+
+    std::string_view id() const override {
+        return "ecology.nitrogen_cycle";
+    }
+    Tick cadence_ticks() const override { return 24; }
+    std::vector<std::string> after() const override {
+        if (fauna_enabled_) return {"ecology.fauna"};
+        if (fire_enabled_) return {"ecology.fire"};
+        return {"ecology.vegetation"};
+    }
+    SystemAccess access() const override {
+        return {
+            {
+                "field:geography.land_fraction",
+                "field:climate.surface_temperature_k",
+                "field:ecology.mineral_nitrogen_kg",
+                "field:ecology.nitrogen_leaching_kg_day",
+                "field:ecology.fire_nitrogen_emission_kg_day",
+                "store:ecology.nitrogen.state"
+            },
+            {
+                "field:ecology.soil_fertility",
+                "field:ecology.mineral_nitrogen_kg",
+                "field:ecology.nitrogen_fixation_kg_day",
+                "field:ecology.nitrogen_deposition_kg_day",
+                "store:ecology.nitrogen.state"
+            }
+        };
+    }
+    void step(SystemContext& ctx) override {
+        const auto& fs=ctx.world.stores().get<FieldStore>();
+        const auto sum=[&](FieldId field) {
+            return std::accumulate(
+                fs.column(field).begin(),
+                fs.column(field).end(),
+                0.0
+            );
+        };
+        auto& nitrogen=
+            ctx.world.stores().get<NitrogenStore>();
+        nitrogen.advance(
+            ctx.world,
+            ctx.fields,
+            sum(leaching_)*ctx.dt_days,
+            sum(fire_emission_)*ctx.dt_days,
+            ctx.dt_days
+        );
+    }
+
+private:
+    FieldId leaching_,fire_emission_;
+    bool fire_enabled_{};
+    bool fauna_enabled_{};
+};
+
 class CarbonCycleSystem final : public ISimSystem {
 public:
     CarbonCycleSystem(
@@ -2430,6 +2524,9 @@ void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.mineral_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.nitrogen_mineralization_kg_day","kgN/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.nitrogen_leached_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.nitrogen_leaching_kg_day","kgN/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.nitrogen_fixation_kg_day","kgN/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.nitrogen_deposition_kg_day","kgN/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.heterotrophic_respiration_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.soil_respired_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
@@ -2453,9 +2550,16 @@ void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.fire_emitted_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_emission_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_emitted_nitrogen_kg","kgN",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.fire_nitrogen_emission_kg_day","kgN/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.pyrogenic_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
 }
-void EcologyModule::register_stores(StateStoreRegistry& stores, const FieldRegistry&) { stores.emplace<CohortStore>(); }
+void EcologyModule::register_stores(
+    StateStoreRegistry& stores,
+    const FieldRegistry&
+) {
+    stores.emplace<CohortStore>();
+    stores.emplace<NitrogenStore>();
+}
 void EcologyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
     s.add(std::make_unique<SoilSystem>(r));
     s.add(std::make_unique<VegetationSystem>(r));
@@ -2463,6 +2567,9 @@ void EcologyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
         s.add(std::make_unique<FireSystem>(r));
     if (config_.enable_fauna)
         s.add(std::make_unique<FaunaSystem>(r,config_.enable_fire));
+    s.add(std::make_unique<NitrogenCycleSystem>(
+        r,config_.enable_fire,config_.enable_fauna
+    ));
     s.add(std::make_unique<CarbonCycleSystem>(
         r,config_.enable_fire,config_.enable_fauna
     ));
@@ -2631,6 +2738,7 @@ void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
             });
         }
     }
+    world.stores().get<NitrogenStore>().initialize(world,r);
 }
 
 void EcologyModule::on_spatial_cover_changed(

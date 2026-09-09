@@ -1,6 +1,7 @@
 #include "worldsim/climate.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/planetary_nitrogen.hpp"
 #include "worldsim/simulation.hpp"
 
 #include <algorithm>
@@ -267,10 +268,20 @@ int main(int argc, char** argv) {
         const double initial_carbon=total_planet_carbon_kg(
             world,simulation->fields()
         );
-        const double initial_nitrogen=
-            total_ecology_nitrogen_accounted_kg(
+        const auto& initial_nitrogen_store=
+            world.stores().get<NitrogenStore>();
+        const double initial_planet_nitrogen=
+            total_planet_nitrogen_kg(
                 world,simulation->fields()
             );
+        const double initial_global_nitrogen_reservoirs=
+            initial_nitrogen_store.atmospheric_n2_kg()+
+            initial_nitrogen_store.atmospheric_reactive_nitrogen_kg()+
+            initial_nitrogen_store.ocean_dissolved_nitrogen_kg();
+        const double initial_terrestrial_nitrogen=
+            initial_planet_nitrogen-initial_global_nitrogen_reservoirs;
+        const double initial_atmospheric_n2=
+            initial_nitrogen_store.atmospheric_n2_kg();
 
         double previous_burned=sum_field(fields,field.burned_area);
         double temperature_sum=0.0;
@@ -287,7 +298,7 @@ int main(int argc, char** argv) {
         double final_worst_component_ratio=1.0;
         double final_fauna_carbon_ratio=1.0;
         double final_carbon_rel_residual=0.0;
-        double final_nitrogen_rel_residual=0.0;
+        double final_planet_nitrogen_rel_residual=0.0;
         unsigned final_invalid_values=0;
 
         *output << std::setprecision(10);
@@ -303,7 +314,10 @@ int main(int argc, char** argv) {
             << "mean_fertility,mineral_nitrogen_kg_m2,"
             << "mean_land_temp_k,mean_land_precip_mm_day,"
             << "atmospheric_co2_ppm,planet_carbon_rel_residual,"
-            << "tracked_nitrogen_rel_residual,"
+            << "terrestrial_nitrogen_ratio_initial,"
+            << "atmospheric_n2_ratio_initial,ocean_dissolved_nitrogen_PgN,"
+            << "nitrogen_fixation_PgN,nitrogen_deposition_PgN,"
+            << "planet_nitrogen_rel_residual,"
             << "planet_water_rel_residual,surface_energy_rel_residual,"
             << "min_veg_ratio_year,max_veg_ratio_year,ignitions,near_extinctions,invalid_values\n";
 
@@ -406,15 +420,23 @@ int main(int argc, char** argv) {
                 (carbon-initial_carbon)/
                 std::max(1.0,std::abs(initial_carbon));
             final_carbon_rel_residual=carbon_rel_residual;
-            const double nitrogen=
-                total_ecology_nitrogen_accounted_kg(
+            const double planet_nitrogen=
+                total_planet_nitrogen_kg(
                     world,simulation->fields()
                 );
-            const double nitrogen_rel_residual=
-                (nitrogen-initial_nitrogen)/
-                std::max(1.0,std::abs(initial_nitrogen));
-            final_nitrogen_rel_residual=
-                nitrogen_rel_residual;
+            const auto& nitrogen_store=
+                world.stores().get<NitrogenStore>();
+            const double global_nitrogen_reservoirs=
+                nitrogen_store.atmospheric_n2_kg()+
+                nitrogen_store.atmospheric_reactive_nitrogen_kg()+
+                nitrogen_store.ocean_dissolved_nitrogen_kg();
+            const double terrestrial_nitrogen=
+                planet_nitrogen-global_nitrogen_reservoirs;
+            const double planet_nitrogen_rel_residual=
+                (planet_nitrogen-initial_planet_nitrogen)/
+                std::max(1.0,std::abs(initial_planet_nitrogen));
+            final_planet_nitrogen_rel_residual=
+                planet_nitrogen_rel_residual;
             final_vegetation_ratio=
                 vegetation/std::max(1.0,initial_vegetation);
             final_collapsed_area_fraction=
@@ -467,7 +489,14 @@ int main(int argc, char** argv) {
                     : 0.0) << ','
                 << fields.column(field.atmospheric_co2).front() << ','
                 << carbon_rel_residual << ','
-                << nitrogen_rel_residual << ','
+                << terrestrial_nitrogen/
+                    std::max(1.0,initial_terrestrial_nitrogen) << ','
+                << nitrogen_store.atmospheric_n2_kg()/
+                    std::max(1.0,initial_atmospheric_n2) << ','
+                << nitrogen_store.ocean_dissolved_nitrogen_kg()/1.0e12 << ','
+                << nitrogen_store.budget().fixed_from_atmosphere_kg/1.0e12 << ','
+                << nitrogen_store.budget().reactive_deposited_kg/1.0e12 << ','
+                << planet_nitrogen_rel_residual << ','
                 << (water-initial_water)/
                     std::max(1.0,std::abs(initial_water)) << ','
                 << (climate.total_surface_heat_j()-expected_heat)/
@@ -544,7 +573,7 @@ int main(int argc, char** argv) {
             if (
                 final_invalid_values!=0U ||
                 std::abs(final_carbon_rel_residual)>1.0e-10 ||
-                std::abs(final_nitrogen_rel_residual)>1.0e-10 ||
+                std::abs(final_planet_nitrogen_rel_residual)>1.0e-10 ||
                 final_vegetation_ratio<0.50 ||
                 final_vegetation_ratio>4.0 ||
                 final_collapsed_area_fraction>0.25 ||

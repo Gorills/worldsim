@@ -15,10 +15,16 @@ climate.surface
     -> ecology.vegetation
     -> ecology.fire
     -> ecology.fauna
-    -> ecology.carbon_cycle
+       -> ecology.carbon_cycle
+       -> ecology.nitrogen_cycle
 ```
 
-This ordering gives geology the current terrestrial runoff, gives soil the current regolith state, gives vegetation the resulting soil state, lets fauna react to the post-fire forage state in the same daily window, then closes realized NPP, heterotrophic respiration, fauna respiration and fire emissions against the authoritative atmospheric/ocean carbon reservoirs.
+The two final daily closures are independent siblings after the post-fire/fauna
+state: carbon closes realized NPP/respiration/fire emissions against the
+atmosphere/ocean carbon reservoirs, while nitrogen moves current leaching and
+fire-N fluxes into global ocean/reactive-atmosphere reservoirs and applies
+fixation/deposition return fluxes. Their resource sets do not require an order
+between them.
 
 Snow-albedo coupling adds `climate.snow_cover_fraction` as a projected forcing
 for vegetation and fire. Grass loses all exposed productive area at complete
