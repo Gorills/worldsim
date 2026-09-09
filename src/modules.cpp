@@ -116,6 +116,75 @@ double land_fraction_from_elevation(double elevation_m) {
 
 constexpr std::uint8_t kCoastalReferenceLevel=4;
 
+std::vector<CellId> geography_reference_cells(CellId cell) {
+    std::vector<CellId> cells{cell};
+    while (!cells.empty() &&
+           cells.front().level()<kCoastalReferenceLevel) {
+        std::vector<CellId> refined;
+        refined.reserve(cells.size()*4U);
+        for (CellId current:cells) {
+            const auto children=current.children();
+            refined.insert(
+                refined.end(),
+                children.begin(),
+                children.end()
+            );
+        }
+        cells=std::move(refined);
+    }
+    return cells;
+}
+
+GeologyState initial_geology_state_for_cell(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell
+) {
+    const double cell_area=world.topology().area_m2(cell);
+    const Vec3d cell_direction=world.topology().center_unit(cell);
+    if (cell.level()>=kCoastalReferenceLevel)
+        return geology.initial_state(cell_direction,cell_area);
+
+    double represented_area=0.0;
+    double crust_thickness_area=0.0;
+    double crust_density_weighted=0.0;
+    double crust_density_weight=0.0;
+    double continental_area=0.0;
+    double age_area=0.0;
+    double sediment_mass=0.0;
+    double regolith_area=0.0;
+
+    for (CellId sample:geography_reference_cells(cell)) {
+        const double sample_area=world.topology().area_m2(sample);
+        const GeologyState state=geology.initial_state(
+            world.topology().center_unit(sample),
+            sample_area
+        );
+        represented_area+=sample_area;
+        crust_thickness_area+=state.crust_thickness_m*sample_area;
+        const double density_weight=
+            state.crust_thickness_m*sample_area;
+        crust_density_weighted+=
+            state.crust_density_kg_m3*density_weight;
+        crust_density_weight+=density_weight;
+        continental_area+=state.continental_fraction*sample_area;
+        age_area+=state.lithosphere_age_ma*sample_area;
+        sediment_mass+=state.sediment_mass_kg;
+        regolith_area+=state.regolith_thickness_m*sample_area;
+    }
+    if (!(represented_area>0.0) || !(crust_density_weight>0.0))
+        return geology.initial_state(cell_direction,cell_area);
+
+    return {
+        crust_thickness_area/represented_area,
+        crust_density_weighted/crust_density_weight,
+        continental_area/represented_area,
+        age_area/represented_area,
+        sediment_mass,
+        regolith_area/represented_area
+    };
+}
+
 struct CoastalReferenceSample {
     double area_m2{};
     double elevation_m{};
@@ -137,32 +206,19 @@ CoastalReferenceProfile build_coastal_reference_profile(
     CoastalReferenceProfile profile;
     const double cell_area=world.topology().area_m2(cell);
     const Vec3d cell_direction=world.topology().center_unit(cell);
-    const GeologyState initial_cell=geology.initial_state(
-        cell_direction,
-        cell_area
-    );
+    const GeologyState initial_cell=
+        initial_geology_state_for_cell(
+            world,
+            geology,
+            cell
+        );
     profile.center_elevation_m=geology.surface_elevation_m(
         initial_cell,
         cell_direction,
         cell_area
     );
 
-    std::vector<CellId> cells{cell};
-    while (!cells.empty() &&
-           cells.front().level()<kCoastalReferenceLevel) {
-        std::vector<CellId> refined;
-        refined.reserve(cells.size()*4U);
-        for (CellId current:cells) {
-            const auto children=current.children();
-            refined.insert(
-                refined.end(),
-                children.begin(),
-                children.end()
-            );
-        }
-        cells=std::move(refined);
-    }
-
+    const std::vector<CellId> cells=geography_reference_cells(cell);
     profile.samples.reserve(cells.size());
     for (CellId sample:cells) {
         const double sample_area=world.topology().area_m2(sample);
@@ -306,10 +362,12 @@ void initialize_geology(WorldState& world, const FieldRegistry& r) {
     const GeologyFieldIds ids=geology_fields(r);
     const GeologyModel geology(world.seed());
     for (CellId cell:world.active_cells()) {
-        const GeologyState state=geology.initial_state(
-            world.topology().center_unit(cell),
-            world.topology().area_m2(cell)
-        );
+        const GeologyState state=
+            initial_geology_state_for_cell(
+                world,
+                geology,
+                cell
+            );
         write_geology_state(fs,cell,ids,state);
         fs.set(cell,ids.erosion_rate,0.0);
     }
