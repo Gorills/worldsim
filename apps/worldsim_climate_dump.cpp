@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
         history
             <<"day,atmospheric_water_m3,ocean_water_m3,land_water_m3,"
             <<"planet_water_residual_m3,surface_heat_j,"
-            <<"energy_residual_j,absorbed_solar_j,outgoing_longwave_j,"
+            <<"energy_residual_j,absorbed_solar_j,outgoing_longwave_j,co2_forcing_j,"
             <<"land_temperature_k,ocean_temperature_k,"
             <<"precipitation_m3_day,evaporation_m3_day,"
             <<"land_snow_cover_fraction,land_albedo\n";
@@ -108,7 +108,8 @@ int main(int argc, char** argv) {
             const double water_residual=water-initial_water;
             const double expected_heat=
                 initial_heat+budget.absorbed_solar_j-
-                budget.outgoing_longwave_j;
+                budget.outgoing_longwave_j+
+                budget.co2_forcing_j;
             const double energy_residual=
                 climate.total_surface_heat_j()-expected_heat;
             maximum_water_residual=std::max(
@@ -154,6 +155,7 @@ int main(int argc, char** argv) {
                 <<climate.total_surface_heat_j()<<','<<energy_residual<<','
                 <<budget.absorbed_solar_j<<','
                 <<budget.outgoing_longwave_j<<','
+                <<budget.co2_forcing_j<<','
                 <<land_temperature/std::max(1.0,land_area)<<','
                 <<ocean_temperature/std::max(1.0,ocean_area)<<','
                 <<precipitation<<','<<evaporation<<','
