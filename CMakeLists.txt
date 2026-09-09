@@ -148,6 +148,15 @@ if(WORLDSIM_BUILD_TESTS)
         --assert-stable
         --output ${CMAKE_BINARY_DIR}/long-run-smoke.csv
     )
+    add_test(
+      NAME worldsim_long_run_no_fauna_smoke
+      COMMAND worldsim_long_run
+        --years 1
+        --level 1
+        --mode no-fauna
+        --assert-stable
+        --output ${CMAKE_BINARY_DIR}/long-run-no-fauna-smoke.csv
+    )
   endif()
 endif()
 

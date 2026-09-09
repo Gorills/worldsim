@@ -64,6 +64,19 @@ daily energy/water ledgers and reference-cover climate maps to
 `out/climate-diagnostics`. Its process and conservation boundary is documented
 in [the climate contract](docs/CLIMATE.md).
 
+## Inspect stability across seeds and resolutions
+
+```bash
+make stability
+```
+
+This runs the existing long-run simulation over the default coupled matrix
+(seeds `0,42,999`, levels `1,2`, 100 years) and writes per-case histories,
+a final-case matrix, adjacent-resolution deltas and a JSON summary to
+`out/stability-matrix`. The Python 3 driver only orchestrates the existing C++
+`worldsim_long_run` executable; model behavior and acceptance remain in the
+C++ harness. See [the long-run stability contract](docs/LONG_RUN_STABILITY.md).
+
 ## Inspect wildfire
 
 The simulation laboratory (`make lab`) discovers the wildfire fields through
