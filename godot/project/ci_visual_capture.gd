@@ -6,8 +6,10 @@ const NEAR_BUILD_STEPS := 64
 const DISTANT_BUILD_STEPS := 16
 
 var scene: Node
+var capture_start_ms := 0
 
 func _initialize() -> void:
+    capture_start_ms = Time.get_ticks_msec()
     if DisplayServer.get_name() == "headless":
         push_error("Visual capture requires a rendered display driver, not --headless")
         quit(1)
@@ -106,12 +108,14 @@ func _prepare_and_capture() -> void:
         return
 
     print(
-        "WORLDSIM_GODOT_VISUAL_OK display=%s size=%dx%d luminance_range=%.4f path=%s"
+        "WORLDSIM_GODOT_VISUAL_OK display=%s size=%dx%d luminance_range=%.4f capture_ms=%d fps=%d path=%s"
         % [
             DisplayServer.get_name(),
             image.get_width(),
             image.get_height(),
             luminance_max - luminance_min,
+            Time.get_ticks_msec() - capture_start_ms,
+            Engine.get_frames_per_second(),
             output_path,
         ]
     )
