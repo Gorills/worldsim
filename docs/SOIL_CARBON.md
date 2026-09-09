@@ -5,7 +5,7 @@
 > the magic forcing timebase correction introduced epoch 24, the wildfire
 > burn-cap timebase correction introduced epoch 25, and the active-fire
 > persistence timebase correction introduced epoch 26, and LOD-invariant field-command
-> routing raises the current combined-world epoch to 27.
+> routing introduced epoch 27, and the parent-consistent LOD hysteresis correction raises the current combined-world epoch to 28.
 > The Soil-carbon-v1 execution record below remains historical evidence for
 > epoch 20.
 
