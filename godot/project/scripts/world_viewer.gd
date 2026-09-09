@@ -41,6 +41,8 @@ const MOUNTAIN_DEMO_CENTER_EAST_M := 5_573_000.0
 const MOUNTAIN_DEMO_CENTER_NORTH_M := -1_800_300.0
 const MOUNTAIN_DEMO_SAMPLE_SPACING_M := 625.0
 const MOUNTAIN_DEMO_RESOLUTION := 65
+const MOUNTAIN_VIEW_MIN_DISTANCE_M := 8_000.0
+const MOUNTAIN_VIEW_MAX_DISTANCE_M := 12_000.0
 
 var terrain_material: StandardMaterial3D
 var tree_mesh: Mesh
@@ -413,24 +415,40 @@ func _select_mountain_demo_spawn() -> bool:
     if heights.size() != MOUNTAIN_DEMO_RESOLUTION * MOUNTAIN_DEMO_RESOLUTION:
         return false
 
-    var min_index := 0
     var max_index := 0
     for i in range(1, heights.size()):
-        if float(heights[i]) < float(heights[min_index]):
-            min_index = i
         if float(heights[i]) > float(heights[max_index]):
             max_index = i
 
-    var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
-    var min_x := min_index % MOUNTAIN_DEMO_RESOLUTION
-    var min_z := floori(float(min_index) / float(MOUNTAIN_DEMO_RESOLUTION))
     var max_x := max_index % MOUNTAIN_DEMO_RESOLUTION
     var max_z := floori(float(max_index) / float(MOUNTAIN_DEMO_RESOLUTION))
+    var view_index := -1
+    for i in range(heights.size()):
+        var x := i % MOUNTAIN_DEMO_RESOLUTION
+        var z := floori(float(i) / float(MOUNTAIN_DEMO_RESOLUTION))
+        var dx_m := float(x - max_x) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+        var dz_m := float(z - max_z) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+        var distance_m := Vector2(dx_m, dz_m).length()
+        var height_m := float(heights[i])
+        if (
+            distance_m < MOUNTAIN_VIEW_MIN_DISTANCE_M
+            or distance_m > MOUNTAIN_VIEW_MAX_DISTANCE_M
+            or height_m < 0.0
+        ):
+            continue
+        if view_index < 0 or height_m < float(heights[view_index]):
+            view_index = i
+    if view_index < 0:
+        return false
+
+    var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
+    var view_x := view_index % MOUNTAIN_DEMO_RESOLUTION
+    var view_z := floori(float(view_index) / float(MOUNTAIN_DEMO_RESOLUTION))
     origin_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
-        float(min_x) - half
+        float(view_x) - half
     ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
     origin_north_m = MOUNTAIN_DEMO_CENTER_NORTH_M + (
-        float(min_z) - half
+        float(view_z) - half
     ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
     mountain_target_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
         float(max_x) - half
@@ -658,7 +676,8 @@ func _build_chunk_mesh(
                 float(snow[source_i]),
                 float(flooded[source_i]),
                 float(fire_active[source_i]),
-                float(fire_burned[source_i])
+                float(fire_burned[source_i]),
+                1.0 - clampf(normals[i].y, 0.0, 1.0)
             )
 
     # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is
