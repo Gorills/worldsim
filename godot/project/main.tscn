@@ -76,7 +76,11 @@ environment = SubResource("Environment_world")
 rotation_degrees = Vector3(-48, -32, 0)
 light_color = Color(1, 0.93, 0.84, 1)
 light_energy = 1.55
-shadow_enabled = false
+shadow_enabled = true
+directional_shadow_mode = 1
+directional_shadow_max_distance = 20000.0
+directional_shadow_fade_start = 0.9
+shadow_blur = 1.15
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
