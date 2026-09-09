@@ -591,6 +591,69 @@ void spread_resolves_refined_neighbor_region() {
     );
 }
 
+struct NaturalIgnition {
+    Tick day{};
+    double burned_area_m2{};
+};
+
+NaturalIgnition first_natural_ignition(
+    std::uint64_t seed,
+    std::uint8_t level
+) {
+    auto simulation=make_default_simulation(
+        seed,SimulationConfig{level,level,3'600.0}
+    );
+    clear_and_dry(*simulation);
+    for (CellId cell:simulation->world().active_cells())
+        set_fuel(*simulation,cell);
+
+    for (Tick day=0;day<256U;++day) {
+        simulation->world().set_tick(day*24U+23U);
+        run_fire(*simulation);
+        const auto events=simulation->world().drain_events();
+        for (const auto& event:events) {
+            if (event.type=="ecology.fire_ignited")
+                return {day,event.magnitude};
+        }
+    }
+    throw std::runtime_error(
+        "bounded dry/fueled run produced no natural ignition"
+    );
+}
+
+void natural_ignition_is_resolution_consistent() {
+    const auto same_ignition=[](
+        const NaturalIgnition& a,
+        const NaturalIgnition& b
+    ) {
+        return
+            a.day==b.day &&
+            std::abs(a.burned_area_m2-b.burned_area_m2)<=
+                1.0e-12*std::max({
+                    1.0,
+                    std::abs(a.burned_area_m2),
+                    std::abs(b.burned_area_m2)
+                });
+    };
+
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const NaturalIgnition l2=first_natural_ignition(seed,2);
+        const NaturalIgnition l3=first_natural_ignition(seed,3);
+        const NaturalIgnition l4=first_natural_ignition(seed,4);
+        check(
+            same_ignition(l2,l3) && same_ignition(l3,l4),
+            "L2/L3/L4 natural ignition is not resolution-consistent"
+        );
+    }
+
+    const NaturalIgnition l4=first_natural_ignition(0,4);
+    const NaturalIgnition l5=first_natural_ignition(0,5);
+    check(
+        same_ignition(l4,l5),
+        "L4/L5 natural ignition changed under spatial refinement"
+    );
+}
+
 void natural_ignition_is_stateless_and_deterministic() {
     auto first=make_default_simulation(
         7005,SimulationConfig{1,1,3'600.0}
@@ -646,7 +709,7 @@ void snapshot_continuation_includes_fire_state() {
 
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"fire snapshot header is unexpectedly short");
-    check(snapshot[8]==std::byte{36},"unexpected current snapshot epoch");
+    check(snapshot[8]==std::byte{37},"unexpected current snapshot epoch");
     auto restored=make_default_simulation(
         7004,SimulationConfig{1,2,3'600.0}
     );
@@ -668,6 +731,7 @@ int main() {
         wet_weather_suppresses_fire();
         snow_cover_suppresses_fire();
         spread_resolves_refined_neighbor_region();
+        natural_ignition_is_resolution_consistent();
         natural_ignition_is_stateless_and_deterministic();
         snapshot_continuation_includes_fire_state();
         std::cout<<"fire_tests: OK\n";

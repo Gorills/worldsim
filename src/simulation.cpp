@@ -264,7 +264,7 @@ std::vector<std::byte> Simulation::save_snapshot() const {
     BinaryWriter w;
     const std::array<char,8> magic{'W','S','I','M','S','N','A','P'};
     for (char c:magic) w.pod(c);
-    w.pod<std::uint32_t>(36); // versioned, little-endian wire format
+    w.pod<std::uint32_t>(37); // versioned, little-endian wire format
     w.pod(fields_.schema_hash());
     w.pod(seed_);
     w.pod(config_.base_level);
@@ -327,7 +327,7 @@ void Simulation::load_snapshot(std::span<const std::byte> data) {
     BinaryReader r(data);
     const std::array<char,8> expected{'W','S','I','M','S','N','A','P'};
     for (char c:expected) if (r.pod<char>()!=c) throw std::runtime_error("invalid snapshot magic");
-    if (r.pod<std::uint32_t>()!=36) throw std::runtime_error("unsupported snapshot version");
+    if (r.pod<std::uint32_t>()!=37) throw std::runtime_error("unsupported snapshot version");
     if (r.pod<std::uint64_t>()!=fields_.schema_hash()) throw std::runtime_error("snapshot field schema mismatch");
     const auto snap_seed=r.pod<std::uint64_t>();
     if (snap_seed!=seed_) throw std::runtime_error("snapshot seed mismatch");
