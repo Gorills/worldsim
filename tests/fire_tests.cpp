@@ -83,6 +83,7 @@ void clear_and_dry(Simulation& simulation) {
                  "ecology.fire_burned_fraction",
                  "ecology.fire_burned_area_m2",
                  "ecology.fire_emitted_carbon_kg",
+                 "ecology.fire_emission_kg_day",
                  "ecology.pyrogenic_carbon_kg"
              }) {
             fields.set(cell,field(simulation,key),0.0);
@@ -171,6 +172,16 @@ void controlled_fire_closes_carbon() {
             cell,field(*simulation,"ecology.fire_emitted_carbon_kg")
         )>0.0,
         "controlled fire produced no emission carbon"
+    );
+    near(
+        fields.get(
+            cell,field(*simulation,"ecology.fire_emission_kg_day")
+        ),
+        fields.get(
+            cell,field(*simulation,"ecology.fire_emitted_carbon_kg")
+        ),
+        1.0e-15,
+        "fire emission rate disagrees with its one-day cumulative ledger"
     );
     check(
         fields.get(
@@ -578,7 +589,7 @@ void snapshot_continuation_includes_fire_state() {
 
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"fire snapshot header is unexpectedly short");
-    check(snapshot[8]==std::byte{29},"unexpected current snapshot epoch");
+    check(snapshot[8]==std::byte{30},"unexpected current snapshot epoch");
     auto restored=make_default_simulation(
         7004,SimulationConfig{1,2,3'600.0}
     );

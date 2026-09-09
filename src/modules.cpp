@@ -1,4 +1,5 @@
 #include "worldsim/modules.hpp"
+#include "worldsim/climate.hpp"
 #include "worldsim/geology.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/soil_carbon.hpp"
@@ -1056,6 +1057,9 @@ public:
           emitted_(
               require_field(r,"ecology.fire_emitted_carbon_kg")
           ),
+          emission_rate_(
+              require_field(r,"ecology.fire_emission_kg_day")
+          ),
           char_(require_field(r,"ecology.pyrogenic_carbon_kg")) {}
 
     std::string_view id() const override { return "ecology.fire"; }
@@ -1097,12 +1101,15 @@ public:
                     "field:ecology.fire_burned_fraction",
                     "field:ecology.fire_burned_area_m2",
                     "field:ecology.fire_emitted_carbon_kg",
+                    "field:ecology.fire_emission_kg_day",
                     "field:ecology.pyrogenic_carbon_kg"
                 }};
     }
 
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
+        for (CellId cell:ctx.world.active_cells())
+            fs.set(cell,emission_rate_,0.0);
 
         struct FireState {
             double land_area_m2{};
@@ -1337,6 +1344,7 @@ public:
             fs.set(cell,litter_,std::max(0.0,litter_after));
             fs.set(cell,carbon_,vegetation_after);
             fs.add(cell,emitted_,emitted);
+            fs.add(cell,emission_rate_,emitted/ctx.dt_days);
             fs.add(cell,char_,charred);
             fs.add(
                 cell,
@@ -1425,7 +1433,7 @@ private:
     FieldId land_,regolith_,water_,flooded_,snow_cover_,litter_;
     std::array<FieldId,3> pft_;
     FieldId carbon_,active_area_,active_,danger_,burned_,burned_area_;
-    FieldId emitted_,char_;
+    FieldId emitted_,emission_rate_,char_;
 };
 
 // Reduced standing-biomass pyramid used to bound the two demo trophic guilds.
@@ -1447,6 +1455,9 @@ public:
           litter_(require_field(r,"ecology.litter_carbon_kg")),
           respired_(require_field(
               r,"ecology.fauna_respired_carbon_kg"
+          )),
+          respiration_rate_(require_field(
+              r,"ecology.fauna_respiration_kg_day"
           )),
           fire_enabled_(fire_enabled) {}
 
@@ -1475,6 +1486,7 @@ public:
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
                     "field:ecology.fauna_respired_carbon_kg",
+                    "field:ecology.fauna_respiration_kg_day",
                     "store:ecology.cohorts"
                 }};
     }
@@ -1482,6 +1494,8 @@ public:
     void step(SystemContext& ctx) override {
         auto& fs=ctx.world.stores().get<FieldStore>();
         auto& cs=ctx.world.stores().get<CohortStore>();
+        for (CellId cell:ctx.world.active_cells())
+            fs.set(cell,respiration_rate_,0.0);
         constexpr std::array<double,3> forage_preference{
             1.0,0.55,0.12
         };
@@ -1642,6 +1656,10 @@ public:
                     herbivore_density_mortality
             );
             fs.add(cell,respired_,herbivore_respired);
+            fs.add(
+                cell,respiration_rate_,
+                herbivore_respired/ctx.dt_days
+            );
             scale_group(
                 herbivores,
                 herbivore_carbon_before,
@@ -1741,6 +1759,10 @@ public:
                     carnivore_density_mortality
             );
             fs.add(cell,respired_,carnivore_respired);
+            fs.add(
+                cell,respiration_rate_,
+                carnivore_respired/ctx.dt_days
+            );
             for (Cohort* carnivore:carnivores) {
                 const double before=carnivore->count;
                 if (carnivore_carbon_before>0.0)
@@ -1937,8 +1959,83 @@ public:
 private:
     FieldId land_;
     std::array<FieldId,3> pft_;
-    FieldId carbon_,litter_,respired_;
+    FieldId carbon_,litter_,respired_,respiration_rate_;
     bool fire_enabled_{};
+};
+
+class CarbonCycleSystem final : public ISimSystem {
+public:
+    CarbonCycleSystem(
+        const FieldRegistry& r,
+        bool fire_enabled,
+        bool fauna_enabled
+    ):
+        npp_(require_field(r,"ecology.npp_kg_day")),
+        heterotrophic_(require_field(
+            r,"ecology.heterotrophic_respiration_kg_day"
+        )),
+        fire_emission_(require_field(
+            r,"ecology.fire_emission_kg_day"
+        )),
+        fauna_respiration_(require_field(
+            r,"ecology.fauna_respiration_kg_day"
+        )),
+        fire_enabled_(fire_enabled),
+        fauna_enabled_(fauna_enabled) {}
+
+    std::string_view id() const override {
+        return "ecology.carbon_cycle";
+    }
+    Tick cadence_ticks() const override { return 24; }
+    std::vector<std::string> after() const override {
+        if (fauna_enabled_) return {"ecology.fauna"};
+        if (fire_enabled_) return {"ecology.fire"};
+        return {"ecology.vegetation"};
+    }
+    SystemAccess access() const override {
+        return {
+            {
+                "field:ecology.npp_kg_day",
+                "field:ecology.heterotrophic_respiration_kg_day",
+                "field:ecology.fire_emission_kg_day",
+                "field:ecology.fauna_respiration_kg_day",
+                "store:climate.state"
+            },
+            {
+                "store:climate.state",
+                "field:climate.atmospheric_co2_ppm",
+                "field:climate.co2_radiative_forcing_w_m2"
+            }
+        };
+    }
+    void step(SystemContext& ctx) override {
+        const auto& fs=ctx.world.stores().get<FieldStore>();
+        const auto sum=[&](FieldId field) {
+            return std::accumulate(
+                fs.column(field).begin(),
+                fs.column(field).end(),
+                0.0
+            );
+        };
+        const double terrestrial_to_atmosphere_kg=
+            (
+                sum(heterotrophic_)+
+                sum(fire_emission_)+
+                sum(fauna_respiration_)-
+                sum(npp_)
+            )*ctx.dt_days;
+        auto& climate=ctx.world.stores().get<ClimateStore>();
+        climate.advance_carbon(
+            terrestrial_to_atmosphere_kg,
+            ctx.dt_days
+        );
+        climate.project_carbon(ctx.world,ctx.fields);
+    }
+
+private:
+    FieldId npp_,heterotrophic_,fire_emission_,fauna_respiration_;
+    bool fire_enabled_{};
+    bool fauna_enabled_{};
 };
 
 } // namespace
@@ -2005,12 +2102,14 @@ void EcologyModule::register_fields(FieldRegistry& r) {
     r.register_field({"ecology.vegetation_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.npp_kg_day","kgC/day",FieldSemantics::Extensive,0.0,-1.0e30,1.0e30});
     r.register_field({"ecology.fauna_respired_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.fauna_respiration_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_active_area_m2","m2",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_active_fraction","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"ecology.fire_danger","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"ecology.fire_burned_fraction","1",FieldSemantics::Intensive,0.0,0.0,1.0});
     r.register_field({"ecology.fire_burned_area_m2","m2",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.fire_emitted_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
+    r.register_field({"ecology.fire_emission_kg_day","kgC/day",FieldSemantics::Extensive,0.0,0.0,1.0e30});
     r.register_field({"ecology.pyrogenic_carbon_kg","kgC",FieldSemantics::Extensive,0.0,0.0,1.0e30});
 }
 void EcologyModule::register_stores(StateStoreRegistry& stores, const FieldRegistry&) { stores.emplace<CohortStore>(); }
@@ -2021,6 +2120,9 @@ void EcologyModule::register_systems(Scheduler& s, const FieldRegistry& r) {
         s.add(std::make_unique<FireSystem>(r));
     if (config_.enable_fauna)
         s.add(std::make_unique<FaunaSystem>(r,config_.enable_fire));
+    s.add(std::make_unique<CarbonCycleSystem>(
+        r,config_.enable_fire,config_.enable_fauna
+    ));
 }
 void EcologyModule::initialize(WorldState& world, const FieldRegistry& r) {
     auto& fs=world.stores().get<FieldStore>();

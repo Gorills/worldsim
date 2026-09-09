@@ -8,7 +8,7 @@
 > grazing-timestep correction introduced epoch 23, the magic forcing
 > timebase correction introduced epoch 24, and the wildfire burn-cap
 > timebase correction introduced epoch 25, the active-fire persistence correction introduced epoch 26, and LOD-invariant field-command routing introduced epoch 27, the parent-consistent LOD hysteresis correction raised the combined-world epoch to 28,
-and the resolution-aware lateral heat-transport correction raises the current epoch to 29.
+the resolution-aware lateral heat-transport correction raised it to 29, and Carbon cycle v1 raises the current combined-world epoch to 30. Carbon-cycle state and assumptions are documented separately in `CARBON_CYCLE.md`.
 
 ## Decision and verified baseline (2026-09-08, before implementation)
 
@@ -61,7 +61,7 @@ and not evidence that WorldSim reproduces their fidelity.
 `ClimateStore` owns a persistent **uniform reference cover** at the initial
 simulation base level, analogous to the domain-resolution choice already made
 by `HydrologyStore`. Each reference node owns land and ocean surface
-temperature, atmospheric water volume and the stochastic weather anomaly.
+temperature, atmospheric water volume and the stochastic weather anomaly. The same store also owns global atmospheric and ocean carbon reservoirs; those are scalar planetary stocks rather than per-node copies.
 Reference geometry fixes area, initial base-cover elevation and thermal
 land/ocean partition; derived solar, wind, humidity, precipitation and exchange
 diagnostics are projected to active fields.
@@ -88,6 +88,7 @@ phase, including polar night/day. Land and ocean are separate heat reservoirs:
 
 ```text
 C dT/dt = absorbed shortwave - linearized outgoing longwave
+          + CO2 radiative forcing
           + conservative horizontal heat exchange
 ```
 
@@ -98,9 +99,10 @@ conductance from the shared-interface length, center distance and symmetric
 areal heat capacity. Each link solves its two-reservoir relaxation analytically,
 so exchange is bounded by pair equilibrium and exactly antisymmetric before
 floating-point roundoff. This replaces the former fixed per-neighbor relaxation
-fraction, whose effective diffusivity changed with cell size. Radiation is an
-external source/sink recorded in a cumulative energy ledger; horizontal
-transport is internal and must not change total stored heat.
+fraction, whose effective diffusivity changed with cell size. Radiation is an external source/sink recorded in a cumulative energy ledger;
+Carbon cycle v1 adds its logarithmic CO2 term to that same ledger as
+`co2_forcing_j`. Horizontal transport is internal and must not change total
+stored heat.
 
 The existing magic temperature anomaly remains an optional additive forcing at
 projection time. A geography+climate+hydrology world must build and run without
@@ -210,8 +212,10 @@ to 18.9% represented-land-area difference for these seeds, so this correction
 does not claim complete spatial convergence.
 
 Because the transport operator changes future authoritative state from the same
-snapshot bytes, the combined-world snapshot compatibility epoch advances from
-28 to 29 even though the ClimateStore binary layout remains version 2.
+snapshot bytes, the combined-world snapshot compatibility epoch advanced from
+28 to 29 even though that correction kept the ClimateStore binary layout at
+version 2. Carbon cycle v1 subsequently changes the store layout to version 3
+and advances the combined-world epoch to 30.
 
 ## Executed evidence — 2026-09-08
 

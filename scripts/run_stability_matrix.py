@@ -35,6 +35,8 @@ COMPARISON_METRICS = (
     "mean_fertility",
     "mean_land_temp_k",
     "mean_land_precip_mm_day",
+    "atmospheric_co2_ppm",
+    "planet_carbon_rel_residual",
 )
 
 VALID_MODES = (

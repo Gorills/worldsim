@@ -31,6 +31,7 @@ struct ClimateNode {
 struct ClimateBudget {
     double absorbed_solar_j{};
     double outgoing_longwave_j{};
+    double co2_forcing_j{};
     double land_precipitation_m3{};
     double ocean_precipitation_m3{};
     double land_evaporation_m3{};
@@ -44,7 +45,7 @@ class ClimateStore final : public IStateStore {
 public:
     static constexpr std::string_view kKey="climate.state";
     [[nodiscard]] std::string_view key() const override { return kKey; }
-    [[nodiscard]] std::uint32_t snapshot_version() const override { return 2; }
+    [[nodiscard]] std::uint32_t snapshot_version() const override { return 3; }
     void on_add_cell(CellId cell) override;
     void on_remove_cell(CellId) override {}
     void on_refine(CellId, std::span<const CellId>, const CubeSphereTopology&) override {}
@@ -56,11 +57,19 @@ public:
     void initialize(WorldState&, const FieldRegistry&);
     void advance(WorldState&, const FieldRegistry&, double dt_days);
     void exchange_surface(WorldState&, const FieldRegistry&, double dt_days);
+    void advance_carbon(double terrestrial_to_atmosphere_kg, double dt_days);
     void project(WorldState&, const FieldRegistry&) const;
+    void project_carbon(WorldState&, const FieldRegistry&) const;
 
     [[nodiscard]] const std::vector<ClimateNode>& nodes() const { return nodes_; }
     [[nodiscard]] const ClimateBudget& budget() const { return budget_; }
     [[nodiscard]] double ocean_water_m3() const { return ocean_water_m3_; }
+    [[nodiscard]] double atmospheric_carbon_kg() const {
+        return atmospheric_carbon_kg_;
+    }
+    [[nodiscard]] double ocean_carbon_kg() const { return ocean_carbon_kg_; }
+    [[nodiscard]] double atmospheric_co2_ppm() const;
+    [[nodiscard]] double co2_radiative_forcing_w_m2() const;
     [[nodiscard]] double total_atmospheric_water_m3() const;
     [[nodiscard]] double total_surface_heat_j() const;
     [[nodiscard]] std::size_t node_index(CellId active_cell) const;
@@ -88,10 +97,13 @@ private:
     std::vector<Link> links_;
     ClimateBudget budget_;
     double ocean_water_m3_{};
+    double atmospheric_carbon_kg_{};
+    double ocean_carbon_kg_{};
 };
 
 // Coupled default-world inventory. Climate precipitation/evaporation ledgers
 // are deliberately excluded because they are flux histories, not stocks.
 double total_planet_water_m3(const WorldState&, const FieldRegistry&);
+double total_planet_carbon_kg(const WorldState&, const FieldRegistry&);
 
 } // namespace worldsim

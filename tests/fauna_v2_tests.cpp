@@ -508,6 +508,10 @@ void test_fauna_carbon_budget_and_starvation() {
             respired_before,
         "feeding fauna did not report maintenance respiration"
     );
+    check(
+        sum_field(*simulation,"ecology.fauna_respiration_kg_day")>0.0,
+        "feeding fauna did not report a current respiration flux"
+    );
 
     auto starving=make_default_simulation(5050,config);
     clear_plants(*starving);
@@ -575,7 +579,7 @@ void test_snapshot_epoch_current() {
     const auto snapshot=sim->save_snapshot();
     check(snapshot.size()>11U,"snapshot header is unexpectedly short");
     check(
-        snapshot[8]==std::byte{29},
+        snapshot[8]==std::byte{30},
         "unexpected authoritative snapshot epoch"
     );
 

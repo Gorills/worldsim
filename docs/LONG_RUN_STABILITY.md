@@ -84,7 +84,7 @@ Each row is one simulation year. It includes:
 - annual and cumulative burned area, emissions, char and active-fire area;
 - herbivore/carnivore counts plus derived fauna carbon;
 - cumulative fauna respiration;
-- area-weighted land climate, water/energy residuals and invalid values;
+- area-weighted land climate, atmospheric CO2, closed planet-carbon residual, water/energy residuals and invalid values;
 - the fraction of initially vegetated land whose biomass fell below 10% of its
   own initial density.
 
@@ -100,6 +100,8 @@ coarse process has neither.
 conditions is violated at the end of the requested run:
 
 - any registered field is non-finite or outside its descriptor bounds;
+- the closed planet-carbon inventory drifts by more than `1e-10` relative to
+  its initialized stock;
 - global vegetation is below 50% or above 400% of its initialized stock;
 - more than 25% of initially vegetated land falls below 10% of its own initial
   density;
@@ -185,8 +187,11 @@ forage ceiling, then initialize carnivores from the same 8% trophic ratio. This
 keeps predators present while avoiding the artificial century-scale drawdown
 caused by starting both guilds at the no-predator herbivore ceiling.
 
-The integrated daily test closes vegetation + litter + soil + fauna + fire
-stocks and cumulative boundary ledgers against reported NPP. A separate
+The legacy integrated ecology test still closes vegetation + litter + soil +
+fauna + fire stocks and cumulative boundary ledgers against reported NPP. The
+planetary climate regression additionally closes atmosphere + ocean + live
+vegetation + litter + soil + fauna + pyrogenic carbon as stocks, explicitly
+excluding cumulative respiration/fire ledgers from the inventory. A separate
 overcrowding regression verifies that abundant food no longer implies
 unbounded population growth.
 
@@ -221,7 +226,8 @@ Long runs are now useful as regression evidence. They still do not establish
 real-world accuracy. Fire coefficients should be calibrated only after the
 no-fire baseline remains stable across the target seed/resolution matrix.
 After that gate, compare annual burned fraction, NPP, biome/PFT composition,
-soil-carbon turnover and trophic biomass against explicit game targets or
-observational datasets. Unique burn footprint, fire-return interval, nutrient
-budgets, aquatic food webs and atmospheric fauna-carbon exchange remain out of
-scope.
+soil-carbon turnover, atmospheric CO2 and trophic biomass against explicit game
+targets or observational datasets. Carbon cycle v1 is an engineering closure,
+not an Earth calibration: geologic/fossil carbon, carbonate chemistry, explicit
+ocean circulation, nutrient budgets, aquatic food webs and unique burn
+footprints remain out of scope.

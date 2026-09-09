@@ -15,9 +15,10 @@ climate.surface
     -> ecology.vegetation
     -> ecology.fire
     -> ecology.fauna
+    -> ecology.carbon_cycle
 ```
 
-This ordering gives geology the current terrestrial runoff, gives soil the current regolith state, gives vegetation the resulting soil state, and lets fauna react to the post-fire forage state in the same daily window.
+This ordering gives geology the current terrestrial runoff, gives soil the current regolith state, gives vegetation the resulting soil state, lets fauna react to the post-fire forage state in the same daily window, then closes realized NPP, heterotrophic respiration, fauna respiration and fire emissions against the authoritative atmospheric/ocean carbon reservoirs.
 
 Snow-albedo coupling adds `climate.snow_cover_fraction` as a projected forcing
 for vegetation and fire. Grass loses all exposed productive area at complete
@@ -115,11 +116,13 @@ the adaptive active-cover resolver. Fire removes PFT-specific live biomass and
 litter, returns uncombusted mortality to litter, and transfers combusted carbon
 to explicit emission and pyrogenic-carbon ledgers.
 
-The fire transfer itself closes carbon, and Soil carbon v1 now closes its own
-litter/soil/respiration boundary. Fauna now closes its reduced body-carbon
-transfers against litter and a respiration ledger, but the wider ecology still
-lacks a coupled atmospheric/ocean carbon cycle. The complete field, LOD,
-accounting, reference and unsupported-claim contract is in [FIRE.md](FIRE.md).
+The fire transfer itself closes carbon, Soil carbon v1 closes its own
+litter/soil/respiration boundary, and fauna closes reduced body-carbon transfers
+against litter and respiration. Carbon cycle v1 converts the realized daily
+boundary fluxes into an authoritative atmosphere/ocean stock transition without
+double-counting the cumulative audit ledgers. The fire-specific contract is in
+[FIRE.md](FIRE.md); the planetary accounting boundary is in
+[CARBON_CYCLE.md](CARBON_CYCLE.md).
 
 ## Executable validation
 
@@ -195,8 +198,8 @@ The current ecology slice does **not** yet provide:
 - individual trajectories, home ranges, movement memory, explicit barriers, long-distance dispersal or seasonal migration;
 - aquatic food webs;
 - disease, parasites or decomposer cohorts;
-- closed global carbon accounting including atmosphere/ocean reservoirs;
-- Earth-calibrated productivity, decomposition or carrying-capacity parameters.
+- geologic/fossil carbon, carbonate chemistry, explicit ocean circulation or aquatic biological carbon pumps;
+- Earth-calibrated productivity, decomposition, carrying-capacity or carbon-exchange parameters.
 
 These are future domain slices. Human settlement/population simulation should wait until the non-human biosphere can persist, spread and recover under the same authoritative world contracts.
 

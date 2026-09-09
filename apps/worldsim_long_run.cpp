@@ -46,7 +46,7 @@ struct FieldIds {
     FieldId land,temperature,precipitation,fertility;
     FieldId vegetation,grass,shrub,tree,litter,fast_soil,slow_soil,npp;
     FieldId active_fire_area,burned_area,fire_emissions,pyrogenic_carbon;
-    FieldId fauna_respired;
+    FieldId fauna_respired,atmospheric_co2;
 };
 
 FieldId require_field(const Simulation& simulation, const char* key) {
@@ -186,7 +186,8 @@ int main(int argc, char** argv) {
             require_field(*simulation,"ecology.fire_burned_area_m2"),
             require_field(*simulation,"ecology.fire_emitted_carbon_kg"),
             require_field(*simulation,"ecology.pyrogenic_carbon_kg"),
-            require_field(*simulation,"ecology.fauna_respired_carbon_kg")
+            require_field(*simulation,"ecology.fauna_respired_carbon_kg"),
+            require_field(*simulation,"climate.atmospheric_co2_ppm")
         };
 
         std::ofstream output_file;
@@ -262,6 +263,9 @@ int main(int argc, char** argv) {
         );
         const double initial_heat=
             world.stores().get<ClimateStore>().total_surface_heat_j();
+        const double initial_carbon=total_planet_carbon_kg(
+            world,simulation->fields()
+        );
 
         double previous_burned=sum_field(fields,field.burned_area);
         double temperature_sum=0.0;
@@ -277,6 +281,7 @@ int main(int argc, char** argv) {
         double final_collapsed_area_fraction=0.0;
         double final_worst_component_ratio=1.0;
         double final_fauna_carbon_ratio=1.0;
+        double final_carbon_rel_residual=0.0;
         unsigned final_invalid_values=0;
 
         *output << std::setprecision(10);
@@ -290,6 +295,7 @@ int main(int argc, char** argv) {
             << "max_component_annual_burn_fraction,herbivore_ratio,carnivore_ratio,"
             << "fauna_carbon_ratio,fauna_carbon_PgC,fauna_respired_PgC,"
             << "mean_fertility,mean_land_temp_k,mean_land_precip_mm_day,"
+            << "atmospheric_co2_ppm,planet_carbon_rel_residual,"
             << "planet_water_rel_residual,surface_energy_rel_residual,"
             << "min_veg_ratio_year,max_veg_ratio_year,ignitions,near_extinctions,invalid_values\n";
 
@@ -381,7 +387,15 @@ int main(int argc, char** argv) {
             const double expected_heat=
                 initial_heat+
                 budget.absorbed_solar_j-
-                budget.outgoing_longwave_j;
+                budget.outgoing_longwave_j+
+                budget.co2_forcing_j;
+            const double carbon=total_planet_carbon_kg(
+                world,simulation->fields()
+            );
+            const double carbon_rel_residual=
+                (carbon-initial_carbon)/
+                std::max(1.0,std::abs(initial_carbon));
+            final_carbon_rel_residual=carbon_rel_residual;
             final_vegetation_ratio=
                 vegetation/std::max(1.0,initial_vegetation);
             final_collapsed_area_fraction=
@@ -430,6 +444,8 @@ int main(int argc, char** argv) {
                 << (samples
                     ? precipitation_sum/static_cast<double>(samples)
                     : 0.0) << ','
+                << fields.column(field.atmospheric_co2).front() << ','
+                << carbon_rel_residual << ','
                 << (water-initial_water)/
                     std::max(1.0,std::abs(initial_water)) << ','
                 << (climate.total_surface_heat_j()-expected_heat)/
@@ -505,6 +521,7 @@ int main(int argc, char** argv) {
         if (options.assert_stable) {
             if (
                 final_invalid_values!=0U ||
+                std::abs(final_carbon_rel_residual)>1.0e-10 ||
                 final_vegetation_ratio<0.50 ||
                 final_vegetation_ratio>4.0 ||
                 final_collapsed_area_fraction>0.25 ||
