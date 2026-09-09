@@ -41,7 +41,7 @@ jobs:
           --binary ./out/dev/worldsim_long_run
           --years 2
           --seeds 0,42,999
-          --levels 1,2
+          --levels 2,3
           --modes coupled
           --assert-stable
           --output out/stability-matrix-smoke
