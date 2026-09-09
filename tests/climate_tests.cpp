@@ -544,6 +544,51 @@ void orographic_reference_elevation_is_resolution_consistent() {
     }
 }
 
+void stochastic_weather_forcing_is_resolution_consistent() {
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        auto coarse=climate_fixture(seed,2,2,86'400.0);
+        auto fine=climate_fixture(seed,3,3,86'400.0);
+        for (int step=0;step<8;++step) {
+            coarse->step(1);
+            fine->step(1);
+
+            const auto& coarse_store=
+                coarse->world().stores().get<ClimateStore>();
+            const auto& fine_store=
+                fine->world().stores().get<ClimateStore>();
+            struct Aggregate {
+                double anomaly_area{};
+                double area{};
+            };
+            std::vector<Aggregate> aggregated(coarse_store.nodes().size());
+            for (const ClimateNode& node:fine_store.nodes()) {
+                const std::size_t index=coarse_store.node_index(node.cell);
+                aggregated[index].anomaly_area+=
+                    node.weather_anomaly_k*node.area_m2;
+                aggregated[index].area+=node.area_m2;
+            }
+
+            double maximum_error_k=0.0;
+            for (std::size_t i=0;i<coarse_store.nodes().size();++i) {
+                const double fine_mean=
+                    aggregated[i].anomaly_area/
+                    std::max(1.0,aggregated[i].area);
+                maximum_error_k=std::max(
+                    maximum_error_k,
+                    std::abs(
+                        coarse_store.nodes()[i].weather_anomaly_k-fine_mean
+                    )
+                );
+            }
+            check(
+                maximum_error_k<1.0e-12,
+                "L2/L3 stochastic weather forcing is not area-consistent"
+            );
+        }
+    }
+}
+
+
 void lod_independent_reference_state() {
     auto coarse=climate_fixture(101,1,2,3'600.0);
     auto focused=climate_fixture(101,1,2,3'600.0);
@@ -783,6 +828,7 @@ int main() {
         orographic_precipitation();
         horizontal_heat_transport_is_resolution_consistent();
         orographic_reference_elevation_is_resolution_consistent();
+        stochastic_weather_forcing_is_resolution_consistent();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();
         carbon_cycle_closes_and_forces_climate();
