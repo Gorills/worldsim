@@ -14,7 +14,40 @@ static func relief_light(normal: Vector3) -> float:
     var n := normal.normalized()
     var direct := maxf(n.dot(RELIEF_LIGHT_DIRECTION), 0.0)
     var sky_fill := clampf(n.y, 0.0, 1.0)
-    return clampf(0.70 + 0.28 * direct + 0.08 * sky_fill, 0.70, 1.06)
+    return clampf(0.58 + 0.42 * direct + 0.10 * sky_fill, 0.60, 1.10)
+
+static func _lattice_hash(x: int, z: int) -> float:
+    var value := sin(float(x) * 12.9898 + float(z) * 78.233) * 43758.5453123
+    return value - floor(value)
+
+static func _value_noise(east_m: float, north_m: float, scale_m: float) -> float:
+    var gx := east_m / scale_m
+    var gz := north_m / scale_m
+    var x0 := floori(gx)
+    var z0 := floori(gz)
+    var tx := gx - float(x0)
+    var tz := gz - float(z0)
+    var sx := tx * tx * (3.0 - 2.0 * tx)
+    var sz := tz * tz * (3.0 - 2.0 * tz)
+    var a := lerpf(
+        _lattice_hash(x0, z0),
+        _lattice_hash(x0 + 1, z0),
+        sx
+    )
+    var b := lerpf(
+        _lattice_hash(x0, z0 + 1),
+        _lattice_hash(x0 + 1, z0 + 1),
+        sx
+    )
+    return lerpf(a, b, sz) * 2.0 - 1.0
+
+static func terrain_detail(east_m: float, north_m: float) -> float:
+    # Pure world-space presentation noise: the same coordinate receives the
+    # same tint in near chunks and every distant LOD, so it cannot create a
+    # clipmap boundary by itself.
+    var broad := _value_noise(east_m, north_m, 1400.0)
+    var medium := _value_noise(east_m, north_m, 420.0)
+    return clampf(0.64 * broad + 0.36 * medium, -1.0, 1.0)
 
 static func terrain_color(
     height_m: float,
@@ -26,7 +59,8 @@ static func terrain_color(
     fire_active_fraction: float,
     fire_burned_fraction: float,
     slope: float = 0.0,
-    relief_light_factor: float = 1.0
+    relief_light_factor: float = 1.0,
+    detail_variation: float = 0.0
 ) -> Color:
     if height_m < 0.0:
         var depth_t := clampf(-height_m / 5000.0, 0.0, 1.0)
@@ -36,8 +70,8 @@ static func terrain_color(
         )
 
     var elevation_t := clampf(height_m / 4500.0, 0.0, 1.0)
-    var color := Color(0.24, 0.205, 0.15).lerp(
-        Color(0.35, 0.33, 0.30),
+    var color := Color(0.30, 0.255, 0.18).lerp(
+        Color(0.44, 0.42, 0.39),
         elevation_t
     )
 
@@ -56,14 +90,14 @@ static func terrain_color(
     var vegetation_strength := clampf(
         0.55 * grass + 0.72 * shrub + 0.88 * tree,
         0.0,
-        0.78
+        0.70
     )
     if vegetation_strength > 0.0:
         var weight_sum := grass + shrub + tree
         var vegetation_color := (
-            Color(0.17, 0.31, 0.10) * grass
-            + Color(0.12, 0.24, 0.08) * shrub
-            + Color(0.065, 0.18, 0.055) * tree
+            Color(0.20, 0.36, 0.11) * grass
+            + Color(0.14, 0.28, 0.085) * shrub
+            + Color(0.07, 0.20, 0.06) * tree
         ) / maxf(weight_sum, 0.0001)
         color = color.lerp(vegetation_color, vegetation_strength)
 
@@ -78,11 +112,21 @@ static func terrain_color(
         0.85
     )
     if rock_strength > 0.0:
-        var rock_color := Color(0.13, 0.125, 0.12).lerp(
-            Color(0.31, 0.30, 0.29),
+        var rock_color := Color(0.20, 0.19, 0.18).lerp(
+            Color(0.44, 0.43, 0.42),
             elevation_t
         )
         color = color.lerp(rock_color, rock_strength)
+
+    var detail := clampf(detail_variation, -1.0, 1.0)
+    var detail_strength := 0.075 + 0.045 * steepness
+    var detail_factor := 1.0 + detail_strength * detail
+    color = Color(
+        color.r * detail_factor,
+        color.g * detail_factor,
+        color.b * (1.0 + 0.75 * detail_strength * detail),
+        color.a
+    )
 
     var burned := clampf(fire_burned_fraction, 0.0, 1.0)
     if burned > 0.0:
@@ -100,7 +144,7 @@ static func terrain_color(
     if snow > 0.0:
         color = color.lerp(Color(0.91, 0.94, 0.96), 0.92 * snow)
 
-    var light_factor := clampf(relief_light_factor, 0.70, 1.06)
+    var light_factor := clampf(relief_light_factor, 0.60, 1.10)
     return Color(
         color.r * light_factor,
         color.g * light_factor,
