@@ -90,6 +90,15 @@ exposes the fast/slow component pools and cumulative respiration ledger. The
 stock/flow accounting and calibration limits are documented in
 [the soil-carbon contract](docs/SOIL_CARBON.md).
 
+## Inspect the living surface
+
+The walking and survey viewer now runs the same default authoritative simulation
+used by the headless kernel. Near and distant terrain colors project current
+grass/shrub/tree biomass, snow, flooding and fire state; near chunks additionally
+use deterministic visual-only tree and shrub MultiMeshes. Rendering never owns
+or writes those ecological states. The projection, LOD and refresh boundaries
+are documented in [the living-surface contract](docs/LIVING_SURFACE.md).
+
 ## Continuous integration
 
 GitHub Actions deliberately separates the fast simulation-core job from the Godot integration job. The Godot job uses a feature build profile (`godot/build_profile.json`) so cold builds generate only the C++ wrappers actually used by the adapter. It then runs a headless smoke test with pinned Godot 4.7.2.
