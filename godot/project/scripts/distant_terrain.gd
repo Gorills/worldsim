@@ -132,7 +132,7 @@ func set_view_state(
         var local_shift := Vector3(
             origin_east_m - next_origin_east_m,
             origin_height_m - next_origin_height_m,
-            origin_north_m - next_origin_north_m
+            next_origin_north_m - origin_north_m
         )
         for level_node in level_nodes:
             level_node.position += local_shift
@@ -335,7 +335,7 @@ func _build_mesh(
             var right := positions[z * LOD_RESOLUTION + mini(x + 1, LOD_RESOLUTION - 1)]
             var down := positions[maxi(z - 1, 0) * LOD_RESOLUTION + x]
             var up := positions[mini(z + 1, LOD_RESOLUTION - 1) * LOD_RESOLUTION + x]
-            normals[index] = (up - down).cross(right - left).normalized()
+            normals[index] = (right - left).cross(up - down).normalized()
             if use_elevation_colors:
                 colors[index] = SurfaceVisual.terrain_color(
                     float(heights[index]),
@@ -366,11 +366,11 @@ func _build_mesh(
             var i3 := i2 + 1
             # Godot 4.7 treats clockwise winding as front-facing.
             indices.push_back(i0)
-            indices.push_back(i1)
             indices.push_back(i2)
             indices.push_back(i1)
+            indices.push_back(i1)
+            indices.push_back(i2)
             indices.push_back(i3)
-            indices.push_back(i2)
 
     var arrays := []
     arrays.resize(Mesh.ARRAY_MAX)
