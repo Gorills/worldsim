@@ -1700,7 +1700,7 @@ void test_visual_orography_has_local_mountain_prominence() {
     const double local_curvature_rms=
         std::sqrt(laplacian_sq_sum/static_cast<double>(laplacian_count));
     check(
-        local_curvature_rms>20.0,
+        local_curvature_rms>35.0,
         "visual orography lacks multi-kilometre crag/gully curvature"
     );
 
