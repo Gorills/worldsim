@@ -108,6 +108,27 @@ downstream deposit is applied. The center elevation remains the routing/slope
 representative, so this is a fractional-area closure rather than a resolved
 coastline or separate land/ocean bed geometry.
 
+A simulation-LOD-only split/merge does not recompute physical
+`land_fraction`: FieldStore already area-averages the intensive fraction on
+coarsening and copies it on refinement, so represented terrestrial area is
+conserved while derived elevation may reveal finer spatial detail. The daily
+geology process remains the point at which changing geology can change the
+physical coast.
+
+Executed PR evidence on 2026-09-09:
+
+- the regression-only commit failed `worldsim_tests` because the old L2/L3
+  represented-land-area delta exceeded the new 5% gate;
+- the final functional head passed **15/15 CTest**;
+- the two-year coupled seeds `0,42,999` level-2/3 stability smoke completed
+  all six cases with no stability failures and maximum represented-land-area
+  delta **1.5108%**;
+- the previous current-main smoke on the same cases measured **18.8633%**;
+- the 64-seed / 4096-sample geology benchmark completed with no broad
+  plausibility warnings (`land_fraction_mean=0.2411`);
+- Godot 4.7 Linux integration, headless simulation/UI checks and rendered-frame
+  capture passed on the same functional head.
+
 Oceanic age-depth behavior follows the broad empirical form documented by Parsons and Sclater: young ocean floor deepens approximately with the square root of age, while older lithosphere approaches a plate-model asymptote.
 
 - Parsons, B. & Sclater, J. G. (1977), *An analysis of the variation of ocean floor bathymetry and heat flow with age*. https://doi.org/10.1029/JB082i005p00803
