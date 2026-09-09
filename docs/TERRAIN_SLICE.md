@@ -152,12 +152,19 @@ without a T-junction crack while local detail is retained away from the
 transition. Distant rings have no collision.
 
 Terrain albedo now also receives a presentation-only rock cue from rendered
-slope and elevation. This does not feed back into ecology or geography; it only
-prevents coarse living-surface fields from painting steep local cliffs as the
-same vegetation color as nearby flats. The walking camera uses a 65-degree field
-of view, and the environment keeps lower ambient energy with a stronger warm
-directional light so the existing mesh normals produce readable large-scale
-form without enabling long-range real-time shadows.
+slope gradient and elevation. The gradient is derived from the mesh normal as
+horizontal-normal magnitude divided by vertical-normal magnitude, so ordinary
+10-30 degree mountain faces no longer collapse into near-zero values as they did
+with the previous `1 - normal.y` proxy. This does not feed back into ecology or
+geography; it only prevents coarse living-surface fields from painting steep
+local cliffs as the same vegetation color as nearby flats.
+
+The walking camera uses a 65-degree field of view, and the environment keeps
+lower ambient energy with a stronger warm directional light. Real-time
+directional shadows use two splits and stop at 20 km; only distant LODs 0-3 cast
+them, while coarser planetary rings and the ocean do not. This bounded shadow
+budget covers the canonical 6-10 km mountain view without rendering shadow maps
+for the full 400 km camera range.
 
 A separate visual-only sea-level surface uses the exact same spherical sample
 directions at elevation 0 m. It is opaque in this first slice to stay on the
