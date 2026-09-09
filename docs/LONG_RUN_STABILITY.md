@@ -150,17 +150,39 @@ adjacent-level relative delta):
 - fauna carbon ratio: 8.8% -> 1.7%;
 - mean land precipitation: 14.9% -> 8.2%.
 
-Represented land area still differs by up to 18.9% between levels 2 and 3 for
-the sampled seeds because coarse geography remains cell-center sampled. Total
-stocks/flows therefore retain some structural resolution dependence even when
-their land-normalized process rates are closer. Fire is thresholded and
-path-dependent: a zero-versus-small nonzero burn can still report a 100%
-relative delta, so its absolute burned fraction and longer-run statistics must
-be interpreted separately.
+The climate correction left a separate geography defect: on the current
+carbon/nitrogen/fauna main baseline the same two-year, seeds 0/42/999 L2/L3
+matrix still measured a maximum 18.86% represented-land-area delta. Coarse
+`geography.land_fraction` was being reconstructed from one cell-center
+elevation even though downstream domains use it as physical terrestrial area.
 
-These two-year results are regression evidence for the corrected transport
-operator, not proof of long-run convergence or calibration. The next release
-evidence remains the explicit 100-year multi-seed level-2/3 matrix.
+The coastal-geography correction replaces that center classification below
+level 4 with an area-integrated fixed level-4 reference support and initializes
+coarse geology as the conservative restriction of the same support. A pure
+focus-LOD transition preserves the already represented land area rather than
+reclassifying it. On the same current-main two-year matrix, maximum L2/L3
+represented-land-area delta falls from 18.86% to **1.51%**.
+
+This removes the measured area aliasing but does not claim complete coupled
+convergence. Compared with the same current-main baseline, several maximum
+relative deltas improve (mean total NPP 29.89% -> 26.01%, fauna carbon density
+10.81% -> 7.65%, mean fertility 30.70% -> 24.45%, mineral-N density 45.16% ->
+25.37%, mean land temperature 1.06% -> 0.88%), while others become larger
+(vegetation density 13.92% -> 23.34%, NPP density 21.37% -> 26.39%, fauna
+carbon ratio 2.55% -> 9.66%, mean land precipitation 7.99% -> 21.33%). The
+remaining differences are therefore process/spatial diagnostics, not evidence
+that closing land area alone makes every coupled field converge. Orographic
+forcing and other coarse derived-surface operators remain candidates for a
+separate resolution-quality slice.
+
+Fire is thresholded and path-dependent: a zero-versus-small nonzero burn can
+still report a 100% relative delta, so its absolute burned fraction and
+longer-run statistics must be interpreted separately.
+
+These two-year results are regression evidence for the corrected transport and
+coastal-area operators, not proof of long-run convergence or calibration. The
+next release evidence remains the explicit 100-year multi-seed level-2/3
+matrix.
 
 ## Failures found and model changes
 
