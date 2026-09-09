@@ -122,8 +122,8 @@ The viewer samples the same 40 km x 40 km reconstructed-terrain window centered
 at east 5,573 km / north -1,800.3 km and finds local summit candidates on the
 625 m diagnostic grid. A summit must be a 3-cell-radius local maximum and retain
 at least 700 m of regional relief. The viewer jointly chooses a dry viewpoint
-3-7 km away and a summit with at least 500 m rise, five degrees of elevation and
-one degree of visible separation above the intermediate terrain skyline. The line
+3-7 km away and a summit with at least 450 m rise, seven degrees of elevation
+and 0.5 degrees of visible separation above the intermediate terrain skyline. The line
 of sight is sampled twice per diagnostic grid interval with bilinear patch
 heights. This avoids targeting the absolute regional maximum when that point lies
 inside a broader ridge and is not actually visible as a summit. Terrain authority,
