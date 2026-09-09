@@ -1266,10 +1266,14 @@ public:
                 );
             }
             fs.set(cell,burned_,local.burned_fraction);
-            const double persistence=std::clamp(
+            const double daily_persistence=std::clamp(
                 0.10+0.70*local.danger,
                 0.0,
                 0.80
+            );
+            const double persistence=std::pow(
+                daily_persistence,
+                ctx.dt_days
             );
             local.next_active_fraction=
                 local.burned_fraction*persistence;
