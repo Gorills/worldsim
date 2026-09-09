@@ -70,6 +70,8 @@ func initialize(
     level_positions.resize(LOD_SPACINGS_M.size())
     level_sea_positions.resize(LOD_SPACINGS_M.size())
     for level in range(LOD_SPACINGS_M.size()):
+        level_positions[level] = PackedVector3Array()
+        level_sea_positions[level] = PackedVector3Array()
         var level_node := Node3D.new()
         level_node.name = "Lod%d" % level
         add_child(level_node)
@@ -108,11 +110,12 @@ func set_view_state(
     if !initialized:
         return
 
-    if (
+    var origin_changed := (
         next_origin_east_m != origin_east_m
         or next_origin_north_m != origin_north_m
         or next_origin_height_m != origin_height_m
-    ):
+    )
+    if origin_changed:
         # Keep already-built geometry approximately world-stationary while a new
         # spherical frame is rebuilt level by level. The exact curvature/basis is
         # restored by sample_terrain_visual_patch() on each replacement mesh.
@@ -126,6 +129,10 @@ func set_view_state(
         origin_east_m = next_origin_east_m
         origin_north_m = next_origin_north_m
         origin_height_m = next_origin_height_m
+        if !survey_flight_enabled:
+            queued_center_east_m = center_east_m
+            queued_center_north_m = center_north_m
+            _queue_all_levels()
 
     target_center_east_m = center_east_m
     target_center_north_m = center_north_m
@@ -231,7 +238,7 @@ func _morph_outer_transition(
     positions: PackedVector3Array,
     coarse_positions: PackedVector3Array
 ) -> PackedVector3Array:
-    var center := (LOD_RESOLUTION - 1) / 2
+    var center := floori(float(LOD_RESOLUTION - 1) * 0.5)
     for z in range(LOD_RESOLUTION):
         for x in range(LOD_RESOLUTION):
             var ring := maxi(absi(x - center), absi(z - center))
