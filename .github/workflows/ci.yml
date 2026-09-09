@@ -132,3 +132,38 @@ jobs:
           # The full-world laboratory must expose live domain fields, time controls,
           # active-cover statistics/history and exact-cell inspection.
           timeout 60 "$GODOT" --headless --path godot/project --script res://ci_simulation_lab.gd
+
+      - name: Install visual capture display dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri
+
+      - name: Capture Godot rendered walk frame
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WORLDSIM_VISUAL_CAPTURE_DIR: ${{ github.workspace }}/out/godot-visual
+        run: |
+          set -euo pipefail
+          GODOT="$(find .ci/godot -maxdepth 1 -type f -name 'Godot_v*_linux.x86_64' -print -quit)"
+          test -n "$GODOT"
+          mkdir -p "$WORLDSIM_VISUAL_CAPTURE_DIR"
+          timeout 90 xvfb-run -a -s "-screen 0 1600x900x24" \
+            "$GODOT" \
+            --path godot/project \
+            --language ru \
+            --windowed \
+            --resolution 1600x900 \
+            --rendering-method gl_compatibility \
+            --script res://ci_visual_capture.gd
+          test -s "$WORLDSIM_VISUAL_CAPTURE_DIR/walk_spawn.png"
+
+      - name: Upload Godot visual artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worldsim-godot-visual
+          path: out/godot-visual
+          if-no-files-found: error
+          retention-days: 14
