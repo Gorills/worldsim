@@ -278,6 +278,28 @@ void test_lod_hysteresis() {
     sim.set_focus(focus_at(22.0));
     sim.step(1);
     check(sim.world().active_cells().contains(parent),"LOD did not coarsen after leaving hysteresis band");
+
+    SimulationConfig coarse_cfg;
+    coarse_cfg.base_level=0;
+    coarse_cfg.max_level=1;
+    coarse_cfg.tick_seconds=3600.0;
+    Simulation coarse(12,coarse_cfg);
+    coarse.build();
+    const CellId coarse_parent=CellId::make(0,0,0,0);
+    const Vec3d coarse_focus=
+        coarse.world().topology().center_unit(coarse_parent);
+    coarse.set_focus(coarse_focus);
+    coarse.step(1);
+    check(
+        !coarse.world().active_cells().contains(coarse_parent),
+        "coarse LOD parent refined and coarsened in the same update"
+    );
+    const auto coarse_stable_cover=coarse.world().active_cells();
+    coarse.step(1);
+    check(
+        coarse.world().active_cells()==coarse_stable_cover,
+        "unchanged coarse focus caused LOD oscillation"
+    );
 }
 
 void test_determinism_and_snapshot() {
@@ -304,7 +326,7 @@ void test_determinism_and_snapshot() {
         std::uint8_t{16},std::uint8_t{17},std::uint8_t{18},
         std::uint8_t{19},std::uint8_t{20},std::uint8_t{21},
         std::uint8_t{22},std::uint8_t{23},std::uint8_t{24},
-        std::uint8_t{25},std::uint8_t{26}
+        std::uint8_t{25},std::uint8_t{26},std::uint8_t{27}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);

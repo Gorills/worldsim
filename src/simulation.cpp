@@ -188,6 +188,19 @@ bool Simulation::update_lod() {
         std::set<CellId> parents;
         for (CellId c:world_->active_cells()) if (c.level()==level) parents.insert(c.parent());
         for (CellId p:parents) {
+            // A sibling group must not coarsen while the parent region itself
+            // still requests refinement inside the exit-hysteresis band.
+            // Without this guard, very coarse legal configurations can refine
+            // a parent by its center and immediately coarsen its widely spaced
+            // children in the same update.
+            if (
+                target_level(
+                    world_->topology().center_unit(p),
+                    4.0
+                )>p.level()
+            ) {
+                continue;
+            }
             const auto children=p.children();
             bool all_active=true;
             bool all_want_parent_or_coarser=true;
@@ -251,7 +264,7 @@ std::vector<std::byte> Simulation::save_snapshot() const {
     BinaryWriter w;
     const std::array<char,8> magic{'W','S','I','M','S','N','A','P'};
     for (char c:magic) w.pod(c);
-    w.pod<std::uint32_t>(27); // versioned, little-endian wire format
+    w.pod<std::uint32_t>(28); // versioned, little-endian wire format
     w.pod(fields_.schema_hash());
     w.pod(seed_);
     w.pod(config_.base_level);
@@ -314,7 +327,7 @@ void Simulation::load_snapshot(std::span<const std::byte> data) {
     BinaryReader r(data);
     const std::array<char,8> expected{'W','S','I','M','S','N','A','P'};
     for (char c:expected) if (r.pod<char>()!=c) throw std::runtime_error("invalid snapshot magic");
-    if (r.pod<std::uint32_t>()!=27) throw std::runtime_error("unsupported snapshot version");
+    if (r.pod<std::uint32_t>()!=28) throw std::runtime_error("unsupported snapshot version");
     if (r.pod<std::uint64_t>()!=fields_.schema_hash()) throw std::runtime_error("snapshot field schema mismatch");
     const auto snap_seed=r.pod<std::uint64_t>();
     if (snap_seed!=seed_) throw std::runtime_error("snapshot seed mismatch");
