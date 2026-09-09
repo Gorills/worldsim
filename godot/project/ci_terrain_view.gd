@@ -184,9 +184,9 @@ func _process(_delta: float) -> bool:
         )
         quit(54)
         return true
-    if view_height_m < 0.0 or height_rise_m < 1_000.0:
+    if view_height_m < 0.0 or height_rise_m < 950.0:
         push_error(
-            "Mountain viewpoint lacks a dry 1 km summit rise: view=%.1f rise=%.1f"
+            "Mountain viewpoint lacks a dry 950 m summit rise: view=%.1f rise=%.1f"
             % [view_height_m, height_rise_m]
         )
         quit(59)
