@@ -10,6 +10,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <deque>
@@ -292,9 +293,20 @@ void WorldSimulationNode::_bind_methods() {
                          &WorldSimulationNode::projected_to_direction);
     ClassDB::bind_method(godot::D_METHOD("get_tick"),&WorldSimulationNode::get_tick);
     ClassDB::bind_method(godot::D_METHOD("get_terrain_revision"),&WorldSimulationNode::get_terrain_revision);
+    ClassDB::bind_method(godot::D_METHOD("get_surface_revision"),&WorldSimulationNode::get_surface_revision);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_height","east_m","north_m"),&WorldSimulationNode::sample_terrain_height);
     ClassDB::bind_method(godot::D_METHOD("sample_terrain_patch","center_east_m","center_north_m","spacing_m","resolution"),
                          &WorldSimulationNode::sample_terrain_patch);
+    ClassDB::bind_method(
+        godot::D_METHOD(
+            "sample_surface_visual_patch",
+            "center_east_m",
+            "center_north_m",
+            "spacing_m",
+            "resolution"
+        ),
+        &WorldSimulationNode::sample_surface_visual_patch
+    );
     ClassDB::bind_method(
         godot::D_METHOD(
             "sample_terrain_visual_patch",
@@ -361,6 +373,7 @@ void WorldSimulationNode::initialize(std::int64_t seed) {
             static_cast<std::uint64_t>(seed)
         );
         terrain_revision_=1;
+        surface_revision_=1;
         terrain_preview_anchor_cache_.clear();
         last_error_.clear();
     } catch (const std::exception& e) {
@@ -385,6 +398,7 @@ void WorldSimulationNode::initialize_terrain_world(std::int64_t seed) {
             static_cast<std::uint64_t>(seed)
         );
         terrain_revision_=1;
+        surface_revision_=1;
         terrain_preview_anchor_cache_.clear();
         last_error_.clear();
     } catch (const std::exception& e) {
@@ -403,10 +417,17 @@ void WorldSimulationNode::step_hours(std::int64_t hours) {
         ensure_sim();
         if (hours<0) throw std::invalid_argument("hours must be non-negative");
         const std::uint64_t before=terrain_surface_fingerprint();
+        const std::uint64_t surface_before=surface_visual_fingerprint();
         sim_->step(static_cast<worldsim::Tick>(hours));
         const std::uint64_t after=terrain_surface_fingerprint();
+        const std::uint64_t surface_after=surface_visual_fingerprint();
         if (before!=after && terrain_revision_<std::numeric_limits<std::int64_t>::max())
             ++terrain_revision_;
+        if (
+            surface_before!=surface_after &&
+            surface_revision_<std::numeric_limits<std::int64_t>::max()
+        )
+            ++surface_revision_;
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in step_hours"); }
@@ -475,6 +496,15 @@ std::int64_t WorldSimulationNode::get_terrain_revision() const {
     catch (...) { report_error("unknown C++ exception in get_terrain_revision"); return 0; }
 }
 
+std::int64_t WorldSimulationNode::get_surface_revision() const {
+    try {
+        ensure_sim();
+        last_error_.clear();
+        return surface_revision_;
+    } catch (const std::exception& e) { report_error(e.what()); return 0; }
+    catch (...) { report_error("unknown C++ exception in get_surface_revision"); return 0; }
+}
+
 std::uint64_t WorldSimulationNode::terrain_surface_fingerprint() const {
     ensure_sim();
     const auto elevation=sim_->fields().find("geography.elevation_m");
@@ -484,6 +514,38 @@ std::uint64_t WorldSimulationNode::terrain_surface_fingerprint() const {
     for (worldsim::CellId cell:sim_->world().active_cells()) {
         hash=fingerprint_mix(hash,cell.raw());
         hash=fingerprint_mix(hash,std::bit_cast<std::uint64_t>(fields.get(cell,*elevation)));
+    }
+    return hash;
+}
+
+std::uint64_t WorldSimulationNode::surface_visual_fingerprint() const {
+    ensure_sim();
+    constexpr std::array<std::string_view,8> keys{
+        "geography.land_fraction",
+        "ecology.grass_carbon_kg",
+        "ecology.shrub_carbon_kg",
+        "ecology.tree_carbon_kg",
+        "climate.snow_cover_fraction",
+        "hydrology.flooded_fraction",
+        "ecology.fire_active_fraction",
+        "ecology.fire_burned_fraction"
+    };
+    std::array<worldsim::FieldId,8> ids{};
+    for (std::size_t i=0;i<keys.size();++i) {
+        const auto id=sim_->fields().find(keys[i]);
+        if (!id) return 0;
+        ids[i]=*id;
+    }
+
+    const auto& fields=sim_->world().stores().get<worldsim::FieldStore>();
+    std::uint64_t hash=0x13198a2e03707344ULL;
+    for (worldsim::CellId cell:sim_->world().active_cells()) {
+        hash=fingerprint_mix(hash,cell.raw());
+        for (worldsim::FieldId id:ids)
+            hash=fingerprint_mix(
+                hash,
+                std::bit_cast<std::uint64_t>(fields.get(cell,id))
+            );
     }
     return hash;
 }
@@ -543,6 +605,123 @@ PackedFloat32Array WorldSimulationNode::sample_terrain_patch(double center_east_
         last_error_.clear();
     } catch (const std::exception& e) { report_error(e.what()); }
     catch (...) { report_error("unknown C++ exception in sample_terrain_patch"); }
+    return out;
+}
+
+Dictionary WorldSimulationNode::sample_surface_visual_patch(
+    double center_east_m,
+    double center_north_m,
+    double spacing_m,
+    std::int64_t resolution
+) const {
+    Dictionary out;
+    try {
+        ensure_sim();
+        if (!std::isfinite(center_east_m) || !std::isfinite(center_north_m) ||
+            !std::isfinite(spacing_m) || spacing_m<=0.0)
+            throw std::invalid_argument("invalid surface visual patch coordinates or spacing");
+        if (resolution<2 || resolution>129)
+            throw std::invalid_argument("surface visual patch resolution must be in [2,129]");
+
+        const auto require_field=[this](std::string_view key) {
+            const auto id=sim_->fields().find(key);
+            if (!id)
+                throw std::runtime_error(
+                    "living surface requires simulation field: "+std::string(key)
+                );
+            return *id;
+        };
+
+        const worldsim::FieldId land=require_field("geography.land_fraction");
+        const worldsim::FieldId grass=require_field("ecology.grass_carbon_kg");
+        const worldsim::FieldId shrub=require_field("ecology.shrub_carbon_kg");
+        const worldsim::FieldId tree=require_field("ecology.tree_carbon_kg");
+        const worldsim::FieldId snow=require_field("climate.snow_cover_fraction");
+        const worldsim::FieldId flooded=require_field("hydrology.flooded_fraction");
+        const worldsim::FieldId fire_active=require_field("ecology.fire_active_fraction");
+        const worldsim::FieldId fire_burned=require_field("ecology.fire_burned_fraction");
+
+        const auto n=static_cast<int>(resolution);
+        const int sample_count=n*n;
+        const double half=0.5*static_cast<double>(n-1);
+        PackedFloat32Array grass_density;
+        PackedFloat32Array shrub_density;
+        PackedFloat32Array tree_density;
+        PackedFloat32Array snow_cover;
+        PackedFloat32Array flooded_fraction;
+        PackedFloat32Array fire_active_fraction;
+        PackedFloat32Array fire_burned_fraction;
+        grass_density.resize(sample_count);
+        shrub_density.resize(sample_count);
+        tree_density.resize(sample_count);
+        snow_cover.resize(sample_count);
+        flooded_fraction.resize(sample_count);
+        fire_active_fraction.resize(sample_count);
+        fire_burned_fraction.resize(sample_count);
+
+        const auto& world=sim_->world();
+        const auto& fields=world.stores().get<worldsim::FieldStore>();
+        for (int z=0;z<n;++z) {
+            for (int x=0;x<n;++x) {
+                const int index=z*n+x;
+                const double east=
+                    center_east_m+(static_cast<double>(x)-half)*spacing_m;
+                const double north=
+                    center_north_m+(static_cast<double>(z)-half)*spacing_m;
+                const worldsim::CellId cell=active_cell_at_direction(
+                    *sim_,
+                    worldsim::TerrainGenerator::projected_to_direction(east,north)
+                );
+                const double land_fraction=std::clamp(
+                    fields.get(cell,land),
+                    0.0,
+                    1.0
+                );
+                const double effective_land_area=
+                    world.topology().area_m2(cell)*land_fraction;
+                const auto density=[&](worldsim::FieldId id) {
+                    if (!(effective_land_area>1.0)) return 0.0;
+                    return std::max(
+                        0.0,
+                        fields.get(cell,id)/effective_land_area
+                    );
+                };
+
+                grass_density.set(index,static_cast<float>(density(grass)));
+                shrub_density.set(index,static_cast<float>(density(shrub)));
+                tree_density.set(index,static_cast<float>(density(tree)));
+                snow_cover.set(
+                    index,
+                    static_cast<float>(std::clamp(fields.get(cell,snow),0.0,1.0))
+                );
+                flooded_fraction.set(
+                    index,
+                    static_cast<float>(std::clamp(fields.get(cell,flooded),0.0,1.0))
+                );
+                fire_active_fraction.set(
+                    index,
+                    static_cast<float>(std::clamp(fields.get(cell,fire_active),0.0,1.0))
+                );
+                fire_burned_fraction.set(
+                    index,
+                    static_cast<float>(std::clamp(fields.get(cell,fire_burned),0.0,1.0))
+                );
+            }
+        }
+
+        out["grass_density_kg_m2"]=grass_density;
+        out["shrub_density_kg_m2"]=shrub_density;
+        out["tree_density_kg_m2"]=tree_density;
+        out["snow_cover_fraction"]=snow_cover;
+        out["flooded_fraction"]=flooded_fraction;
+        out["fire_active_fraction"]=fire_active_fraction;
+        out["fire_burned_fraction"]=fire_burned_fraction;
+        last_error_.clear();
+    } catch (const std::exception& e) {
+        report_error(e.what());
+    } catch (...) {
+        report_error("unknown C++ exception in sample_surface_visual_patch");
+    }
     return out;
 }
 
