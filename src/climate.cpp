@@ -289,6 +289,12 @@ double climate_land_albedo(double snow_cover_fraction) {
         (snow_albedo-land_albedo)*snow_cover_fraction;
 }
 
+double orographic_condensation_fraction_from_climb(double climb_m) {
+    if (!std::isfinite(climb_m) || climb_m<0.0)
+        throw std::invalid_argument("invalid orographic climb");
+    return 0.35*std::clamp(climb_m/1'500.0,0.0,1.0);
+}
+
 void ClimateStore::on_add_cell(CellId cell) {
     if (!has_level_) {
         reference_level_=cell.level();
@@ -636,7 +642,7 @@ void ClimateStore::advance_moisture(double dt_days) {
             nodes_[donor].mean_elevation_m
         );
         orographic[receiver]+=
-            actual*0.35*std::clamp(climb/1'500.0,0.0,1.0);
+            actual*orographic_condensation_fraction_from_climb(climb);
     }
     for (std::size_t i=0;i<nodes_.size();++i) {
         nodes_[i].atmospheric_water_m3+=delta[i];
