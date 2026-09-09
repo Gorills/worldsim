@@ -111,6 +111,9 @@ walking chunks remain the only physics terrain:
 - chunk size: 256 m;
 - mesh resolution: 33 x 33 vertices;
 - vertex spacing: 8 m;
+- terrain sampling uses a 35 x 35 patch and keeps the outer one-cell border only
+  for central-difference render normals; collision and mesh heights remain the
+  central authoritative 33 x 33 samples;
 - visible radius: 3 chunks;
 - retained radius: 4 chunks;
 - at most one missing or dirty near chunk is generated per rendered frame;
@@ -157,9 +160,12 @@ Terrain albedo now also receives a presentation-only rock cue from rendered
 slope gradient and elevation. The gradient is derived from the mesh normal as
 horizontal-normal magnitude divided by vertical-normal magnitude, so ordinary
 10-30 degree mountain faces no longer collapse into near-zero values as they did
-with the previous `1 - normal.y` proxy. This does not feed back into ecology or
-geography; it only prevents coarse living-surface fields from painting steep
-local cliffs as the same vegetation color as nearby flats.
+with the previous `1 - normal.y` proxy. Near chunks use the 35 x 35 ghost border
+for those normals instead of clamping the derivative at every 256 m chunk edge.
+Two smooth world-space value-noise bands (1.4 km and 420 m) add restrained soil
+and rock brightness variation. Because the tint is a pure projected-coordinate
+function, the same point receives the same value in near chunks and all distant
+LODs. None of these presentation cues feed back into ecology or geography.
 
 The walking camera uses a 65-degree field of view, and the environment keeps
 lower ambient energy with a warm directional light. Nested distant rings do not
