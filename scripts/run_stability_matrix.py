@@ -33,10 +33,12 @@ COMPARISON_METRICS = (
     "fauna_carbon_PgC",
     "fauna_carbon_density_kg_m2",
     "mean_fertility",
+    "mineral_nitrogen_kg_m2",
     "mean_land_temp_k",
     "mean_land_precip_mm_day",
     "atmospheric_co2_ppm",
     "planet_carbon_rel_residual",
+    "tracked_nitrogen_rel_residual",
 )
 
 VALID_MODES = (
