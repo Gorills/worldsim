@@ -304,6 +304,8 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
     const FieldId elevation=required_field(r,"geography.elevation_m");
     const FieldId reference_elevation=
         r.find("geography.reference_elevation_m").value_or(elevation);
+    const FieldId lapse_elevation=
+        r.find("geography.reference_lapse_elevation_m").value_or(elevation);
     const FieldId land=required_field(r,"geography.land_fraction");
     nodes_.clear();
     nodes_.reserve(world.active_cells().size());
@@ -322,10 +324,12 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
         const double elevation_m=fields.get(cell,elevation);
         const double reference_elevation_m=
             fields.get(cell,reference_elevation);
+        const double lapse_elevation_m=
+            fields.get(cell,lapse_elevation);
         const double base_temperature=std::clamp(
             301.0-
             42.0*std::pow(std::abs(std::sin(latitude)),1.25)-
-            std::max(0.0,elevation_m)*lapse_rate_k_m,
+            std::max(0.0,lapse_elevation_m)*lapse_rate_k_m,
             175.0,
             335.0
         );
