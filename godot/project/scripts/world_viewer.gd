@@ -14,6 +14,7 @@ const SurfaceVisual = preload("res://scripts/surface_visual.gd")
 
 const CHUNK_SIZE_M := 256.0
 const CHUNK_RESOLUTION := 33
+const NORMAL_PATCH_RESOLUTION := CHUNK_RESOLUTION + 2
 const SAMPLE_SPACING_M := CHUNK_SIZE_M / float(CHUNK_RESOLUTION - 1)
 const VISIBLE_RADIUS := 3
 const KEEP_RADIUS := 4
@@ -634,11 +635,11 @@ func _create_chunk(coord: Vector2i) -> void:
 
     var center_east_m := float(coord.x) * CHUNK_SIZE_M
     var center_north_m := float(coord.y) * CHUNK_SIZE_M
-    var heights := sim.sample_terrain_patch(
+    var normal_heights := sim.sample_terrain_patch(
         center_east_m,
         center_north_m,
         SAMPLE_SPACING_M,
-        CHUNK_RESOLUTION
+        NORMAL_PATCH_RESOLUTION
     )
     var surface := sim.sample_surface_visual_patch(
         center_east_m,
@@ -647,11 +648,22 @@ func _create_chunk(coord: Vector2i) -> void:
         CHUNK_RESOLUTION
     )
     if (
-        heights.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION
-        or !_surface_packet_valid(surface, heights.size())
+        normal_heights.size() != NORMAL_PATCH_RESOLUTION * NORMAL_PATCH_RESOLUTION
+        or !_surface_packet_valid(
+            surface,
+            CHUNK_RESOLUTION * CHUNK_RESOLUTION
+        )
     ):
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
+
+    var heights := PackedFloat32Array()
+    heights.resize(CHUNK_RESOLUTION * CHUNK_RESOLUTION)
+    for z in range(CHUNK_RESOLUTION):
+        for x in range(CHUNK_RESOLUTION):
+            heights[z * CHUNK_RESOLUTION + x] = normal_heights[
+                (z + 1) * NORMAL_PATCH_RESOLUTION + x + 1
+            ]
 
     var shape := HeightMapShape3D.new()
     shape.map_width = CHUNK_RESOLUTION
@@ -673,7 +685,11 @@ func _create_chunk(coord: Vector2i) -> void:
         var existing_chunk: Node3D = chunks[coord]
         var existing_mesh := existing_chunk.get_node("Mesh") as MeshInstance3D
         var existing_collision := existing_chunk.get_node("Body/Collision") as CollisionShape3D
-        existing_mesh.mesh = _build_chunk_mesh(heights, surface)
+        existing_mesh.mesh = _build_chunk_mesh(
+            heights,
+            surface,
+            normal_heights
+        )
         existing_collision.shape = shape
         existing_chunk.position = _chunk_local_position(coord)
         _update_chunk_vegetation(existing_chunk, coord, heights, surface)
@@ -685,7 +701,11 @@ func _create_chunk(coord: Vector2i) -> void:
 
         var mesh_instance := MeshInstance3D.new()
         mesh_instance.name = "Mesh"
-        mesh_instance.mesh = _build_chunk_mesh(heights, surface)
+        mesh_instance.mesh = _build_chunk_mesh(
+            heights,
+            surface,
+            normal_heights
+        )
         mesh_instance.material_override = terrain_material
         mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
         chunk.add_child(mesh_instance)
@@ -761,7 +781,8 @@ func _refresh_terrain_revision(
 
 func _build_chunk_mesh(
     heights: PackedFloat32Array,
-    surface: Dictionary
+    surface: Dictionary,
+    normal_heights: PackedFloat32Array
 ) -> ArrayMesh:
     var vertex_count := CHUNK_RESOLUTION * CHUNK_RESOLUTION
     var vertices := PackedVector3Array()
@@ -792,19 +813,28 @@ func _build_chunk_mesh(
                 float(z) * SAMPLE_SPACING_M - half
             )
 
+            var normal_z := source_z + 1
+            var normal_x := x + 1
             var left := float(
-                heights[source_z * CHUNK_RESOLUTION + maxi(x - 1, 0)]
+                normal_heights[
+                    normal_z * NORMAL_PATCH_RESOLUTION + normal_x - 1
+                ]
             )
             var right_h := float(
-                heights[source_z * CHUNK_RESOLUTION + mini(
-                    x + 1,
-                    CHUNK_RESOLUTION - 1
-                )]
+                normal_heights[
+                    normal_z * NORMAL_PATCH_RESOLUTION + normal_x + 1
+                ]
             )
-            var north_z := mini(source_z + 1, CHUNK_RESOLUTION - 1)
-            var south_z := maxi(source_z - 1, 0)
-            var north_h := float(heights[north_z * CHUNK_RESOLUTION + x])
-            var south_h := float(heights[south_z * CHUNK_RESOLUTION + x])
+            var north_h := float(
+                normal_heights[
+                    (normal_z + 1) * NORMAL_PATCH_RESOLUTION + normal_x
+                ]
+            )
+            var south_h := float(
+                normal_heights[
+                    (normal_z - 1) * NORMAL_PATCH_RESOLUTION + normal_x
+                ]
+            )
             normals[i] = Vector3(
                 left - right_h,
                 2.0 * SAMPLE_SPACING_M,
