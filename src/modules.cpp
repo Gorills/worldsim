@@ -30,7 +30,6 @@ constexpr double fire_nitrogen_volatilization_fraction=0.75;
 
 struct GeologyFieldIds {
     FieldId elevation{};
-    FieldId reference_elevation{};
     FieldId land_fraction{};
     FieldId crust_thickness{};
     FieldId crust_density{};
@@ -51,7 +50,6 @@ struct GeologyFieldIds {
 GeologyFieldIds geology_fields(const FieldRegistry& r) {
     return {
         require_field(r,"geography.elevation_m"),
-        require_field(r,"geography.reference_elevation_m"),
         require_field(r,"geography.land_fraction"),
         require_field(r,"geology.crust_thickness_m"),
         require_field(r,"geology.crust_density_kg_m3"),
@@ -414,6 +412,8 @@ void update_geography_surface(
 void initialize_geology(WorldState& world, const FieldRegistry& r) {
     auto& fs=world.stores().get<FieldStore>();
     const GeologyFieldIds ids=geology_fields(r);
+    const FieldId reference_elevation=
+        require_field(r,"geography.reference_elevation_m");
     const GeologyModel geology(world.seed());
     for (CellId cell:world.active_cells()) {
         const GeologyState state=
@@ -429,7 +429,7 @@ void initialize_geology(WorldState& world, const FieldRegistry& r) {
     for (CellId cell:world.active_cells()) {
         fs.set(
             cell,
-            ids.reference_elevation,
+            reference_elevation,
             initial_reference_mean_elevation_m(
                 world,
                 geology,
