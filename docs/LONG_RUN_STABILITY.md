@@ -100,6 +100,8 @@ coarse process has neither.
 conditions is violated at the end of the requested run:
 
 - any registered field is non-finite or outside its descriptor bounds;
+- the closed planet-carbon inventory drifts by more than `1e-10` relative to
+  its initialized stock;
 - global vegetation is below 50% or above 400% of its initialized stock;
 - more than 25% of initially vegetated land falls below 10% of its own initial
   density;

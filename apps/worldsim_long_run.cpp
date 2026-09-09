@@ -281,6 +281,7 @@ int main(int argc, char** argv) {
         double final_collapsed_area_fraction=0.0;
         double final_worst_component_ratio=1.0;
         double final_fauna_carbon_ratio=1.0;
+        double final_carbon_rel_residual=0.0;
         unsigned final_invalid_values=0;
 
         *output << std::setprecision(10);
@@ -391,6 +392,10 @@ int main(int argc, char** argv) {
             const double carbon=total_planet_carbon_kg(
                 world,simulation->fields()
             );
+            const double carbon_rel_residual=
+                (carbon-initial_carbon)/
+                std::max(1.0,std::abs(initial_carbon));
+            final_carbon_rel_residual=carbon_rel_residual;
             final_vegetation_ratio=
                 vegetation/std::max(1.0,initial_vegetation);
             final_collapsed_area_fraction=
@@ -440,8 +445,7 @@ int main(int argc, char** argv) {
                     ? precipitation_sum/static_cast<double>(samples)
                     : 0.0) << ','
                 << fields.column(field.atmospheric_co2).front() << ','
-                << (carbon-initial_carbon)/
-                    std::max(1.0,std::abs(initial_carbon)) << ','
+                << carbon_rel_residual << ','
                 << (water-initial_water)/
                     std::max(1.0,std::abs(initial_water)) << ','
                 << (climate.total_surface_heat_j()-expected_heat)/
@@ -517,6 +521,7 @@ int main(int argc, char** argv) {
         if (options.assert_stable) {
             if (
                 final_invalid_values!=0U ||
+                std::abs(final_carbon_rel_residual)>1.0e-10 ||
                 final_vegetation_ratio<0.50 ||
                 final_vegetation_ratio>4.0 ||
                 final_collapsed_area_fraction>0.25 ||
