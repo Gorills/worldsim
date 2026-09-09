@@ -289,25 +289,6 @@ double climate_land_albedo(double snow_cover_fraction) {
         (snow_albedo-land_albedo)*snow_cover_fraction;
 }
 
-double orographic_condensation_fraction_from_climb(double climb_m) {
-    if (!std::isfinite(climb_m) || climb_m<0.0)
-        throw std::invalid_argument("invalid orographic climb");
-
-    // Treat uplift as a cumulative rainout hazard rather than a per-edge
-    // fraction. This preserves the former 35% rainout over 1500 m while making
-    // the result compositional: splitting the same monotonic climb across more
-    // climate-grid edges cannot create extra condensation.
-    constexpr double reference_climb_m=1'500.0;
-    constexpr double reference_fraction=0.35;
-    static const double rate_per_m=
-        -std::log1p(-reference_fraction)/reference_climb_m;
-    return std::clamp(
-        -std::expm1(-rate_per_m*climb_m),
-        0.0,
-        1.0
-    );
-}
-
 void ClimateStore::on_add_cell(CellId cell) {
     if (!has_level_) {
         reference_level_=cell.level();
@@ -343,7 +324,7 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
         const double base_temperature=std::clamp(
             301.0-
             42.0*std::pow(std::abs(std::sin(latitude)),1.25)-
-            std::max(0.0,reference_elevation_m)*lapse_rate_k_m,
+            std::max(0.0,elevation_m)*lapse_rate_k_m,
             175.0,
             335.0
         );
@@ -351,7 +332,8 @@ void ClimateStore::initialize(WorldState& world, const FieldRegistry& r) {
         node.cell=cell;
         node.area_m2=area;
         node.land_area_m2=land_area;
-        node.mean_elevation_m=reference_elevation_m;
+        node.mean_elevation_m=elevation_m;
+        node.orographic_elevation_m=reference_elevation_m;
         node.land_temperature_k=base_temperature;
         node.ocean_temperature_k=base_temperature;
         node.atmospheric_water_m3=
@@ -651,11 +633,11 @@ void ClimateStore::advance_moisture(double dt_days) {
         const double actual=std::abs(transfer);
         const double climb=std::max(
             0.0,
-            nodes_[receiver].mean_elevation_m-
-            nodes_[donor].mean_elevation_m
+            nodes_[receiver].orographic_elevation_m-
+            nodes_[donor].orographic_elevation_m
         );
         orographic[receiver]+=
-            actual*orographic_condensation_fraction_from_climb(climb);
+            actual*0.35*std::clamp(climb/1'500.0,0.0,1.0);
     }
     for (std::size_t i=0;i<nodes_.size();++i) {
         nodes_[i].atmospheric_water_m3+=delta[i];
@@ -1083,6 +1065,7 @@ void ClimateStore::save(BinaryWriter& writer) const {
         writer.pod(node.area_m2);
         writer.pod(node.land_area_m2);
         writer.pod(node.mean_elevation_m);
+        writer.pod(node.orographic_elevation_m);
         writer.pod(node.land_temperature_k);
         writer.pod(node.ocean_temperature_k);
         writer.pod(node.atmospheric_water_m3);
@@ -1099,7 +1082,7 @@ void ClimateStore::save(BinaryWriter& writer) const {
 }
 
 void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
-    if (version!=3)
+    if (version!=4)
         throw std::runtime_error("unsupported climate state snapshot version");
     const std::uint8_t level=reader.pod<std::uint8_t>();
     if (!has_level_ || level!=reference_level_)
@@ -1144,7 +1127,7 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
     );
     const std::uint64_t count=reader.pod<std::uint64_t>();
     const std::uint64_t expected=6ULL*(1ULL<<(2U*level));
-    constexpr std::size_t bytes_per_node=8U+15U*8U;
+    constexpr std::size_t bytes_per_node=8U+16U*8U;
     if (count!=expected || count>reader.remaining()/bytes_per_node)
         throw std::runtime_error("invalid climate node count");
     std::vector<ClimateNode> nodes;
@@ -1156,6 +1139,7 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
         node.area_m2=reader.pod<double>();
         node.land_area_m2=reader.pod<double>();
         node.mean_elevation_m=reader.pod<double>();
+        node.orographic_elevation_m=reader.pod<double>();
         node.land_temperature_k=reader.pod<double>();
         node.ocean_temperature_k=reader.pod<double>();
         node.atmospheric_water_m3=reader.pod<double>();
@@ -1183,6 +1167,8 @@ void ClimateStore::load(BinaryReader& reader, std::uint32_t version) {
             node.land_area_m2<0.0 || node.land_area_m2>node.area_m2 ||
             !std::isfinite(node.mean_elevation_m) ||
             std::abs(node.mean_elevation_m)>1.0e6 ||
+            !std::isfinite(node.orographic_elevation_m) ||
+            std::abs(node.orographic_elevation_m)>1.0e6 ||
             !std::isfinite(node.land_temperature_k) ||
             node.land_temperature_k<150.0 ||
             node.land_temperature_k>360.0 ||
