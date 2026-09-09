@@ -154,17 +154,32 @@ double visual_orographic_relief_m(
             28'000.0,
             4
         );
+    const double local_peak_noise=
+        0.5+0.5*fbm_unit(
+            seed,
+            fnv1a64("terrain.visual.orography.ridges.local"),
+            p,
+            16'000.0,
+            4
+        );
+    const double summit_profile=std::pow(
+        smoothstep(0.50,0.78,local_peak_noise),
+        2.0
+    );
     const double land_gate=smoothstep(0.0,750.0,base_elevation_m);
     const double mountain_strength=
         std::pow(uplift,0.35)*
         (0.35+0.65*std::clamp(tectonic.continental_affinity,0.0,1.0));
+    const double broad_relief=
+        ridge*ridge*(0.55+0.45*peak_noise);
+    const double summit_relief=
+        summit_profile*(0.35+0.65*ridge);
 
     return
         1'800.0*
         land_gate*
-        ridge*ridge*
-        (0.55+0.45*peak_noise)*
-        mountain_strength;
+        mountain_strength*
+        (broad_relief+summit_relief);
 }
 
 } // namespace
