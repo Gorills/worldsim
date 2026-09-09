@@ -168,10 +168,12 @@ claim for any species.
 Snapshot epoch 31 was the first combined-world format with explicit
 terrestrial-N fields. Epoch 32 added `NitrogenStore`, current boundary rates
 and return-flux fields. Epoch 33 makes cohort biomass own derived fauna N and
-changes trophic transfer semantics. The cohort wire layout and `NitrogenStore`
-version remain unchanged, but epoch 32 cannot be loaded because it would
-reinterpret existing animal biomass as newly owned N without a migration.
-Combined epochs 2 through 32 are rejected until explicit migrations exist.
+changes trophic transfer semantics. Epoch 34 changes authoritative terrestrial
+area semantics by replacing coarse cell-center coastal classification with
+area-integrated subcell fractions; the nitrogen wire layout is unchanged, but
+resuming epoch 33 would reinterpret every land-area-normalized nitrogen process.
+The cohort wire layout and `NitrogenStore` version remain unchanged.
+Combined epochs 2 through 33 are rejected until explicit migrations exist.
 
 ## Explicit limits
 
