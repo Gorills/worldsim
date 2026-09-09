@@ -1174,12 +1174,22 @@ public:
               require_field(r,"climate.snow_cover_fraction")
           ),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
+          litter_nitrogen_(require_field(r,"ecology.litter_nitrogen_kg")),
+          mineral_nitrogen_(require_field(r,"ecology.mineral_nitrogen_kg")),
           pft_{
               require_field(r,"ecology.grass_carbon_kg"),
               require_field(r,"ecology.shrub_carbon_kg"),
               require_field(r,"ecology.tree_carbon_kg")
           },
+          pft_nitrogen_{
+              require_field(r,"ecology.grass_nitrogen_kg"),
+              require_field(r,"ecology.shrub_nitrogen_kg"),
+              require_field(r,"ecology.tree_nitrogen_kg")
+          },
           carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+          vegetation_nitrogen_(
+              require_field(r,"ecology.vegetation_nitrogen_kg")
+          ),
           active_area_(require_field(r,"ecology.fire_active_area_m2")),
           active_(require_field(r,"ecology.fire_active_fraction")),
           danger_(require_field(r,"ecology.fire_danger")),
@@ -1190,6 +1200,9 @@ public:
           ),
           emission_rate_(
               require_field(r,"ecology.fire_emission_kg_day")
+          ),
+          emitted_nitrogen_(
+              require_field(r,"ecology.fire_emitted_nitrogen_kg")
           ),
           char_(require_field(r,"ecology.pyrogenic_carbon_kg")) {}
 
@@ -1211,6 +1224,12 @@ public:
                     "field:hydrology.flooded_fraction",
                     "field:climate.snow_cover_fraction",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
@@ -1222,6 +1241,12 @@ public:
                 },
                 {
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
@@ -1233,6 +1258,7 @@ public:
                     "field:ecology.fire_burned_area_m2",
                     "field:ecology.fire_emitted_carbon_kg",
                     "field:ecology.fire_emission_kg_day",
+                    "field:ecology.fire_emitted_nitrogen_kg",
                     "field:ecology.pyrogenic_carbon_kg"
                 }};
     }
@@ -1444,10 +1470,16 @@ public:
             if (!(fraction>0.0)) continue;
 
             const double litter_before=fs.get(cell,litter_);
+            const double litter_nitrogen_before=
+                fs.get(cell,litter_nitrogen_);
             double litter_after=litter_before;
+            double litter_nitrogen_after=litter_nitrogen_before;
             double emitted=0.0;
+            double emitted_nitrogen=0.0;
+            double mineral_nitrogen_addition=0.0;
             double charred=0.0;
             double vegetation_after=0.0;
+            double vegetation_nitrogen_after=0.0;
             for (std::size_t i=0;i<pft_.size();++i) {
                 const double before=fs.get(cell,pft_[i]);
                 const double killed=std::min(
@@ -1459,9 +1491,45 @@ public:
                 litter_after+=killed-combusted-pft_char;
                 emitted+=combusted;
                 charred+=pft_char;
+                const double nitrogen_before=
+                    fs.get(cell,pft_nitrogen_[i]);
+                const double killed_nitrogen=
+                    before>0.0
+                        ? nitrogen_before*
+                            std::clamp(killed/before,0.0,1.0)
+                        : 0.0;
+                const double litter_carbon_from_kill=
+                    killed-combusted-pft_char;
+                const double litter_nitrogen_from_kill=
+                    killed>0.0
+                        ? killed_nitrogen*
+                            std::clamp(
+                                litter_carbon_from_kill/killed,
+                                0.0,
+                                1.0
+                            )
+                        : 0.0;
+                const double altered_nitrogen=
+                    killed_nitrogen-litter_nitrogen_from_kill;
+                litter_nitrogen_after+=litter_nitrogen_from_kill;
+                emitted_nitrogen+=
+                    altered_nitrogen*
+                    fire_nitrogen_volatilization_fraction;
+                mineral_nitrogen_addition+=
+                    altered_nitrogen*
+                    (1.0-fire_nitrogen_volatilization_fraction);
+
                 const double after=before-killed;
+                const double nitrogen_after=
+                    nitrogen_before-killed_nitrogen;
                 fs.set(cell,pft_[i],after);
+                fs.set(
+                    cell,pft_nitrogen_[i],
+                    std::max(0.0,nitrogen_after)
+                );
                 vegetation_after+=after;
+                vegetation_nitrogen_after+=
+                    std::max(0.0,nitrogen_after);
             }
 
             const double litter_affected=std::min(
@@ -1472,10 +1540,40 @@ public:
             emitted+=litter_affected*(1.0-litter_char_fraction);
             charred+=litter_affected*litter_char_fraction;
 
+            const double litter_nitrogen_affected=
+                litter_before>0.0
+                    ? litter_nitrogen_before*
+                        std::clamp(
+                            litter_affected/litter_before,
+                            0.0,
+                            1.0
+                        )
+                    : 0.0;
+            litter_nitrogen_after-=litter_nitrogen_affected;
+            emitted_nitrogen+=
+                litter_nitrogen_affected*
+                fire_nitrogen_volatilization_fraction;
+            mineral_nitrogen_addition+=
+                litter_nitrogen_affected*
+                (1.0-fire_nitrogen_volatilization_fraction);
+
             fs.set(cell,litter_,std::max(0.0,litter_after));
+            fs.set(
+                cell,litter_nitrogen_,
+                std::max(0.0,litter_nitrogen_after)
+            );
+            fs.add(
+                cell,mineral_nitrogen_,
+                mineral_nitrogen_addition
+            );
             fs.set(cell,carbon_,vegetation_after);
+            fs.set(
+                cell,vegetation_nitrogen_,
+                vegetation_nitrogen_after
+            );
             fs.add(cell,emitted_,emitted);
             fs.add(cell,emission_rate_,emitted/ctx.dt_days);
+            fs.add(cell,emitted_nitrogen_,emitted_nitrogen);
             fs.add(cell,char_,charred);
             fs.add(
                 cell,
@@ -1562,9 +1660,12 @@ public:
 private:
     FieldId temp_,precipitation_,humidity_,east_wind_,north_wind_;
     FieldId land_,regolith_,water_,flooded_,snow_cover_,litter_;
+    FieldId litter_nitrogen_,mineral_nitrogen_;
     std::array<FieldId,3> pft_;
-    FieldId carbon_,active_area_,active_,danger_,burned_,burned_area_;
-    FieldId emitted_,emission_rate_,char_;
+    std::array<FieldId,3> pft_nitrogen_;
+    FieldId carbon_,vegetation_nitrogen_;
+    FieldId active_area_,active_,danger_,burned_,burned_area_;
+    FieldId emitted_,emission_rate_,emitted_nitrogen_,char_;
 };
 
 // Reduced standing-biomass pyramid used to bound the two demo trophic guilds.
@@ -1582,8 +1683,22 @@ public:
               require_field(r,"ecology.shrub_carbon_kg"),
               require_field(r,"ecology.tree_carbon_kg")
           },
+          pft_nitrogen_{
+              require_field(r,"ecology.grass_nitrogen_kg"),
+              require_field(r,"ecology.shrub_nitrogen_kg"),
+              require_field(r,"ecology.tree_nitrogen_kg")
+          },
           carbon_(require_field(r,"ecology.vegetation_carbon_kg")),
+          vegetation_nitrogen_(
+              require_field(r,"ecology.vegetation_nitrogen_kg")
+          ),
           litter_(require_field(r,"ecology.litter_carbon_kg")),
+          litter_nitrogen_(
+              require_field(r,"ecology.litter_nitrogen_kg")
+          ),
+          mineral_nitrogen_(
+              require_field(r,"ecology.mineral_nitrogen_kg")
+          ),
           respired_(require_field(
               r,"ecology.fauna_respired_carbon_kg"
           )),
@@ -1605,8 +1720,14 @@ public:
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
                     "field:ecology.fauna_respired_carbon_kg",
                     "store:ecology.cohorts"
                 },
@@ -1614,8 +1735,14 @@ public:
                     "field:ecology.grass_carbon_kg",
                     "field:ecology.shrub_carbon_kg",
                     "field:ecology.tree_carbon_kg",
+                    "field:ecology.grass_nitrogen_kg",
+                    "field:ecology.shrub_nitrogen_kg",
+                    "field:ecology.tree_nitrogen_kg",
+                    "field:ecology.vegetation_nitrogen_kg",
                     "field:ecology.vegetation_carbon_kg",
                     "field:ecology.litter_carbon_kg",
+                    "field:ecology.litter_nitrogen_kg",
+                    "field:ecology.mineral_nitrogen_kg",
                     "field:ecology.fauna_respired_carbon_kg",
                     "field:ecology.fauna_respiration_kg_day",
                     "store:ecology.cohorts"
@@ -1680,6 +1807,11 @@ public:
                 fs.get(cell,pft_[1]),
                 fs.get(cell,pft_[2])
             };
+            std::array<double,3> vegetation_nitrogen{
+                fs.get(cell,pft_nitrogen_[0]),
+                fs.get(cell,pft_nitrogen_[1]),
+                fs.get(cell,pft_nitrogen_[2])
+            };
             double weighted_forage=0.0;
             for (std::size_t i=0;i<pft_.size();++i)
                 weighted_forage+=
@@ -1719,16 +1851,32 @@ public:
                     1.0
                 )
             );
+            double consumed_nitrogen=0.0;
             if (weighted_forage>0.0 && consumed>0.0) {
                 for (std::size_t i=0;i<pft_.size();++i) {
                     const double share=
                         vegetation[i]*
                         forage_preference[i]/
                         weighted_forage;
+                    const double removed_carbon=consumed*share;
+                    const double removed_nitrogen=
+                        vegetation[i]>0.0
+                            ? vegetation_nitrogen[i]*
+                                std::clamp(
+                                    removed_carbon/vegetation[i],
+                                    0.0,
+                                    1.0
+                                )
+                            : 0.0;
                     vegetation[i]=std::max(
                         0.0,
-                        vegetation[i]-consumed*share
+                        vegetation[i]-removed_carbon
                     );
+                    vegetation_nitrogen[i]=std::max(
+                        0.0,
+                        vegetation_nitrogen[i]-removed_nitrogen
+                    );
+                    consumed_nitrogen+=removed_nitrogen;
                 }
             }
 
@@ -1785,6 +1933,16 @@ public:
                 consumed-herbivore_assimilated+
                     herbivore_background_mortality+
                     herbivore_density_mortality
+            );
+            fs.add(
+                cell,litter_nitrogen_,
+                consumed_nitrogen*
+                (1.0-fauna_nitrogen_to_mineral_fraction)
+            );
+            fs.add(
+                cell,mineral_nitrogen_,
+                consumed_nitrogen*
+                fauna_nitrogen_to_mineral_fraction
             );
             fs.add(cell,respired_,herbivore_respired);
             fs.add(
@@ -1918,11 +2076,22 @@ public:
             }
 
             double total_vegetation=0.0;
+            double total_vegetation_nitrogen=0.0;
             for (std::size_t i=0;i<pft_.size();++i) {
                 fs.set(cell,pft_[i],vegetation[i]);
+                fs.set(
+                    cell,pft_nitrogen_[i],
+                    vegetation_nitrogen[i]
+                );
                 total_vegetation+=vegetation[i];
+                total_vegetation_nitrogen+=
+                    vegetation_nitrogen[i];
             }
             fs.set(cell,carbon_,total_vegetation);
+            fs.set(
+                cell,vegetation_nitrogen_,
+                total_vegetation_nitrogen
+            );
         }
 
         struct HabitatState {
@@ -2090,7 +2259,10 @@ public:
 private:
     FieldId land_;
     std::array<FieldId,3> pft_;
-    FieldId carbon_,litter_,respired_,respiration_rate_;
+    std::array<FieldId,3> pft_nitrogen_;
+    FieldId carbon_,vegetation_nitrogen_,litter_;
+    FieldId litter_nitrogen_,mineral_nitrogen_;
+    FieldId respired_,respiration_rate_;
     bool fire_enabled_{};
 };
 
