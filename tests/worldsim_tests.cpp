@@ -2483,6 +2483,54 @@ void test_geography_land_area_is_resolution_consistent() {
     );
 }
 
+void test_geography_coastal_area_survives_focus_refinement() {
+    SimulationConfig cfg;
+    cfg.base_level=2;
+    cfg.max_level=3;
+    cfg.tick_seconds=3600.0;
+    auto sim=make_terrain_simulation(42,cfg);
+    const auto land=*sim->fields().find("geography.land_fraction");
+    const auto& before=sim->world().stores().get<FieldStore>();
+
+    CellId coastal_parent{};
+    double parent_land_fraction=0.0;
+    bool found=false;
+    for (CellId cell:sim->world().active_cells()) {
+        const double fraction=before.get(cell,land);
+        if (fraction>0.05 && fraction<0.95) {
+            coastal_parent=cell;
+            parent_land_fraction=fraction;
+            found=true;
+            break;
+        }
+    }
+    check(found,"coastal LOD fixture found no fractional coarse land cell");
+    const double expected_land_area=
+        sim->world().topology().area_m2(coastal_parent)*
+        parent_land_fraction;
+
+    sim->set_focus(sim->world().topology().center_unit(coastal_parent));
+    sim->step(1);
+
+    const auto& after=sim->world().stores().get<FieldStore>();
+    double refined_land_area=0.0;
+    std::size_t active_children=0;
+    for (CellId child:coastal_parent.children()) {
+        if (!sim->world().active_cells().contains(child)) continue;
+        refined_land_area+=
+            sim->world().topology().area_m2(child)*
+            after.get(child,land);
+        ++active_children;
+    }
+    check(active_children==4,"coastal parent did not refine into four children");
+    near(
+        refined_land_area,
+        expected_land_area,
+        0.02,
+        "focus-only refinement changed represented coastal land area"
+    );
+}
+
 void test_geography_refinement_preserves_geology_state() {
     SimulationConfig cfg;
     cfg.base_level=4;
@@ -2588,6 +2636,7 @@ int main() {
         test_geology_mixed_margin_uses_both_crust_sides();
         test_geology_drainage_accumulation();
         test_geography_land_area_is_resolution_consistent();
+        test_geography_coastal_area_survives_focus_refinement();
         test_geography_refinement_preserves_geology_state();
         test_c_api();
         test_module_extension_contract();
