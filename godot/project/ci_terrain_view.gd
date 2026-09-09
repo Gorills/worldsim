@@ -21,7 +21,11 @@ func _process(_delta: float) -> bool:
         quit(1)
         return true
 
-    var mesh_instance := terrain.get_node_or_null("Chunk_0_0/Mesh") as MeshInstance3D
+    var spawn_chunk: Vector2i = scene.get("current_chunk")
+    var spawn_chunk_name := "Chunk_%d_%d" % [spawn_chunk.x, spawn_chunk.y]
+    var mesh_instance := terrain.get_node_or_null(
+        "%s/Mesh" % spawn_chunk_name
+    ) as MeshInstance3D
     if mesh_instance == null:
         push_error("No terrain MeshInstance3D was created")
         quit(2)
@@ -47,6 +51,10 @@ func _process(_delta: float) -> bool:
         return true
 
     var viewer_sim := root.get_node("WorldViewer/Simulation") as WorldSimulationNode
+    var spawn_east_m := float(scene.get("origin_east_m"))
+    var spawn_north_m := float(scene.get("origin_north_m"))
+    var mountain_target_east_m := float(scene.get("mountain_target_east_m"))
+    var mountain_target_north_m := float(scene.get("mountain_target_north_m"))
     var tree_values := viewer_sim.get_field_values("ecology.tree_carbon_kg")
     if tree_values.is_empty():
         push_error("Walker did not initialize the authoritative ecology modules")
@@ -54,7 +62,7 @@ func _process(_delta: float) -> bool:
         return true
 
     var surface_packet := viewer_sim.sample_surface_visual_patch(
-        0.0, 0.0, 8.0, 33
+        spawn_east_m, spawn_north_m, 8.0, 33
     )
     if !_surface_packet_valid(surface_packet, 33 * 33):
         push_error("Living-surface visual packet is missing or invalid")
@@ -73,9 +81,16 @@ func _process(_delta: float) -> bool:
         return true
     var mountain_min := float(mountain_probe[0])
     var mountain_max := mountain_min
-    for value in mountain_probe:
-        mountain_min = minf(mountain_min, float(value))
-        mountain_max = maxf(mountain_max, float(value))
+    var mountain_min_index := 0
+    var mountain_max_index := 0
+    for i in range(1, mountain_probe.size()):
+        var value := float(mountain_probe[i])
+        if value < mountain_min:
+            mountain_min = value
+            mountain_min_index = i
+        if value > mountain_max:
+            mountain_max = value
+            mountain_max_index = i
     var mountain_center := float(mountain_probe[32 * 65 + 32])
     var mountain_span := mountain_max - mountain_min
     var mountain_prominence := mountain_center - mountain_min
@@ -87,11 +102,38 @@ func _process(_delta: float) -> bool:
         quit(53)
         return true
 
+    var mountain_half := 32.0
+    var mountain_min_x := mountain_min_index % 65
+    var mountain_min_z := floori(float(mountain_min_index) / 65.0)
+    var mountain_max_x := mountain_max_index % 65
+    var mountain_max_z := floori(float(mountain_max_index) / 65.0)
+    var expected_spawn_east_m := 5_573_000.0 + (
+        float(mountain_min_x) - mountain_half
+    ) * 625.0
+    var expected_spawn_north_m := -1_800_300.0 + (
+        float(mountain_min_z) - mountain_half
+    ) * 625.0
+    var expected_target_east_m := 5_573_000.0 + (
+        float(mountain_max_x) - mountain_half
+    ) * 625.0
+    var expected_target_north_m := -1_800_300.0 + (
+        float(mountain_max_z) - mountain_half
+    ) * 625.0
+    if (
+        absf(spawn_east_m - expected_spawn_east_m) > 0.1
+        or absf(spawn_north_m - expected_spawn_north_m) > 0.1
+        or absf(mountain_target_east_m - expected_target_east_m) > 0.1
+        or absf(mountain_target_north_m - expected_target_north_m) > 0.1
+    ):
+        push_error("Walker does not start at the mountain-window low point facing its peak")
+        quit(54)
+        return true
+
     var trees := terrain.get_node_or_null(
-        "Chunk_0_0/Trees"
+        "%s/Trees" % spawn_chunk_name
     ) as MultiMeshInstance3D
     var shrubs := terrain.get_node_or_null(
-        "Chunk_0_0/Shrubs"
+        "%s/Shrubs" % spawn_chunk_name
     ) as MultiMeshInstance3D
     if (
         trees == null
@@ -110,7 +152,14 @@ func _process(_delta: float) -> bool:
     # Godot's right-handed terrain convention is +X east and -Z north.
     # The sampled patch is ordered south-to-north, so its north row must appear
     # on the chunk's negative-Z side.
-    var source_heights := viewer_sim.sample_terrain_patch(0.0, 0.0, 8.0, 33)
+    var chunk_center_east_m := float(spawn_chunk.x) * 256.0
+    var chunk_center_north_m := float(spawn_chunk.y) * 256.0
+    var source_heights := viewer_sim.sample_terrain_patch(
+        chunk_center_east_m,
+        chunk_center_north_m,
+        8.0,
+        33
+    )
     var scene_north_index := 16
     var source_north_index := 32 * 33 + 16
     if absf(verts[scene_north_index].y - float(source_heights[source_north_index])) > 0.01:
@@ -119,6 +168,20 @@ func _process(_delta: float) -> bool:
         return true
 
     var player := root.get_node("WorldViewer/Player") as CharacterBody3D
+    var initial_forward := -player.global_transform.basis.z
+    var actual_target_direction := Vector2(
+        initial_forward.x,
+        -initial_forward.z
+    ).normalized()
+    var expected_target_direction := Vector2(
+        mountain_target_east_m - spawn_east_m,
+        mountain_target_north_m - spawn_north_m
+    ).normalized()
+    if actual_target_direction.dot(expected_target_direction) < 0.999:
+        push_error("Initial walker heading does not face the sampled mountain peak")
+        quit(55)
+        return true
+
     var minimap_overlay := root.get_node(
         "WorldViewer/HUD/MiniMapPanel/Margin/VBox/MapFrame/Inset/Layers/Overlay"
     )
@@ -139,13 +202,13 @@ func _process(_delta: float) -> bool:
     player.rotation.y = 0.0
 
     var visual_patch := viewer_sim.sample_terrain_visual_patch(
-        0.0,
-        0.0,
+        spawn_east_m,
+        spawn_north_m,
         64.0,
         3,
-        0.0,
-        0.0,
-        viewer_sim.sample_terrain_height(0.0, 0.0)
+        spawn_east_m,
+        spawn_north_m,
+        viewer_sim.sample_terrain_height(spawn_east_m, spawn_north_m)
     )
     var visual_positions: PackedVector3Array = visual_patch.get(
         "positions",
@@ -171,7 +234,9 @@ func _process(_delta: float) -> bool:
         quit(6)
         return true
 
-    var collision := terrain.get_node_or_null("Chunk_0_0/Body/Collision") as CollisionShape3D
+    var collision := terrain.get_node_or_null(
+        "%s/Body/Collision" % spawn_chunk_name
+    ) as CollisionShape3D
     if !_mesh_matches_collision(mesh, collision):
         push_error("Initial terrain mesh and collision heights disagree")
         quit(7)
@@ -273,13 +338,17 @@ func _process(_delta: float) -> bool:
         return true
 
     print(
-        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f"
+        "WORLDSIM_TERRAIN_VIEW_OK winding=clockwise_from_+Y aabb_y=[%.2f, %.2f] sea_drop_262km=%.2f mountain_span_40km=%.2f mountain_prominence=%.2f spawn=[%.1f, %.1f] target=[%.1f, %.1f]"
         % [
             aabb.position.y,
             aabb.end.y,
             sea_drop_m,
             mountain_span,
             mountain_prominence,
+            spawn_east_m,
+            spawn_north_m,
+            mountain_target_east_m,
+            mountain_target_north_m,
         ]
     )
     quit(0)

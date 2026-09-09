@@ -37,6 +37,10 @@ const PLAYER_GROUND_CLEARANCE_M := 1.25
 const MINIMAP_WIDTH := 320
 const MINIMAP_HEIGHT := 160
 const MINIMAP_HEADING_SAMPLE_M := 50000.0
+const MOUNTAIN_DEMO_CENTER_EAST_M := 5_573_000.0
+const MOUNTAIN_DEMO_CENTER_NORTH_M := -1_800_300.0
+const MOUNTAIN_DEMO_SAMPLE_SPACING_M := 625.0
+const MOUNTAIN_DEMO_RESOLUTION := 65
 
 var terrain_material: StandardMaterial3D
 var tree_mesh: Mesh
@@ -55,6 +59,8 @@ var surface_refresh_elapsed := 0.0
 var origin_east_m := 0.0
 var origin_north_m := 0.0
 var origin_height_m := 0.0
+var mountain_target_east_m := MOUNTAIN_DEMO_CENTER_EAST_M
+var mountain_target_north_m := MOUNTAIN_DEMO_CENTER_NORTH_M
 var sim_focus_elapsed := 0.0
 var status_elapsed := 0.0
 var pitch := 0.0
@@ -67,6 +73,10 @@ func _ready() -> void:
     if !sim.get_last_error().is_empty():
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
+    if !_select_mountain_demo_spawn():
+        status.text = tr("HUD_STATUS_ERROR") % "mountain spawn terrain sampling failed"
+        return
+    current_chunk = _world_chunk(origin_east_m, origin_north_m)
 
     terrain_material = StandardMaterial3D.new()
     terrain_material.vertex_color_use_as_albedo = true
@@ -76,7 +86,7 @@ func _ready() -> void:
     terrain_revision = sim.get_terrain_revision()
     surface_revision = sim.get_surface_revision()
     pending_surface_revision = surface_revision
-    origin_height_m = sim.sample_terrain_height(0.0, 0.0)
+    origin_height_m = sim.sample_terrain_height(origin_east_m, origin_north_m)
     distant_terrain.call(
         "initialize",
         sim,
@@ -84,16 +94,31 @@ func _ready() -> void:
         origin_north_m,
         origin_height_m
     )
-    _create_chunk(Vector2i.ZERO)
+    _create_chunk(current_chunk)
     player.position = Vector3(0.0, PLAYER_GROUND_CLEARANCE_M, 0.0)
     walking_collision_mask = player.collision_mask
-    pitch = -0.22
+    var target_east_delta := mountain_target_east_m - origin_east_m
+    var target_north_delta := mountain_target_north_m - origin_north_m
+    var target_distance_m := Vector2(
+        target_east_delta,
+        target_north_delta
+    ).length()
+    var target_height_m := sim.sample_terrain_height(
+        mountain_target_east_m,
+        mountain_target_north_m
+    )
+    player.rotation.y = atan2(-target_east_delta, target_north_delta)
+    pitch = clampf(
+        atan2(target_height_m - origin_height_m, maxf(target_distance_m, 1.0)),
+        -0.35,
+        0.35
+    )
     head.rotation.x = pitch
     if !_create_world_minimap():
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
     _update_minimap_marker()
-    _queue_visible_chunks(Vector2i.ZERO)
+    _queue_visible_chunks(current_chunk)
     help.text = tr("HUD_CONTROLS")
     _update_status()
 
@@ -377,6 +402,43 @@ func _sphere_direction_to_map_uv(direction: Vector3) -> Vector2:
     var longitude := atan2(direction.y, direction.x)
     var latitude := asin(clampf(direction.z, -1.0, 1.0))
     return Vector2(longitude / TAU + 0.5, 0.5 - latitude / PI)
+
+func _select_mountain_demo_spawn() -> bool:
+    var heights := sim.sample_terrain_patch(
+        MOUNTAIN_DEMO_CENTER_EAST_M,
+        MOUNTAIN_DEMO_CENTER_NORTH_M,
+        MOUNTAIN_DEMO_SAMPLE_SPACING_M,
+        MOUNTAIN_DEMO_RESOLUTION
+    )
+    if heights.size() != MOUNTAIN_DEMO_RESOLUTION * MOUNTAIN_DEMO_RESOLUTION:
+        return false
+
+    var min_index := 0
+    var max_index := 0
+    for i in range(1, heights.size()):
+        if float(heights[i]) < float(heights[min_index]):
+            min_index = i
+        if float(heights[i]) > float(heights[max_index]):
+            max_index = i
+
+    var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
+    var min_x := min_index % MOUNTAIN_DEMO_RESOLUTION
+    var min_z := floori(float(min_index) / float(MOUNTAIN_DEMO_RESOLUTION))
+    var max_x := max_index % MOUNTAIN_DEMO_RESOLUTION
+    var max_z := floori(float(max_index) / float(MOUNTAIN_DEMO_RESOLUTION))
+    origin_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
+        float(min_x) - half
+    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    origin_north_m = MOUNTAIN_DEMO_CENTER_NORTH_M + (
+        float(min_z) - half
+    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    mountain_target_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
+        float(max_x) - half
+    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    mountain_target_north_m = MOUNTAIN_DEMO_CENTER_NORTH_M + (
+        float(max_z) - half
+    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    return true
 
 func _world_chunk(east_m: float, north_m: float) -> Vector2i:
     return Vector2i(
