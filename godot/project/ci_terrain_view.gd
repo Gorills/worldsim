@@ -64,7 +64,7 @@ func _process(_delta: float) -> bool:
     var mountain_probe := viewer_sim.sample_terrain_patch(
         5_573_000.0,
         -1_800_300.0,
-        2_000.0,
+        625.0,
         65
     )
     if mountain_probe.size() != 65 * 65:
@@ -76,9 +76,26 @@ func _process(_delta: float) -> bool:
     for value in mountain_probe:
         mountain_min = minf(mountain_min, float(value))
         mountain_max = maxf(mountain_max, float(value))
+    var mountain_center := float(mountain_probe[32 * 65 + 32])
+    var mountain_direction := viewer_sim.projected_to_direction(
+        5_573_000.0,
+        -1_800_300.0
+    )
+    var mountain_inspect := viewer_sim.inspect_direction(mountain_direction)
+    var mountain_values: Dictionary = mountain_inspect.get("values", {})
+    var mountain_cell_elevation := float(
+        mountain_values.get("geography.elevation_m", NAN)
+    )
     print(
-        "WORLDSIM_MOUNTAIN_PROBE center=(5573km,-1800.3km) span_128km=%.2f min=%.2f max=%.2f"
-        % [mountain_max - mountain_min, mountain_min, mountain_max]
+        "WORLDSIM_MOUNTAIN_PROBE center=(5573km,-1800.3km) span_40km=%.2f center_h=%.2f min=%.2f max=%.2f active_cell_h=%.2f level=%d"
+        % [
+            mountain_max - mountain_min,
+            mountain_center,
+            mountain_min,
+            mountain_max,
+            mountain_cell_elevation,
+            int(mountain_inspect.get("level", -1)),
+        ]
     )
 
     var trees := terrain.get_node_or_null(
