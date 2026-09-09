@@ -318,16 +318,24 @@ func _process(_delta: float) -> bool:
     var distant_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod8/Ocean") as MeshInstance3D
     var near_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod0/Ocean") as MeshInstance3D
     var near_distant_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod0/Terrain") as MeshInstance3D
+    var next_distant_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod1/Terrain") as MeshInstance3D
     if (
         distant_terrain == null
         or distant_ocean == null
         or near_ocean == null
         or near_distant_terrain == null
+        or next_distant_terrain == null
     ):
         push_error("Spherical distant terrain/ocean nodes were not created")
         quit(11)
         return true
-    if distant_terrain.mesh == null or distant_ocean.mesh == null or near_ocean.mesh == null:
+    if (
+        distant_terrain.mesh == null
+        or distant_ocean.mesh == null
+        or near_ocean.mesh == null
+        or near_distant_terrain.mesh == null
+        or next_distant_terrain.mesh == null
+    ):
         push_error("Spherical distant terrain/ocean meshes were not built")
         quit(12)
         return true
@@ -346,6 +354,35 @@ func _process(_delta: float) -> bool:
     ):
         push_error("Distant terrain winding is not front-facing after north/-Z mapping")
         quit(51)
+        return true
+
+    var fine_lod_arrays := (
+        near_distant_terrain.mesh as ArrayMesh
+    ).surface_get_arrays(0)
+    var coarse_lod_arrays := (
+        next_distant_terrain.mesh as ArrayMesh
+    ).surface_get_arrays(0)
+    var fine_lod_colors: PackedColorArray = fine_lod_arrays[Mesh.ARRAY_COLOR]
+    var coarse_lod_colors: PackedColorArray = coarse_lod_arrays[Mesh.ARRAY_COLOR]
+    var lod_seam_delta := 0.0
+    for pair in [
+        Vector2i(32 * 65 + 64, 32 * 65 + 48),
+        Vector2i(0 * 65 + 32, 16 * 65 + 32),
+    ]:
+        var fine_color := fine_lod_colors[pair.x]
+        var coarse_color := coarse_lod_colors[pair.y]
+        lod_seam_delta = maxf(
+            lod_seam_delta,
+            absf(fine_color.r - coarse_color.r)
+            + absf(fine_color.g - coarse_color.g)
+            + absf(fine_color.b - coarse_color.b)
+        )
+    if lod_seam_delta > 0.025:
+        push_error(
+            "Adjacent distant LODs disagree in vertex shading at their shared boundary: %.4f"
+            % lod_seam_delta
+        )
+        quit(67)
         return true
 
     var sea_arrays := (distant_ocean.mesh as ArrayMesh).surface_get_arrays(0)
