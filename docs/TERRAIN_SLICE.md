@@ -120,11 +120,12 @@ For the fixed seed-42 walking demonstration, startup placement is intentionally
 inside the existing mountain regression region instead of the projection origin.
 The viewer samples the same 40 km x 40 km reconstructed-terrain window centered
 at east 5,573 km / north -1,800.3 km, finds its highest 625 m-grid sample, then
-starts at the lowest dry sample between 8 km and 12 km from that peak and faces
-it. This keeps the diagnostic mountain large enough in the first-person view to
-judge silhouette, shading and LOD detail without exaggerating authoritative
-height. Terrain authority, simulation focus, snapshots and the reconstruction
-formula are unchanged.
+scores dry samples 6-10 km from that peak by the peak's apparent elevation angle
+and starts at the strongest view. This makes the canonical frame stable against
+local relief changes: adding a deeper gully cannot silently move the camera to a
+farther, flatter line of sight. The regression requires at least four degrees of
+peak elevation. Terrain authority, simulation focus, snapshots and the
+reconstruction formula are unchanged.
 
 The walker now also renders visual-only nested spherical terrain rings. Every
 ring is a 65 x 65 regular grid, sample spacing doubles from 64 m through
