@@ -672,8 +672,8 @@ void test_lod_stability_and_snapshot_across_cover_change() {
 
 void test_command_routing_across_lod() {
     SimulationConfig cfg;
-    cfg.base_level=0;
-    cfg.max_level=1;
+    cfg.base_level=4;
+    cfg.max_level=5;
     cfg.tick_seconds=3'600.0;
 
     auto magic_only=[&]() {
@@ -686,7 +686,7 @@ void test_command_routing_across_lod() {
     auto command_before_refine=magic_only();
     auto command_after_refine=magic_only();
     auto no_command=magic_only();
-    const CellId coarse_target=CellId::make(0,0,0,0);
+    const CellId coarse_target=CellId::make(0,4,8,8);
     const Vec3d focus=
         command_before_refine->world().topology().center_unit(
             coarse_target
