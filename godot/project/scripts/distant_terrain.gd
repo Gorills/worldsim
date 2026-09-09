@@ -64,6 +64,7 @@ func initialize(
 
     terrain_material = StandardMaterial3D.new()
     terrain_material.vertex_color_use_as_albedo = true
+    terrain_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     terrain_material.roughness = 0.95
 
     ocean_material = StandardMaterial3D.new()
@@ -262,6 +263,8 @@ func _morph_outer_transition(
     coarse_positions: PackedVector3Array
 ) -> PackedVector3Array:
     var center := floori(float(LOD_RESOLUTION - 1) * 0.5)
+    var half_cells := float(LOD_RESOLUTION - 1) * 0.5
+    var outer_half_m := half_cells * spacing_m
     for z in range(LOD_RESOLUTION):
         for x in range(LOD_RESOLUTION):
             var ring := maxi(absi(x - center), absi(z - center))
@@ -337,6 +340,25 @@ func _build_mesh(
             var up := positions[mini(z + 1, LOD_RESOLUTION - 1) * LOD_RESOLUTION + x]
             normals[index] = (right - left).cross(up - down).normalized()
             if use_elevation_colors:
+                var grid_x_m := absf((float(x) - half_cells) * spacing_m)
+                var grid_z_m := absf((float(z) - half_cells) * spacing_m)
+                var square_radius_m := maxf(grid_x_m, grid_z_m)
+                var boundary_distance_m := outer_half_m - square_radius_m
+                if inner_half_m > 0.0:
+                    boundary_distance_m = minf(
+                        boundary_distance_m,
+                        absf(square_radius_m - inner_half_m)
+                    )
+                var seam_blend := smoothstep(
+                    0.0,
+                    3.0 * spacing_m,
+                    maxf(boundary_distance_m, 0.0)
+                )
+                var relief_light := lerpf(
+                    0.90,
+                    SurfaceVisual.relief_light(normals[index]),
+                    seam_blend
+                )
                 colors[index] = SurfaceVisual.terrain_color(
                     float(heights[index]),
                     float(grass[index]),
@@ -348,11 +370,10 @@ func _build_mesh(
                     float(fire_burned[index]),
                     Vector2(normals[index].x, normals[index].z).length()
                     / maxf(normals[index].y, 0.001),
-                    SurfaceVisual.relief_light(normals[index])
+                    relief_light
                 )
 
     var indices := PackedInt32Array()
-    var half_cells := float(LOD_RESOLUTION - 1) * 0.5
     for z in range(LOD_RESOLUTION - 1):
         for x in range(LOD_RESOLUTION - 1):
             var mid_x := (float(x) + 0.5 - half_cells) * spacing_m
