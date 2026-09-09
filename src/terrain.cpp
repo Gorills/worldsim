@@ -176,10 +176,12 @@ double visual_orographic_relief_m(
         summit_profile*(0.35+0.65*ridge);
 
     return
-        1'800.0*
         land_gate*
         mountain_strength*
-        (broad_relief+summit_relief);
+        (
+            1'800.0*broad_relief+
+            2'050.0*summit_relief
+        );
 }
 
 } // namespace
