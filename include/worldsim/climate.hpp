@@ -8,15 +8,12 @@ namespace worldsim {
 // climate, diagnostics and tests. SWE is liquid-water-equivalent depth.
 [[nodiscard]] double snow_cover_fraction_from_swe(double swe_m);
 [[nodiscard]] double climate_land_albedo(double snow_cover_fraction);
-[[nodiscard]] double orographic_condensation_fraction_from_climb(
-    double climb_m
-);
-
 struct ClimateNode {
     CellId cell;
     double area_m2{};
     double land_area_m2{};
     double mean_elevation_m{};
+    double orographic_elevation_m{};
     double land_temperature_k{};
     double ocean_temperature_k{};
     double atmospheric_water_m3{};
@@ -48,7 +45,7 @@ class ClimateStore final : public IStateStore {
 public:
     static constexpr std::string_view kKey="climate.state";
     [[nodiscard]] std::string_view key() const override { return kKey; }
-    [[nodiscard]] std::uint32_t snapshot_version() const override { return 3; }
+    [[nodiscard]] std::uint32_t snapshot_version() const override { return 4; }
     void on_add_cell(CellId cell) override;
     void on_remove_cell(CellId) override {}
     void on_refine(CellId, std::span<const CellId>, const CubeSphereTopology&) override {}
