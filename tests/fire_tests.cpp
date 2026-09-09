@@ -228,6 +228,65 @@ void burn_cap_scales_with_elapsed_time() {
     );
 }
 
+void persistence_scales_with_elapsed_time() {
+    const auto run_fixture=[](double dt_days) {
+        auto simulation=make_default_simulation(
+            7011,SimulationConfig{1,1,3'600.0}
+        );
+        clear_and_dry(*simulation);
+        const CellId cell=*simulation->world().active_cells().begin();
+        set_fuel(*simulation,cell);
+        ignite(*simulation,cell,0.08);
+
+        run_fire(*simulation,dt_days);
+        const auto& fields=
+            simulation->world().stores().get<FieldStore>();
+        const double burned=fields.get(
+            cell,
+            field(*simulation,"ecology.fire_burned_fraction")
+        );
+        const double active=fields.get(
+            cell,
+            field(*simulation,"ecology.fire_active_fraction")
+        );
+        const double danger=fields.get(
+            cell,
+            field(*simulation,"ecology.fire_danger")
+        );
+        check(
+            burned>0.0 && active>0.0 && danger>0.0,
+            "fire persistence fixture did not remain active"
+        );
+        return std::array<double,3>{burned,active,danger};
+    };
+
+    const auto half_day=run_fixture(0.5);
+    const auto full_day=run_fixture(1.0);
+    near(
+        half_day[2],
+        full_day[2],
+        1.0e-15,
+        "fire danger changed between persistence timestep fixtures"
+    );
+    const double daily_persistence=std::clamp(
+        0.10+0.70*full_day[2],
+        0.0,
+        0.80
+    );
+    near(
+        full_day[1]/full_day[0],
+        daily_persistence,
+        1.0e-12,
+        "one-day fire persistence changed its calibration"
+    );
+    near(
+        half_day[1]/half_day[0],
+        std::sqrt(daily_persistence),
+        1.0e-12,
+        "fire persistence did not scale with elapsed time"
+    );
+}
+
 void fuelless_fire_extinguishes() {
     auto simulation=make_default_simulation(
         7002,SimulationConfig{1,1,3'600.0}
@@ -519,7 +578,7 @@ void snapshot_continuation_includes_fire_state() {
 
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"fire snapshot header is unexpectedly short");
-    check(snapshot[8]==std::byte{25},"unexpected current snapshot epoch");
+    check(snapshot[8]==std::byte{26},"unexpected current snapshot epoch");
     auto restored=make_default_simulation(
         7004,SimulationConfig{1,2,3'600.0}
     );
@@ -536,6 +595,7 @@ int main() {
     try {
         controlled_fire_closes_carbon();
         burn_cap_scales_with_elapsed_time();
+        persistence_scales_with_elapsed_time();
         fuelless_fire_extinguishes();
         wet_weather_suppresses_fire();
         snow_cover_suppresses_fire();

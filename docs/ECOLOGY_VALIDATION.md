@@ -146,7 +146,7 @@ The dedicated `worldsim_soil_carbon_tests` suite checks:
 - submerged stock remains dormant instead of being deleted;
 - all component pools and the cumulative ledger survive refine/coarsen; and
 - historical epoch-20 soil-carbon snapshots round-tripped and continued
-  deterministically; the current combined world uses epoch 25.
+  deterministically; the current combined world uses epoch 26.
 
 The dedicated `worldsim_fauna_v2_tests` suite checks the movement and fauna
 carbon contracts:
@@ -161,8 +161,8 @@ carbon contracts:
   time, so a controlled half-day pass removes half the forage of a one-day pass;
 - starvation cannot create population and over-capacity cohorts decline even
   when standing forage is abundant; and
-- the current epoch-25 snapshot includes the fauna-respiration ledger, rejects
-  version 24 after the wildfire burn-cap timebase semantic change, and round-trips
+- the current epoch-26 snapshot includes the fauna-respiration ledger, rejects
+  version 25 after the wildfire persistence timebase semantic change, and round-trips
   exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
@@ -170,6 +170,8 @@ The dedicated `worldsim_fire_tests` suite checks:
 - active fire cannot burn without fuel;
 - the 25% daily burn ceiling scales with elapsed fire-step time, so a controlled
   half-day cap is half the one-day cap;
+- active-fire persistence scales with elapsed fire-step time while preserving
+  the one-day calibration;
 - a wet root zone plus humid/rainy weather suppresses an otherwise identical active fire;
 - complete snow cover suppresses an otherwise identical active fire;
 - natural ignition is reproducible from equal seed/tick/cell state;
@@ -177,7 +179,7 @@ The dedicated `worldsim_fire_tests` suite checks:
 - the aggregate vegetation field remains the exact sum of the PFT pools;
 - spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
 - extensive fire ledgers survive coarsening; and
-- snapshot epoch 25 round-trips authoritative fire, soil-carbon, fauna-carbon
+- snapshot epoch 26 round-trips authoritative fire, soil-carbon, fauna-carbon
   and snow-coupled climate state.
 
 ## Explicitly unsupported ecology claims
