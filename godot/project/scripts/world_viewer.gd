@@ -684,7 +684,8 @@ func _build_chunk_mesh(
                 float(flooded[source_i]),
                 float(fire_active[source_i]),
                 float(fire_burned[source_i]),
-                1.0 - clampf(normals[i].y, 0.0, 1.0)
+                Vector2(normals[i].x, normals[i].z).length()
+                / maxf(normals[i].y, 0.001)
             )
 
     # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is
