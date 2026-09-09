@@ -92,6 +92,81 @@ double fbm_unit(std::uint64_t seed,
     return total/normalization;
 }
 
+double base_terrain_elevation_m(
+    std::uint64_t seed,
+    Vec3d p,
+    const TectonicSample& tectonic
+) {
+    // Tectonics owns the broad hypsometry. The remaining procedural terms are
+    // deliberately bounded meso/local relief so they can texture the macro
+    // shape without replacing it with an unrelated continent generator.
+    const double rolling=220.0*fbm_unit(seed,200,p,180'000.0,5);
+    const double local_detail=18.0*fbm_unit(seed,600,p,900.0,4);
+    const double ridge_source=fbm_unit(seed,300,p,520'000.0,5);
+    const double ridge=std::clamp(
+        (1.0-std::abs(ridge_source)-0.35)/0.65,
+        0.0,
+        1.0
+    );
+    const double orogenic_detail=
+        1'000.0*ridge*ridge*ridge*
+        tectonic.uplift_forcing*
+        (0.35+0.65*tectonic.continental_affinity);
+
+    return std::clamp(
+        tectonic.macro_elevation_m+rolling+local_detail+orogenic_detail,
+        -11'000.0,
+        9'000.0
+    );
+}
+
+double visual_orographic_relief_m(
+    std::uint64_t seed,
+    Vec3d p,
+    const TectonicSample& tectonic,
+    double base_elevation_m
+) {
+    const double uplift=std::clamp(tectonic.uplift_forcing,0.0,1.0);
+    if (!(uplift>0.0) || !(base_elevation_m>0.0)) return 0.0;
+
+    // The authoritative adaptive cover stores regional mean elevation. Walking
+    // still needs mountain-scale peaks below that cell size. Use sphere-native
+    // ridged noise so the added relief stays deterministic and seam-free, and
+    // gate it to convergent dry-land belts instead of adding generic roughness
+    // everywhere.
+    const double ridge_source=fbm_unit(
+        seed,
+        fnv1a64("terrain.visual.orography.ridge"),
+        p,
+        60'000.0,
+        5
+    );
+    const double ridge=std::clamp(
+        (1.0-std::abs(ridge_source)-0.15)/0.85,
+        0.0,
+        1.0
+    );
+    const double peak_noise=
+        0.5+0.5*fbm_unit(
+            seed,
+            fnv1a64("terrain.visual.orography.peaks"),
+            p,
+            28'000.0,
+            4
+        );
+    const double land_gate=smoothstep(0.0,750.0,base_elevation_m);
+    const double mountain_strength=
+        std::pow(uplift,0.35)*
+        (0.35+0.65*std::clamp(tectonic.continental_affinity,0.0,1.0));
+
+    return
+        1'800.0*
+        land_gate*
+        ridge*ridge*
+        (0.55+0.45*peak_noise)*
+        mountain_strength;
+}
+
 } // namespace
 
 std::pair<double,double> TerrainGenerator::direction_to_projected(Vec3d direction) {
@@ -164,33 +239,34 @@ TerrainSample TerrainGenerator::sample_projected(double east_m, double north_m) 
     return sample_direction(projected_to_direction(east_m,north_m));
 }
 
+TerrainSample TerrainGenerator::sample_visual_projected(
+    double east_m,
+    double north_m
+) const {
+    if (!std::isfinite(east_m) || !std::isfinite(north_m))
+        return {-5'000.0,0.0};
+    return sample_visual_direction(projected_to_direction(east_m,north_m));
+}
+
 TerrainSample TerrainGenerator::sample_direction(Vec3d direction) const {
     const Vec3d p=normalized(direction);
     const TectonicSample tectonic=tectonics_.sample_direction(p);
+    const double elevation=base_terrain_elevation_m(seed_,p,tectonic);
+    const double land_fraction=smoothstep(-75.0,75.0,elevation);
+    return {elevation,land_fraction};
+}
 
-    // Tectonics owns the broad hypsometry. The remaining procedural terms are
-    // deliberately bounded meso/local relief so they can texture the macro
-    // shape without replacing it with an unrelated continent generator.
-    const double rolling=220.0*fbm_unit(seed_,200,p,180'000.0,5);
-    const double local_detail=18.0*fbm_unit(seed_,600,p,900.0,4);
-    const double ridge_source=fbm_unit(seed_,300,p,520'000.0,5);
-    const double ridge=std::clamp(
-        (1.0-std::abs(ridge_source)-0.35)/0.65,
-        0.0,
-        1.0
-    );
-    const double orogenic_detail=
-        1'000.0*ridge*ridge*ridge*
-        tectonic.uplift_forcing*
-        (0.35+0.65*tectonic.continental_affinity);
-
+TerrainSample TerrainGenerator::sample_visual_direction(Vec3d direction) const {
+    const Vec3d p=normalized(direction);
+    const TectonicSample tectonic=tectonics_.sample_direction(p);
+    const double base_elevation=base_terrain_elevation_m(seed_,p,tectonic);
     const double elevation=std::clamp(
-        tectonic.macro_elevation_m+rolling+local_detail+orogenic_detail,
+        base_elevation+
+        visual_orographic_relief_m(seed_,p,tectonic,base_elevation),
         -11'000.0,
         9'000.0
     );
     const double land_fraction=smoothstep(-75.0,75.0,elevation);
-
     return {elevation,land_fraction};
 }
 
