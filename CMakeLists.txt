@@ -19,6 +19,7 @@ add_library(worldsim
     src/hydrology.cpp
     src/soil_carbon.cpp
     src/soil_nitrogen.cpp
+    src/planetary_nitrogen.cpp
     src/fields.cpp
     src/state.cpp
     src/simulation.cpp
