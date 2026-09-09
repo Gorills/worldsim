@@ -475,10 +475,11 @@ double flat_surface_l2_l3_temperature_mae_k() {
 }
 
 void resolution_diagnostic() {
-    std::cout
-        << "CLIMATE_FLAT_L2_L3_TEMPERATURE_MAE_K="
-        << flat_surface_l2_l3_temperature_mae_k()
-        << '\n';
+    const double error=flat_surface_l2_l3_temperature_mae_k();
+    throw std::runtime_error(
+        "CLIMATE_FLAT_L2_L3_TEMPERATURE_MAE_K="+
+        std::to_string(error)
+    );
 }
 
 void lod_independent_reference_state() {
