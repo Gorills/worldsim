@@ -162,7 +162,7 @@ func _process(delta: float) -> void:
     if pending_levels.is_empty():
         return
 
-    var level := pending_levels.pop_front()
+    var level: int = pending_levels.pop_front()
     _rebuild_level(level)
 
 func _queue_all_levels() -> void:
