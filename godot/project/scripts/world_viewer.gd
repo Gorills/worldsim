@@ -422,9 +422,8 @@ func _select_mountain_demo_spawn() -> bool:
 
     var max_x := max_index % MOUNTAIN_DEMO_RESOLUTION
     var max_z := floori(float(max_index) / float(MOUNTAIN_DEMO_RESOLUTION))
-    var target_height_m := float(heights[max_index])
     var view_index := -1
-    var best_elevation_angle := -INF
+    var best_skyline_margin := -INF
     for i in range(heights.size()):
         var x := i % MOUNTAIN_DEMO_RESOLUTION
         var z := floori(float(i) / float(MOUNTAIN_DEMO_RESOLUTION))
@@ -438,14 +437,15 @@ func _select_mountain_demo_spawn() -> bool:
             or height_m < 0.0
         ):
             continue
-        var elevation_angle := atan2(
-            target_height_m - height_m,
-            maxf(distance_m, 1.0)
+        var skyline_margin := _mountain_skyline_margin(
+            heights,
+            Vector2(float(x), float(z)),
+            Vector2(float(max_x), float(max_z))
         )
-        if elevation_angle > best_elevation_angle:
-            best_elevation_angle = elevation_angle
+        if skyline_margin > best_skyline_margin:
+            best_skyline_margin = skyline_margin
             view_index = i
-    if view_index < 0 or best_elevation_angle <= 0.0:
+    if view_index < 0 or best_skyline_margin <= 0.0:
         return false
 
     var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
@@ -464,6 +464,76 @@ func _select_mountain_demo_spawn() -> bool:
         float(max_z) - half
     ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
     return true
+
+func _mountain_patch_height_bilinear(
+    heights: PackedFloat32Array,
+    x: float,
+    z: float
+) -> float:
+    var x0 := clampi(floori(x), 0, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var z0 := clampi(floori(z), 0, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var x1 := mini(x0 + 1, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var z1 := mini(z0 + 1, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var tx := clampf(x - float(x0), 0.0, 1.0)
+    var tz := clampf(z - float(z0), 0.0, 1.0)
+    var a := lerpf(
+        float(heights[z0 * MOUNTAIN_DEMO_RESOLUTION + x0]),
+        float(heights[z0 * MOUNTAIN_DEMO_RESOLUTION + x1]),
+        tx
+    )
+    var b := lerpf(
+        float(heights[z1 * MOUNTAIN_DEMO_RESOLUTION + x0]),
+        float(heights[z1 * MOUNTAIN_DEMO_RESOLUTION + x1]),
+        tx
+    )
+    return lerpf(a, b, tz)
+
+func _mountain_skyline_margin(
+    heights: PackedFloat32Array,
+    view_grid: Vector2,
+    target_grid: Vector2
+) -> float:
+    var delta_grid := target_grid - view_grid
+    var distance_m := delta_grid.length() * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    if distance_m <= 0.0:
+        return -INF
+
+    var view_height_m := _mountain_patch_height_bilinear(
+        heights,
+        view_grid.x,
+        view_grid.y
+    )
+    var target_height_m := _mountain_patch_height_bilinear(
+        heights,
+        target_grid.x,
+        target_grid.y
+    )
+    var target_angle := atan2(
+        target_height_m - view_height_m,
+        distance_m
+    )
+
+    # Sample twice per 625 m diagnostic grid interval so a foreground ridge
+    # cannot hide the target while the endpoint-only angle still looks strong.
+    var steps := maxi(2, ceili(delta_grid.length() * 2.0))
+    var max_intermediate_angle := -INF
+    for step in range(1, steps):
+        var t := float(step) / float(steps)
+        var sample_grid := view_grid.lerp(target_grid, t)
+        var sample_height_m := _mountain_patch_height_bilinear(
+            heights,
+            sample_grid.x,
+            sample_grid.y
+        )
+        var sample_angle := atan2(
+            sample_height_m - view_height_m,
+            maxf(distance_m * t, 1.0)
+        )
+        max_intermediate_angle = maxf(max_intermediate_angle, sample_angle)
+
+    if max_intermediate_angle == -INF:
+        return target_angle
+    return target_angle - max_intermediate_angle
 
 func _world_chunk(east_m: float, north_m: float) -> Vector2i:
     return Vector2i(
