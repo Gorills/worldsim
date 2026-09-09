@@ -128,9 +128,20 @@ void Simulation::process_commands() {
             // Extensive impulses are area-allocated so their total is
             // conserved; intensive impulses apply the same delta everywhere
             // currently representing the requested region.
-            const double delta=semantics==FieldSemantics::Extensive
+            double delta=semantics==FieldSemantics::Extensive
                 ? c.delta*part.weight
                 : c.delta;
+            if (
+                semantics==FieldSemantics::Intensive &&
+                part.cell.level()<c.cell.level()
+            ) {
+                // The requested region is finer than the active
+                // representation. Restrict its local intensive perturbation
+                // to the coarse cell's area average instead of applying the
+                // full delta to the entire coarse region.
+                delta*=world_->topology().area_m2(c.cell)/
+                    world_->topology().area_m2(part.cell);
+            }
             store.add(part.cell,c.field,delta);
         }
         ++consumed;
