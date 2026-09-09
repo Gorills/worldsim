@@ -190,7 +190,7 @@ double visual_orographic_relief_m(
     );
     const double crag_ridge=std::pow(
         std::clamp(1.0-std::abs(crag_source),0.0,1.0),
-        3.0
+        4.0
     );
     const double gully_noise=fbm_unit(
         seed,
@@ -199,24 +199,42 @@ double visual_orographic_relief_m(
         3'200.0,
         4
     );
+    const double spur_source=fbm_unit(
+        seed,
+        fnv1a64("terrain.visual.orography.spurs"),
+        p,
+        2'000.0,
+        4
+    );
+    const double spur_ridge=std::pow(
+        std::clamp(1.0-std::abs(spur_source),0.0,1.0),
+        5.0
+    );
     const double alpine_gate=smoothstep(
-        0.16,
-        0.72,
+        0.10,
+        0.62,
         broad_relief+summit_relief
     );
     const double crag_relief=
-        460.0*
+        620.0*
         land_gate*
         mountain_strength*
         alpine_gate*
-        (1.45*crag_ridge-0.62+0.42*gully_noise);
+        (1.55*crag_ridge-0.58+0.46*gully_noise);
+    const double spur_relief=
+        220.0*
+        land_gate*
+        mountain_strength*
+        alpine_gate*
+        (1.35*spur_ridge-0.42+0.20*gully_noise);
 
     return
         1'800.0*
         land_gate*
         mountain_strength*
         (broad_relief+summit_relief)+
-        crag_relief;
+        crag_relief+
+        spur_relief;
 }
 
 } // namespace
