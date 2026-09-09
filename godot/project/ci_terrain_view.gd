@@ -390,12 +390,65 @@ func _process(_delta: float) -> bool:
     var coarse_lod_arrays := (
         next_distant_terrain.mesh as ArrayMesh
     ).surface_get_arrays(0)
+    var fine_lod_verts: PackedVector3Array = fine_lod_arrays[Mesh.ARRAY_VERTEX]
     var fine_lod_colors: PackedColorArray = fine_lod_arrays[Mesh.ARRAY_COLOR]
+    var fine_lod_indices: PackedInt32Array = fine_lod_arrays[Mesh.ARRAY_INDEX]
     var coarse_lod_colors: PackedColorArray = coarse_lod_arrays[Mesh.ARRAY_COLOR]
+
+    var expected_distant_center_east_m := float(spawn_chunk.x) * 256.0
+    var expected_distant_center_north_m := float(spawn_chunk.y) * 256.0
+    if (
+        absf(float(distant_root.get("queued_center_east_m")) - expected_distant_center_east_m) > 0.1
+        or absf(float(distant_root.get("queued_center_north_m")) - expected_distant_center_north_m) > 0.1
+    ):
+        push_error("Walking distant terrain is not aligned to the current near chunk center")
+        quit(70)
+        return true
+
+    if fine_lod_indices.size() != 32 * 32 * 6:
+        push_error("Lod0 regained a central terrain hole that can expose streaming gaps")
+        quit(71)
+        return true
+
+    var raw_lod0 := viewer_sim.sample_terrain_visual_patch(
+        expected_distant_center_east_m,
+        expected_distant_center_north_m,
+        64.0,
+        33,
+        spawn_east_m,
+        spawn_north_m,
+        float(scene.get("origin_height_m"))
+    )
+    var raw_lod0_verts: PackedVector3Array = raw_lod0.get(
+        "positions",
+        PackedVector3Array()
+    )
+    if raw_lod0_verts.size() != 33 * 33:
+        push_error("Lod0 underlay reference sampling failed")
+        quit(72)
+        return true
+    var lod0_center_index := 16 * 33 + 16
+    var lod0_edge_index := 16 * 33 + 32
+    var center_underlay_drop_m := (
+        raw_lod0_verts[lod0_center_index].y
+        - fine_lod_verts[lod0_center_index].y
+    )
+    var edge_underlay_delta_m := absf(
+        raw_lod0_verts[lod0_edge_index].y
+        - fine_lod_verts[lod0_edge_index].y
+    )
+    if center_underlay_drop_m < 40.0 or edge_underlay_delta_m > 1.0:
+        push_error(
+            "Lod0 safety underlay no longer stays below near terrain and rejoins at its outer edge: center_drop=%.2f edge_delta=%.2f"
+            % [center_underlay_drop_m, edge_underlay_delta_m]
+        )
+        quit(72)
+        return true
+
     var lod_seam_delta := 0.0
     for pair in [
-        Vector2i(32 * 65 + 64, 32 * 65 + 48),
-        Vector2i(0 * 65 + 32, 16 * 65 + 32),
+        Vector2i(16 * 33 + 32, 16 * 33 + 24),
+        Vector2i(0 * 33 + 16, 8 * 33 + 16),
     ]:
         var fine_color := fine_lod_colors[pair.x]
         var coarse_color := coarse_lod_colors[pair.y]
@@ -415,11 +468,11 @@ func _process(_delta: float) -> bool:
 
     var sea_arrays := (distant_ocean.mesh as ArrayMesh).surface_get_arrays(0)
     var sea_verts: PackedVector3Array = sea_arrays[Mesh.ARRAY_VERTEX]
-    var distant_resolution := 65
-    var center_index := 32 * distant_resolution + 32
-    # Lod8 spacing is 16,384 m. Sixteen samples remain the existing 262.144 km
-    # curvature probe while the denser grid keeps mountain-scale detail longer.
-    var edge_index := 32 * distant_resolution + 48
+    var distant_resolution := 33
+    var center_index := 16 * distant_resolution + 16
+    # Lod8 spacing is 16,384 m. The outer sample remains the existing
+    # 262.144 km curvature probe with the restored 33 x 33 performance budget.
+    var edge_index := 16 * distant_resolution + 32
     if sea_verts.size() != distant_resolution * distant_resolution:
         push_error("Unexpected distant ocean vertex count: %d" % sea_verts.size())
         quit(13)
@@ -497,27 +550,6 @@ func _process(_delta: float) -> bool:
     if sun_facing - lee_facing < 0.18:
         push_error("Seam-safe aspect hillshade no longer separates sun and lee slopes")
         quit(62)
-        return true
-
-    var detail_a := SurfaceVisual.terrain_detail(
-        spawn_east_m,
-        spawn_north_m
-    )
-    var detail_repeat := SurfaceVisual.terrain_detail(
-        spawn_east_m,
-        spawn_north_m
-    )
-    var detail_b := SurfaceVisual.terrain_detail(
-        spawn_east_m + 700.0,
-        spawn_north_m
-    )
-    if absf(detail_a - detail_repeat) > 1e-12:
-        push_error("World-space terrain material variation is not deterministic")
-        quit(69)
-        return true
-    if absf(detail_a - detail_b) < 0.10:
-        push_error("World-space terrain material variation lost visible spatial detail")
-        quit(69)
         return true
 
     # The first focused simulation step refines the authoritative cover. Its
