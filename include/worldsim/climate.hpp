@@ -75,12 +75,21 @@ public:
     [[nodiscard]] std::size_t node_index(CellId active_cell) const;
 
 private:
+    struct AdvectionFaceSample {
+        CellId a;
+        CellId b;
+        double interface_m{};
+        Vec3d tangent_a_to_b;
+        Vec3d tangent_b_to_a;
+    };
+
     struct Link {
         std::size_t a{},b{};
         double distance_m{};
         double interface_m{};
         Vec3d tangent_a_to_b;
         Vec3d tangent_b_to_a;
+        std::vector<AdvectionFaceSample> advection_samples;
     };
 
     struct WeatherSample {
@@ -94,7 +103,7 @@ private:
     void update_diagnostics(double day);
     void project_surface_exchange(WorldState&, const FieldRegistry&) const;
     void advance_energy(double dt_days);
-    void advance_moisture(double dt_days);
+    void advance_moisture(double dt_days, double day);
 
     std::uint8_t reference_level_{};
     bool has_level_{};
