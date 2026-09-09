@@ -701,21 +701,24 @@ func _initialize_vegetation_meshes() -> void:
         },
     ])
 
-func _combine_primitive_surfaces(parts: Array[Dictionary]) -> ArrayMesh:
+func _combine_primitive_surfaces(parts: Array) -> ArrayMesh:
     var combined := ArrayMesh.new()
-    for part in parts:
+    for part_variant in parts:
+        var part: Dictionary = part_variant
         var primitive := part["mesh"] as PrimitiveMesh
+        var part_transform: Transform3D = part["transform"]
+        var part_material: Material = part["material"]
         var surface_tool := SurfaceTool.new()
         surface_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
         surface_tool.append_from(
             primitive,
             0,
-            part["transform"] as Transform3D
+            part_transform
         )
         surface_tool.commit(combined)
         combined.surface_set_material(
             combined.get_surface_count() - 1,
-            part["material"] as Material
+            part_material
         )
     return combined
 
