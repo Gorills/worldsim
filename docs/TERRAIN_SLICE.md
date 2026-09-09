@@ -140,9 +140,9 @@ those ranges. Heights come from the same reconstructed terrain adapter used by
 walking collision. The regional baseline remains authoritative geology; the
 adapter then adds deterministic presentation-only orography below the adaptive
 cell scale in convergent dry-land belts. Broad 60/28/16 km ridge and summit fields
-place the mountain mass; an additional signed 7.5/3.2 km crag/gully field is gated
-by that mountain mass to cut local ribs and drainage-like gullies without adding
-generic roughness away from uplift belts. That visual/collision relief is bounded,
+place the mountain mass; signed 7.5/3.2 km crag/gully relief and a sharper 2 km
+spur field are gated by that mountain mass to cut local ribs and drainage-like
+gullies without adding generic roughness away from uplift belts. That visual/collision relief is bounded,
 sphere-native and never mutates simulation fields, conserved stores or snapshots.
 The adapter converts the sampled sphere directions to a player-local tangent
 frame in double precision before returning float scene coordinates, so the stock
