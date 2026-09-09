@@ -149,7 +149,7 @@ Tests currently assert:
 
 ## 7. Commands and events
 
-External actions enter the world as scheduled commands rather than direct renderer-owned mutation. The included `FieldImpulseCommand` is the minimal command type and demonstrates deterministic `(tick, sequence)` ordering. Its `CellId` addresses a hierarchy region rather than a transient active leaf: extensive deltas are distributed over the current active cover by area, while intensive deltas are applied uniformly to every active part representing that region.
+External actions enter the world as scheduled commands rather than direct renderer-owned mutation. The included `FieldImpulseCommand` is the minimal command type and demonstrates deterministic `(tick, sequence)` ordering. Its `CellId` addresses a hierarchy region rather than a transient active leaf: extensive deltas are distributed over finer active descendants by area, while intensive deltas are applied uniformly to finer active descendants. If the requested region is finer than the current active ancestor, an extensive impulse remains a conserved total and an intensive impulse is restricted into the ancestor's area average by the requested-region/ancestor-area fraction. This is the information-preserving projection available after coarse LOD has discarded subcell variation.
 
 Simulation events are output facts emitted by systems. They are persisted in snapshots until drained, so an engine can consume them without making event delivery part of authoritative state mutation.
 
