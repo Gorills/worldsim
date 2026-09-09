@@ -62,7 +62,7 @@ static func terrain_color(
     # Coarse ecology fields do not encode local cliff exposure. Use the rendered
     # mesh slope only as a presentation cue so steep/high terrain reads as rock
     # without mutating authoritative surface state.
-    var steepness := clampf((slope - 0.04) / 0.32, 0.0, 1.0)
+    var steepness := clampf((slope - 0.06) / 0.48, 0.0, 1.0)
     var highland_rock := clampf((height_m - 1800.0) / 2600.0, 0.0, 1.0)
     var rock_strength := clampf(
         maxf(0.75 * steepness, 0.65 * highland_rock),
@@ -70,8 +70,8 @@ static func terrain_color(
         0.82
     )
     if rock_strength > 0.0:
-        var rock_color := Color(0.28, 0.28, 0.28).lerp(
-            Color(0.60, 0.59, 0.58),
+        var rock_color := Color(0.20, 0.19, 0.18).lerp(
+            Color(0.52, 0.51, 0.50),
             elevation_t
         )
         color = color.lerp(rock_color, rock_strength)
