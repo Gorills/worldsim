@@ -1843,6 +1843,8 @@ public:
 
             const double herbivore_carbon_before=
                 group_carbon(herbivores);
+            const double herbivore_nitrogen_before=
+                herbivore_carbon_before/kFaunaCarbonNitrogenRatio;
             const double herbivore_capacity=
                 weighted_forage*kHerbivoreCarbonPerWeightedForage;
             const double herbivore_capacity_ratio=
@@ -1904,10 +1906,10 @@ public:
                 }
             }
 
-            // Every demographic gain is paid by assimilated forage carbon.
-            // Maintenance is respired; unassimilated food and background
-            // mortality return to litter. This closes the local fauna transfer
-            // against vegetation, litter, cohort biomass and the ledger.
+            // Every demographic gain is paid by both assimilated forage carbon
+            // and nitrogen. Consumers keep the fixed reduced body C:N ratio:
+            // nutrient-poor food can therefore force excess assimilated carbon
+            // into respiration, while unretained N is recycled below.
             const double herbivore_assimilated=
                 consumed*herbivore_assimilation;
             const double herbivore_respired=std::min(
@@ -1946,11 +1948,34 @@ public:
                     herbivore_excess_fraction*
                     ctx.dt_days
                 ));
-            const double herbivore_carbon_after=std::max(
+            const double herbivore_carbon_after_unconstrained=std::max(
                 0.0,
                 herbivore_after_background-
                     herbivore_density_mortality
             );
+            const double herbivore_carbon_after=std::min(
+                herbivore_carbon_after_unconstrained,
+                (
+                    herbivore_nitrogen_before+
+                    consumed_nitrogen
+                )*kFaunaCarbonNitrogenRatio
+            );
+            const double herbivore_stoichiometric_respiration=std::max(
+                0.0,
+                herbivore_carbon_after_unconstrained-
+                    herbivore_carbon_after
+            );
+            const double herbivore_nitrogen_after=
+                herbivore_carbon_after/kFaunaCarbonNitrogenRatio;
+            const double herbivore_recycled_nitrogen=std::max(
+                0.0,
+                herbivore_nitrogen_before+
+                    consumed_nitrogen-
+                    herbivore_nitrogen_after
+            );
+            const double herbivore_total_respired=
+                herbivore_respired+
+                herbivore_stoichiometric_respiration;
             fs.add(
                 cell,
                 litter_,
@@ -1960,18 +1985,18 @@ public:
             );
             fs.add(
                 cell,litter_nitrogen_,
-                consumed_nitrogen*
+                herbivore_recycled_nitrogen*
                 (1.0-fauna_nitrogen_to_mineral_fraction)
             );
             fs.add(
                 cell,mineral_nitrogen_,
-                consumed_nitrogen*
+                herbivore_recycled_nitrogen*
                 fauna_nitrogen_to_mineral_fraction
             );
-            fs.add(cell,respired_,herbivore_respired);
+            fs.add(cell,respired_,herbivore_total_respired);
             fs.add(
                 cell,respiration_rate_,
-                herbivore_respired/ctx.dt_days
+                herbivore_total_respired/ctx.dt_days
             );
             scale_group(
                 herbivores,
@@ -1982,6 +2007,8 @@ public:
             const double prey_biomass=group_carbon(herbivores);
             const double carnivore_carbon_before=
                 group_carbon(carnivores);
+            const double carnivore_nitrogen_before=
+                carnivore_carbon_before/kFaunaCarbonNitrogenRatio;
             const double carnivore_capacity=
                 prey_biomass*kCarnivoreCarbonPerHerbivoreCarbon;
             const double carnivore_capacity_ratio=
@@ -2011,6 +2038,8 @@ public:
                     0.003*ctx.dt_days,0.0,1.0
                 )
             );
+            const double killed_nitrogen=
+                killed/kFaunaCarbonNitrogenRatio;
             if (prey_biomass>0.0 && killed>0.0) {
                 const double survival=std::clamp(
                     1.0-killed/prey_biomass,
@@ -2059,11 +2088,34 @@ public:
                     carnivore_excess_fraction*
                     ctx.dt_days
                 ));
-            const double carnivore_carbon_after=std::max(
+            const double carnivore_carbon_after_unconstrained=std::max(
                 0.0,
                 carnivore_after_background-
                     carnivore_density_mortality
             );
+            const double carnivore_carbon_after=std::min(
+                carnivore_carbon_after_unconstrained,
+                (
+                    carnivore_nitrogen_before+
+                    killed_nitrogen
+                )*kFaunaCarbonNitrogenRatio
+            );
+            const double carnivore_stoichiometric_respiration=std::max(
+                0.0,
+                carnivore_carbon_after_unconstrained-
+                    carnivore_carbon_after
+            );
+            const double carnivore_nitrogen_after=
+                carnivore_carbon_after/kFaunaCarbonNitrogenRatio;
+            const double carnivore_recycled_nitrogen=std::max(
+                0.0,
+                carnivore_nitrogen_before+
+                    killed_nitrogen-
+                    carnivore_nitrogen_after
+            );
+            const double carnivore_total_respired=
+                carnivore_respired+
+                carnivore_stoichiometric_respiration;
             fs.add(
                 cell,
                 litter_,
@@ -2071,10 +2123,20 @@ public:
                     carnivore_background_mortality+
                     carnivore_density_mortality
             );
-            fs.add(cell,respired_,carnivore_respired);
+            fs.add(
+                cell,litter_nitrogen_,
+                carnivore_recycled_nitrogen*
+                (1.0-fauna_nitrogen_to_mineral_fraction)
+            );
+            fs.add(
+                cell,mineral_nitrogen_,
+                carnivore_recycled_nitrogen*
+                fauna_nitrogen_to_mineral_fraction
+            );
+            fs.add(cell,respired_,carnivore_total_respired);
             fs.add(
                 cell,respiration_rate_,
-                carnivore_respired/ctx.dt_days
+                carnivore_total_respired/ctx.dt_days
             );
             for (Cohort* carnivore:carnivores) {
                 const double before=carnivore->count;
@@ -2461,6 +2523,11 @@ double total_ecology_nitrogen_accounted_kg(
             fields.column(*id).end(),
             total
         );
+    }
+    for (const auto& [id,cohort]:
+        world.stores().get<CohortStore>().all()) {
+        (void)id;
+        total+=cohort_nitrogen_kg(cohort);
     }
     return total;
 }
