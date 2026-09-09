@@ -260,6 +260,41 @@ The cached fixed-support implementation passed 15/15 CTest, the complete
 six-case stability smoke, visual/geology diagnostics and Godot 4.7 integration.
 A fresh 100-year multi-seed matrix is still not claimed by this slice.
 
+### Natural-fire stochastic support correction — 2026-09-09
+
+The short coupled matrix showed that wildfire stochasticity itself was strongly
+resolution-dependent. The ignition hazard already scaled with effective land
+area, but ignition and ignition-size draws were keyed by the current active
+cell. Under otherwise identical dry/fueled fixtures, seed 0 first ignited on
+day 9 at level 2 and day 8 at level 3 with different burned-area magnitudes.
+
+Natural ignition now runs on fixed level-4 reference regions. Active cells
+contribute hazard to those regions; each reference region performs one
+stateless ignition/size draw; and mixed/refined covers assign a successful
+ignition to one active descendant in proportion to hazard contribution. A
+uniform level-4 world keeps the former random stream and cell key, while coarse
+and refined worlds no longer create duplicate or unrelated ignition processes.
+
+On the same two-year coupled seeds `0,42,999`, levels `2,3` smoke:
+
+- maximum absolute annual burned-fraction gap: about **21.64 pp -> 10.30 pp**;
+- seed 0 absolute burn gap: about **2.08 pp -> 0.0056 pp**;
+- seed 999: both levels are zero in this short window;
+- maximum NPP-density delta: **20.89% -> 16.78%**;
+- maximum fauna-carbon-density delta remains about **7.41%**;
+- precipitation and temperature deltas are effectively unchanged.
+
+The relative fire delta is intentionally not used as the primary acceptance
+metric here because zero-versus-near-zero burns can report values near 100%
+while the absolute affected area is negligible. Individual ecology/N diagnostics
+also move in both directions by seed because synchronizing fire changes the
+disturbance path rather than applying a smooth perturbation.
+
+This correction changes stochastic continuation from identical snapshots, so
+the combined snapshot epoch advances from 36 to 37 despite unchanged binary
+field/store layouts. A fresh 100-year multi-seed matrix is still not claimed by
+this slice.
+
 ## Failures found and model changes
 
 The original initialization assigned up to a 4 kgC/m2 biomass scale before the
