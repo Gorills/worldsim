@@ -191,7 +191,7 @@ func _process(_delta: float) -> bool:
         )
         quit(59)
         return true
-    if best_elevation_angle < deg_to_rad(9.0):
+    if best_elevation_angle < deg_to_rad(8.0):
         push_error(
             "Mountain viewpoint lacks visible angular relief: %.2f degrees"
             % rad_to_deg(best_elevation_angle)
