@@ -302,7 +302,9 @@ void test_determinism_and_snapshot() {
         std::uint8_t{10},std::uint8_t{11},std::uint8_t{12},
         std::uint8_t{13},std::uint8_t{14},std::uint8_t{15},
         std::uint8_t{16},std::uint8_t{17},std::uint8_t{18},
-        std::uint8_t{19},std::uint8_t{20}
+        std::uint8_t{19},std::uint8_t{20},std::uint8_t{21},
+        std::uint8_t{22},std::uint8_t{23},std::uint8_t{24},
+        std::uint8_t{25},std::uint8_t{26}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -669,27 +671,226 @@ void test_lod_stability_and_snapshot_across_cover_change() {
 }
 
 void test_command_routing_across_lod() {
-    auto control=make_default_simulation(654);
-    auto commanded=make_default_simulation(654);
-    control->set_focus({1.0,0.0,0.0});
-    commanded->set_focus({1.0,0.0,0.0});
-    control->step(1);
-    commanded->step(1);
+    SimulationConfig cfg;
+    cfg.base_level=4;
+    cfg.max_level=5;
+    cfg.tick_seconds=3'600.0;
 
-    const auto mana=*commanded->fields().find("magic.mana_j");
-    const CellId coarse_target=commanded->world().topology().from_direction({1.0,0.0,0.0},4);
-    check(!commanded->world().active_cells().contains(coarse_target),"command-routing test target was not refined");
-    constexpr double delta=1.0e12;
-    commanded->schedule_field_impulse(commanded->world().tick(),coarse_target,mana,delta);
-    control->step(1);
-    commanded->step(1);
+    auto magic_only=[&]() {
+        auto simulation=std::make_unique<Simulation>(654,cfg);
+        simulation->add_module(std::make_unique<MagicModule>());
+        simulation->build();
+        return simulation;
+    };
 
-    check(commanded->world().active_cells()==control->world().active_cells(),"command changed spatial cover");
-    const auto& commanded_fields=commanded->world().stores().get<FieldStore>();
-    const auto& control_fields=control->world().stores().get<FieldStore>();
-    double observed=0.0;
-    for (CellId c:commanded->world().active_cells()) observed+=commanded_fields.get(c,mana)-control_fields.get(c,mana);
-    near(observed,delta,1e-12,"LOD-routed field impulse lost or duplicated quantity");
+    auto command_before_refine=magic_only();
+    auto command_after_refine=magic_only();
+    auto no_command=magic_only();
+    const CellId coarse_target=
+        command_before_refine->world().topology().from_direction(
+            {1.0,0.0,0.0},
+            cfg.base_level
+        );
+    const Vec3d focus=
+        command_before_refine->world().topology().center_unit(
+            coarse_target
+        );
+    const FieldId mana=
+        *command_before_refine->fields().find("magic.mana_j");
+    const FieldId growth=
+        *command_before_refine->fields().find("magic.growth_factor");
+    constexpr double mana_delta=1.0e12;
+    constexpr double growth_delta=0.20;
+
+    command_before_refine->schedule_field_impulse(
+        command_before_refine->world().tick(),
+        coarse_target,
+        mana,
+        mana_delta
+    );
+    command_before_refine->schedule_field_impulse(
+        command_before_refine->world().tick(),
+        coarse_target,
+        growth,
+        growth_delta
+    );
+    command_before_refine->step(1);
+    command_before_refine->set_focus(focus);
+    command_before_refine->step(1);
+
+    command_after_refine->set_focus(focus);
+    command_after_refine->step(1);
+    check(
+        !command_after_refine->world().active_cells().contains(
+            coarse_target
+        ),
+        "command-routing fixture did not refine target region"
+    );
+    command_after_refine->schedule_field_impulse(
+        command_after_refine->world().tick(),
+        coarse_target,
+        mana,
+        mana_delta
+    );
+    command_after_refine->schedule_field_impulse(
+        command_after_refine->world().tick(),
+        coarse_target,
+        growth,
+        growth_delta
+    );
+    command_after_refine->step(1);
+
+    no_command->set_focus(focus);
+    no_command->step(2);
+
+    check(
+        command_before_refine->world().active_cells()==
+            command_after_refine->world().active_cells() &&
+        command_after_refine->world().active_cells()==
+            no_command->world().active_cells(),
+        "equivalent command histories produced different spatial covers"
+    );
+    const auto parts=
+        command_before_refine->world().resolve_active_cover(
+            coarse_target
+        );
+    check(
+        parts.size()==4,
+        "command-routing fixture did not resolve refined region"
+    );
+
+    const auto& before_fields=
+        command_before_refine->world().stores().get<FieldStore>();
+    const auto& after_fields=
+        command_after_refine->world().stores().get<FieldStore>();
+    const auto& baseline_fields=
+        no_command->world().stores().get<FieldStore>();
+    double observed_mana_delta=0.0;
+    for (const ActiveCoverPart& part:parts) {
+        near(
+            before_fields.get(part.cell,mana),
+            after_fields.get(part.cell,mana),
+            1.0e-14,
+            "extensive field impulse depends on refined active LOD"
+        );
+        near(
+            before_fields.get(part.cell,growth),
+            after_fields.get(part.cell,growth),
+            1.0e-14,
+            "intensive field impulse depends on refined active LOD"
+        );
+        near(
+            after_fields.get(part.cell,growth)-
+                baseline_fields.get(part.cell,growth),
+            growth_delta,
+            1.0e-14,
+            "intensive field impulse was not applied across target region"
+        );
+        observed_mana_delta+=
+            after_fields.get(part.cell,mana)-
+            baseline_fields.get(part.cell,mana);
+    }
+    near(
+        observed_mana_delta,
+        mana_delta,
+        1.0e-12,
+        "LOD-routed extensive field impulse lost or duplicated quantity"
+    );
+
+    auto fine_before_coarsen=magic_only();
+    auto fine_after_coarsen=magic_only();
+    auto fine_baseline=magic_only();
+    fine_before_coarsen->set_focus(focus);
+    fine_after_coarsen->set_focus(focus);
+    fine_baseline->set_focus(focus);
+    fine_before_coarsen->step(1);
+    fine_after_coarsen->step(1);
+    fine_baseline->step(1);
+
+    const CellId fine_target=coarse_target.children()[0];
+    check(
+        fine_before_coarsen->world().active_cells().contains(fine_target) &&
+        fine_after_coarsen->world().active_cells().contains(fine_target),
+        "command-routing fixture did not expose fine target cell"
+    );
+
+    fine_before_coarsen->schedule_field_impulse(
+        fine_before_coarsen->world().tick(),
+        fine_target,
+        mana,
+        mana_delta
+    );
+    fine_before_coarsen->schedule_field_impulse(
+        fine_before_coarsen->world().tick(),
+        fine_target,
+        growth,
+        growth_delta
+    );
+    fine_before_coarsen->step(1);
+    fine_before_coarsen->clear_focus();
+    fine_before_coarsen->step(1);
+
+    fine_after_coarsen->schedule_field_impulse(
+        fine_after_coarsen->world().tick(),
+        fine_target,
+        mana,
+        mana_delta
+    );
+    fine_after_coarsen->schedule_field_impulse(
+        fine_after_coarsen->world().tick(),
+        fine_target,
+        growth,
+        growth_delta
+    );
+    fine_after_coarsen->clear_focus();
+    fine_after_coarsen->step(2);
+
+    fine_baseline->clear_focus();
+    fine_baseline->step(2);
+
+    check(
+        fine_before_coarsen->world().active_cells()==
+            fine_after_coarsen->world().active_cells() &&
+        fine_after_coarsen->world().active_cells()==
+            fine_baseline->world().active_cells() &&
+        fine_after_coarsen->world().active_cells().contains(coarse_target),
+        "fine-command histories did not return to the same coarse cover"
+    );
+    const auto& fine_before_fields=
+        fine_before_coarsen->world().stores().get<FieldStore>();
+    const auto& fine_after_fields=
+        fine_after_coarsen->world().stores().get<FieldStore>();
+    const auto& fine_baseline_fields=
+        fine_baseline->world().stores().get<FieldStore>();
+    near(
+        fine_before_fields.get(coarse_target,mana),
+        fine_after_fields.get(coarse_target,mana),
+        1.0e-14,
+        "extensive fine-region impulse depends on coarsening timing"
+    );
+    near(
+        fine_before_fields.get(coarse_target,growth),
+        fine_after_fields.get(coarse_target,growth),
+        1.0e-14,
+        "intensive fine-region impulse depends on coarsening timing"
+    );
+    near(
+        fine_after_fields.get(coarse_target,mana)-
+            fine_baseline_fields.get(coarse_target,mana),
+        mana_delta,
+        1.0e-12,
+        "coarse projection changed extensive fine-region impulse total"
+    );
+    const double fine_area_fraction=
+        fine_after_coarsen->world().topology().area_m2(fine_target)/
+        fine_after_coarsen->world().topology().area_m2(coarse_target);
+    near(
+        fine_after_fields.get(coarse_target,growth)-
+            fine_baseline_fields.get(coarse_target,growth),
+        growth_delta*fine_area_fraction,
+        1.0e-14,
+        "coarse projection did not area-restrict intensive fine-region impulse"
+    );
 }
 
 void test_columnar_field_store_and_cohort_index() {

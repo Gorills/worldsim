@@ -120,25 +120,30 @@ void Simulation::process_commands() {
     std::size_t consumed=0;
     while (consumed<commands_.size() && commands_[consumed].tick<=world_->tick()) {
         const auto& c=commands_[consumed];
-        CellId target=c.cell;
-        if (!world_->active_cells().contains(target)) {
-            // Commands are addressed by spatial region, not by a transient LOD leaf. Resolve
-            // the target's center by walking the bounded hierarchy rather than scanning every
-            // active leaf; command routing is therefore independent of total active-cell count.
-            const Vec3d direction=world_->topology().center_unit(target);
-            bool found=false;
-            for (std::uint8_t level=config_.base_level; level<=config_.max_level; ++level) {
-                const CellId candidate=world_->topology().from_direction(direction,level);
-                if (world_->active_cells().contains(candidate)) {
-                    target=candidate;
-                    found=true;
-                    break;
-                }
-                if (level==config_.max_level) break;
+        const auto parts=world_->resolve_active_cover(c.cell);
+        const auto semantics=fields_.descriptor(c.field).semantics;
+        for (const ActiveCoverPart& part:parts) {
+            // A command is addressed to its stable hierarchy region, not to
+            // whichever transient leaf happens to contain the region center.
+            // Extensive impulses are area-allocated so their total is
+            // conserved; intensive impulses apply the same delta everywhere
+            // currently representing the requested region.
+            double delta=semantics==FieldSemantics::Extensive
+                ? c.delta*part.weight
+                : c.delta;
+            if (
+                semantics==FieldSemantics::Intensive &&
+                part.cell.level()<c.cell.level()
+            ) {
+                // The requested region is finer than the active
+                // representation. Restrict its local intensive perturbation
+                // to the coarse cell's area average instead of applying the
+                // full delta to the entire coarse region.
+                delta*=world_->topology().area_m2(c.cell)/
+                    world_->topology().area_m2(part.cell);
             }
-            if (!found) throw std::runtime_error("active spatial cover does not contain command target");
+            store.add(part.cell,c.field,delta);
         }
-        store.add(target,c.field,c.delta);
         ++consumed;
     }
     commands_.erase(commands_.begin(),commands_.begin()+static_cast<std::ptrdiff_t>(consumed));
@@ -246,7 +251,7 @@ std::vector<std::byte> Simulation::save_snapshot() const {
     BinaryWriter w;
     const std::array<char,8> magic{'W','S','I','M','S','N','A','P'};
     for (char c:magic) w.pod(c);
-    w.pod<std::uint32_t>(26); // versioned, little-endian wire format
+    w.pod<std::uint32_t>(27); // versioned, little-endian wire format
     w.pod(fields_.schema_hash());
     w.pod(seed_);
     w.pod(config_.base_level);
@@ -309,7 +314,7 @@ void Simulation::load_snapshot(std::span<const std::byte> data) {
     BinaryReader r(data);
     const std::array<char,8> expected{'W','S','I','M','S','N','A','P'};
     for (char c:expected) if (r.pod<char>()!=c) throw std::runtime_error("invalid snapshot magic");
-    if (r.pod<std::uint32_t>()!=26) throw std::runtime_error("unsupported snapshot version");
+    if (r.pod<std::uint32_t>()!=27) throw std::runtime_error("unsupported snapshot version");
     if (r.pod<std::uint64_t>()!=fields_.schema_hash()) throw std::runtime_error("snapshot field schema mismatch");
     const auto snap_seed=r.pod<std::uint64_t>();
     if (snap_seed!=seed_) throw std::runtime_error("snapshot seed mismatch");
