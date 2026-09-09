@@ -44,15 +44,19 @@ The output directory contains each original yearly case CSV and log plus:
 
 - `matrix.csv`: the final row of every successful case;
 - `resolution.csv`: adjacent-level absolute and symmetric relative deltas for
-  vegetation density/retention, PFT shares, litter, soil carbon, NPP, fire,
-  fauna, fertility, temperature and precipitation;
+  represented land area, vegetation density/retention, PFT shares, litter,
+  soil carbon, total and land-normalized NPP/fauna carbon, fire, fertility,
+  temperature and precipitation;
 - `summary.json`: exact matrix inputs, failures and maximum observed
   adjacent-level deltas.
 
 The existing `--assert-stable` envelope remains the only acceptance gate.
 Cross-resolution deltas are intentionally diagnostic until a multi-seed
 baseline exists; imposing a percentage threshold before measuring the current
-model would turn an arbitrary number into a false convergence claim.
+model would turn an arbitrary number into a false convergence claim. Land area
+is reported separately because coarse cell-center geography can change the
+represented terrestrial area; total NPP/fauna carbon and their per-land-area
+densities are both retained so those effects are not conflated.
 
 Regular PR CI runs a short two-year coupled smoke for seeds `0,42,999` at
 levels `1,2` and uploads the complete matrix artifact. That verifies
