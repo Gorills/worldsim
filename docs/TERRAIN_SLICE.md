@@ -160,11 +160,12 @@ geography; it only prevents coarse living-surface fields from painting steep
 local cliffs as the same vegetation color as nearby flats.
 
 The walking camera uses a 65-degree field of view, and the environment keeps
-lower ambient energy with a stronger warm directional light. Real-time
-directional shadows use two splits and stop at 20 km; only distant LODs 0-3 cast
-them, while coarser planetary rings and the ocean do not. This bounded shadow
-budget covers the canonical 6-10 km mountain view without rendering shadow maps
-for the full 400 km camera range.
+lower ambient energy with a warm directional light. Nested distant rings do not
+cast shadow maps: rendered CI frames exposed a dark clipmap-boundary seam when
+overlapping LODs were allowed to shadow one another. Instead the shared surface
+presentation applies a bounded directional hillshade from each mesh normal,
+combined with Godot's ordinary direct lighting. This keeps sun-facing and lee
+slopes visually distinct without introducing a second geometric shadow boundary.
 
 A separate visual-only sea-level surface uses the exact same spherical sample
 directions at elevation 0 m. It is opaque in this first slice to stay on the
