@@ -218,8 +218,11 @@ version 2. Carbon cycle v1 subsequently changes the store layout to version 3
 and advances the combined-world epoch to 30. Nitrogen cycle v1 subsequently
 changes the field schema and authoritative ecology continuation state, raising
 the combined-world epoch to 31. Planetary nitrogen v2 subsequently adds a
-separate global nitrogen store and new field schema, raising the current
-combined-world epoch to 32 without changing ClimateStore v3.
+separate global nitrogen store and new field schema, raising the combined-world
+epoch to 32 without changing ClimateStore v3. Fauna nitrogen stoichiometry then
+raises the epoch to 33 and area-integrated coastal geography to 34. The
+fixed-support orographic reference documented below changes ClimateStore to v4
+and raises the current combined-world epoch to 35.
 
 ## Resolution-consistent orographic reference — 2026-09-09
 
