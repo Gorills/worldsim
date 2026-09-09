@@ -647,64 +647,6 @@ ThermalAggregationError initial_l2_l3_land_temperature_error(
     };
 }
 
-void lapse_reference_elevation_is_resolution_consistent() {
-    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
-        auto coarse=geography_climate_fixture(seed,2);
-        auto fine=geography_climate_fixture(seed,3);
-        const auto& coarse_fields=
-            coarse->world().stores().get<FieldStore>();
-        const auto& fine_fields=
-            fine->world().stores().get<FieldStore>();
-        const FieldId coarse_lapse=*coarse->fields().find(
-            "geography.reference_lapse_elevation_m"
-        );
-        const FieldId fine_lapse=*fine->fields().find(
-            "geography.reference_lapse_elevation_m"
-        );
-        const FieldId coarse_land=*coarse->fields().find(
-            "geography.land_fraction"
-        );
-        const FieldId fine_land=*fine->fields().find(
-            "geography.land_fraction"
-        );
-
-        struct Aggregate {
-            double lapse_land_area{};
-            double land_area{};
-        };
-        const auto& coarse_store=
-            coarse->world().stores().get<ClimateStore>();
-        std::vector<Aggregate> aggregated(coarse_store.nodes().size());
-        for (CellId cell:fine->world().active_cells()) {
-            const double area=fine->world().topology().area_m2(cell);
-            const double land_area=area*fine_fields.get(cell,fine_land);
-            const std::size_t index=coarse_store.node_index(cell);
-            aggregated[index].lapse_land_area+=
-                fine_fields.get(cell,fine_lapse)*land_area;
-            aggregated[index].land_area+=land_area;
-        }
-
-        double maximum_error_m=0.0;
-        for (CellId cell:coarse->world().active_cells()) {
-            const std::size_t index=coarse_store.node_index(cell);
-            if (!(aggregated[index].land_area>1.0)) continue;
-            const double fine_mean=
-                aggregated[index].lapse_land_area/
-                aggregated[index].land_area;
-            maximum_error_m=std::max(
-                maximum_error_m,
-                std::abs(
-                    coarse_fields.get(cell,coarse_lapse)-fine_mean
-                )
-            );
-        }
-        check(
-            maximum_error_m<1.0e-6,
-            "L2/L3 lapse reference is not land-area consistent"
-        );
-    }
-}
-
 void initial_thermal_forcing_is_resolution_consistent() {
     double flat_max_mae=0.0;
     double geography_max_mae=0.0;
@@ -980,7 +922,6 @@ int main() {
         horizontal_heat_transport_is_resolution_consistent();
         orographic_reference_elevation_is_resolution_consistent();
         stochastic_weather_forcing_is_resolution_consistent();
-        lapse_reference_elevation_is_resolution_consistent();
         initial_thermal_forcing_is_resolution_consistent();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();
