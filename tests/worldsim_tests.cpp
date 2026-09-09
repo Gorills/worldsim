@@ -2451,6 +2451,38 @@ void test_geology_drainage_accumulation() {
           "drainage graph did not accumulate any upstream catchment");
 }
 
+double represented_land_area_m2(std::uint64_t seed,std::uint8_t level) {
+    SimulationConfig cfg;
+    cfg.base_level=level;
+    cfg.max_level=level;
+    cfg.tick_seconds=3600.0;
+    auto sim=make_terrain_simulation(seed,cfg);
+    const auto land=*sim->fields().find("geography.land_fraction");
+    const auto& fs=sim->world().stores().get<FieldStore>();
+    double total=0.0;
+    for (CellId cell:sim->world().active_cells())
+        total+=sim->world().topology().area_m2(cell)*fs.get(cell,land);
+    return total;
+}
+
+void test_geography_land_area_is_resolution_consistent() {
+    double maximum_relative_delta=0.0;
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const double level2=represented_land_area_m2(seed,2);
+        const double level3=represented_land_area_m2(seed,3);
+        const double relative_delta=
+            std::abs(level2-level3)/std::max(level2,level3);
+        maximum_relative_delta=std::max(
+            maximum_relative_delta,
+            relative_delta
+        );
+    }
+    check(
+        maximum_relative_delta<0.05,
+        "L2/L3 represented land area diverged by more than 5%"
+    );
+}
+
 void test_geography_refinement_preserves_geology_state() {
     SimulationConfig cfg;
     cfg.base_level=4;
@@ -2555,6 +2587,7 @@ int main() {
         test_geology_marine_sediment_transport_without_runoff();
         test_geology_mixed_margin_uses_both_crust_sides();
         test_geology_drainage_accumulation();
+        test_geography_land_area_is_resolution_consistent();
         test_geography_refinement_preserves_geology_state();
         test_c_api();
         test_module_extension_contract();
