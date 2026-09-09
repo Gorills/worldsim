@@ -61,6 +61,26 @@ func _process(_delta: float) -> bool:
         quit(42)
         return true
 
+    var mountain_probe := viewer_sim.sample_terrain_patch(
+        5_573_000.0,
+        -1_800_300.0,
+        2_000.0,
+        65
+    )
+    if mountain_probe.size() != 65 * 65:
+        push_error("Mountain diagnostic patch failed")
+        quit(52)
+        return true
+    var mountain_min := float(mountain_probe[0])
+    var mountain_max := mountain_min
+    for value in mountain_probe:
+        mountain_min = minf(mountain_min, float(value))
+        mountain_max = maxf(mountain_max, float(value))
+    print(
+        "WORLDSIM_MOUNTAIN_PROBE center=(5573km,-1800.3km) span_128km=%.2f min=%.2f max=%.2f"
+        % [mountain_max - mountain_min, mountain_min, mountain_max]
+    )
+
     var trees := terrain.get_node_or_null(
         "Chunk_0_0/Trees"
     ) as MultiMeshInstance3D
