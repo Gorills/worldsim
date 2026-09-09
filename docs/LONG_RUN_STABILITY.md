@@ -15,7 +15,10 @@ cmake --build --preset dev --target worldsim_long_run
 accepts `no-fire`, `no-fauna` and `no-fire-no-fauna` modes. All four modes use
 the same seed, climate, hydrology, geology, soil and vegetation code; only the
 named disturbance/consumer systems are omitted. Registered fields and stores
-stay identical so CSV schemas remain directly comparable.
+stay identical so CSV schemas remain directly comparable. In the current
+`no-fauna` mode the fauna system is omitted but initialized cohorts remain as
+frozen baseline state; the mode isolates fauna dynamics/consumption rather than
+constructing an animal-free initial world.
 
 ## Stability matrix
 
@@ -94,9 +97,7 @@ conditions is violated at the end of the requested run:
 - more than 25% of initially vegetated land falls below 10% of its own initial
   density;
 - any connected land component retains less than 10% of its initial biomass;
-- when fauna is enabled, fauna carbon falls below 1% or exceeds 32 times its
-  initialized stock;
-- when fauna is disabled, any fauna carbon exists at all.
+- fauna carbon falls below 1% or exceeds 32 times its initialized stock.
 
 These thresholds catch the failures found in the September 2026 audit. They
 are not an Earth calibration, a proof of equilibrium or a promise that every
