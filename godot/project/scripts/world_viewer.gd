@@ -14,6 +14,7 @@ const SurfaceVisual = preload("res://scripts/surface_visual.gd")
 
 const CHUNK_SIZE_M := 256.0
 const CHUNK_RESOLUTION := 33
+const NORMAL_PATCH_RESOLUTION := CHUNK_RESOLUTION + 2
 const SAMPLE_SPACING_M := CHUNK_SIZE_M / float(CHUNK_RESOLUTION - 1)
 const VISIBLE_RADIUS := 3
 const KEEP_RADIUS := 4
@@ -41,12 +42,24 @@ const MOUNTAIN_DEMO_CENTER_EAST_M := 5_573_000.0
 const MOUNTAIN_DEMO_CENTER_NORTH_M := -1_800_300.0
 const MOUNTAIN_DEMO_SAMPLE_SPACING_M := 625.0
 const MOUNTAIN_DEMO_RESOLUTION := 65
+const MOUNTAIN_DEMO_SPAWN_EAST_M := 5_564_875.0
+const MOUNTAIN_DEMO_SPAWN_NORTH_M := -1_795_925.0
+const MOUNTAIN_DEMO_TARGET_EAST_M := 5_567_375.0
+const MOUNTAIN_DEMO_TARGET_NORTH_M := -1_795_925.0
+const MOUNTAIN_VIEW_MIN_DISTANCE_M := 3_000.0
+const MOUNTAIN_VIEW_MAX_DISTANCE_M := 7_000.0
+const MOUNTAIN_VIEW_MIN_RISE_M := 450.0
+const MOUNTAIN_VIEW_MIN_ANGLE_RAD := deg_to_rad(7.0)
+const MOUNTAIN_VIEW_MIN_SKYLINE_MARGIN_RAD := deg_to_rad(0.5)
+const MOUNTAIN_SUMMIT_LOCAL_RADIUS := 3
 
 var terrain_material: StandardMaterial3D
 var tree_mesh: Mesh
 var shrub_mesh: Mesh
 var chunks: Dictionary = {}
+var chunk_heights: Dictionary = {}
 var dirty_chunks: Dictionary = {}
+var surface_dirty_chunks: Dictionary = {}
 var pending_chunks: Array[Vector2i] = []
 var current_chunk := Vector2i(0, 0)
 var terrain_revision := 0
@@ -80,6 +93,7 @@ func _ready() -> void:
 
     terrain_material = StandardMaterial3D.new()
     terrain_material.vertex_color_use_as_albedo = true
+    terrain_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     terrain_material.roughness = 0.95
     _initialize_vegetation_meshes()
 
@@ -90,6 +104,8 @@ func _ready() -> void:
     distant_terrain.call(
         "initialize",
         sim,
+        float(current_chunk.x) * CHUNK_SIZE_M,
+        float(current_chunk.y) * CHUNK_SIZE_M,
         origin_east_m,
         origin_north_m,
         origin_height_m
@@ -162,10 +178,15 @@ func _physics_process(delta: float) -> void:
 
     _maybe_shift_origin()
     _refresh_streaming_center()
+    var distant_center_east_m := origin_east_m + float(player.position.x)
+    var distant_center_north_m := origin_north_m - float(player.position.z)
+    if !survey_flight_enabled:
+        distant_center_east_m = float(current_chunk.x) * CHUNK_SIZE_M
+        distant_center_north_m = float(current_chunk.y) * CHUNK_SIZE_M
     distant_terrain.call(
         "set_view_state",
-        origin_east_m + float(player.position.x),
-        origin_north_m - float(player.position.z),
+        distant_center_east_m,
+        distant_center_north_m,
         origin_east_m,
         origin_north_m,
         origin_height_m,
@@ -404,41 +425,106 @@ func _sphere_direction_to_map_uv(direction: Vector3) -> Vector2:
     return Vector2(longitude / TAU + 0.5, 0.5 - latitude / PI)
 
 func _select_mountain_demo_spawn() -> bool:
-    var heights := sim.sample_terrain_patch(
-        MOUNTAIN_DEMO_CENTER_EAST_M,
-        MOUNTAIN_DEMO_CENTER_NORTH_M,
-        MOUNTAIN_DEMO_SAMPLE_SPACING_M,
-        MOUNTAIN_DEMO_RESOLUTION
-    )
-    if heights.size() != MOUNTAIN_DEMO_RESOLUTION * MOUNTAIN_DEMO_RESOLUTION:
-        return false
-
-    var min_index := 0
-    var max_index := 0
-    for i in range(1, heights.size()):
-        if float(heights[i]) < float(heights[min_index]):
-            min_index = i
-        if float(heights[i]) > float(heights[max_index]):
-            max_index = i
-
-    var half := 0.5 * float(MOUNTAIN_DEMO_RESOLUTION - 1)
-    var min_x := min_index % MOUNTAIN_DEMO_RESOLUTION
-    var min_z := floori(float(min_index) / float(MOUNTAIN_DEMO_RESOLUTION))
-    var max_x := max_index % MOUNTAIN_DEMO_RESOLUTION
-    var max_z := floori(float(max_index) / float(MOUNTAIN_DEMO_RESOLUTION))
-    origin_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
-        float(min_x) - half
-    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
-    origin_north_m = MOUNTAIN_DEMO_CENTER_NORTH_M + (
-        float(min_z) - half
-    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
-    mountain_target_east_m = MOUNTAIN_DEMO_CENTER_EAST_M + (
-        float(max_x) - half
-    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
-    mountain_target_north_m = MOUNTAIN_DEMO_CENTER_NORTH_M + (
-        float(max_z) - half
-    ) * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    # The seed-42 demonstration viewpoint is prevalidated by ci_terrain_view.gd.
+    # Do not rescan the 65 x 65 diagnostic patch at runtime: that used to perform
+    # 4,225 reconstructed-terrain queries before the first frame.
+    origin_east_m = MOUNTAIN_DEMO_SPAWN_EAST_M
+    origin_north_m = MOUNTAIN_DEMO_SPAWN_NORTH_M
+    mountain_target_east_m = MOUNTAIN_DEMO_TARGET_EAST_M
+    mountain_target_north_m = MOUNTAIN_DEMO_TARGET_NORTH_M
     return true
+
+func _mountain_is_local_summit(
+    heights: PackedFloat32Array,
+    x: int,
+    z: int
+) -> bool:
+    var center_height_m := float(
+        heights[z * MOUNTAIN_DEMO_RESOLUTION + x]
+    )
+    for dz in range(-MOUNTAIN_SUMMIT_LOCAL_RADIUS, MOUNTAIN_SUMMIT_LOCAL_RADIUS + 1):
+        for dx in range(-MOUNTAIN_SUMMIT_LOCAL_RADIUS, MOUNTAIN_SUMMIT_LOCAL_RADIUS + 1):
+            if dx == 0 and dz == 0:
+                continue
+            var neighbor_height_m := float(
+                heights[
+                    (z + dz) * MOUNTAIN_DEMO_RESOLUTION
+                    + x + dx
+                ]
+            )
+            if neighbor_height_m > center_height_m:
+                return false
+    return true
+
+func _mountain_patch_height_bilinear(
+    heights: PackedFloat32Array,
+    x: float,
+    z: float
+) -> float:
+    var x0 := clampi(floori(x), 0, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var z0 := clampi(floori(z), 0, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var x1 := mini(x0 + 1, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var z1 := mini(z0 + 1, MOUNTAIN_DEMO_RESOLUTION - 1)
+    var tx := clampf(x - float(x0), 0.0, 1.0)
+    var tz := clampf(z - float(z0), 0.0, 1.0)
+    var a := lerpf(
+        float(heights[z0 * MOUNTAIN_DEMO_RESOLUTION + x0]),
+        float(heights[z0 * MOUNTAIN_DEMO_RESOLUTION + x1]),
+        tx
+    )
+    var b := lerpf(
+        float(heights[z1 * MOUNTAIN_DEMO_RESOLUTION + x0]),
+        float(heights[z1 * MOUNTAIN_DEMO_RESOLUTION + x1]),
+        tx
+    )
+    return lerpf(a, b, tz)
+
+func _mountain_skyline_margin(
+    heights: PackedFloat32Array,
+    view_grid: Vector2,
+    target_grid: Vector2
+) -> float:
+    var delta_grid := target_grid - view_grid
+    var distance_m := delta_grid.length() * MOUNTAIN_DEMO_SAMPLE_SPACING_M
+    if distance_m <= 0.0:
+        return -INF
+
+    var view_height_m := _mountain_patch_height_bilinear(
+        heights,
+        view_grid.x,
+        view_grid.y
+    )
+    var target_height_m := _mountain_patch_height_bilinear(
+        heights,
+        target_grid.x,
+        target_grid.y
+    )
+    var target_angle := atan2(
+        target_height_m - view_height_m,
+        distance_m
+    )
+
+    # Sample twice per 625 m diagnostic grid interval so a foreground ridge
+    # cannot hide the target while the endpoint-only angle still looks strong.
+    var steps := maxi(2, ceili(delta_grid.length() * 2.0))
+    var max_intermediate_angle := -INF
+    for step in range(1, steps):
+        var t := float(step) / float(steps)
+        var sample_grid := view_grid.lerp(target_grid, t)
+        var sample_height_m := _mountain_patch_height_bilinear(
+            heights,
+            sample_grid.x,
+            sample_grid.y
+        )
+        var sample_angle := atan2(
+            sample_height_m - view_height_m,
+            maxf(distance_m * t, 1.0)
+        )
+        max_intermediate_angle = maxf(max_intermediate_angle, sample_angle)
+
+    if max_intermediate_angle == -INF:
+        return target_angle
+    return target_angle - max_intermediate_angle
 
 func _world_chunk(east_m: float, north_m: float) -> Vector2i:
     return Vector2i(
@@ -454,7 +540,11 @@ func _queue_visible_chunks(center: Vector2i) -> void:
                 if maxi(absi(dx), absi(dz)) != ring:
                     continue
                 var coord := center + Vector2i(dx, dz)
-                if !chunks.has(coord) or dirty_chunks.has(coord):
+                if (
+                    !chunks.has(coord)
+                    or dirty_chunks.has(coord)
+                    or surface_dirty_chunks.has(coord)
+                ):
                     pending_chunks.push_back(coord)
 
 func _trim_chunks(center: Vector2i) -> void:
@@ -465,32 +555,76 @@ func _trim_chunks(center: Vector2i) -> void:
             var chunk: Node3D = chunks[coord]
             chunk.queue_free()
             chunks.erase(coord)
+            chunk_heights.erase(coord)
             dirty_chunks.erase(coord)
+            surface_dirty_chunks.erase(coord)
 
 func _create_chunk(coord: Vector2i) -> void:
-    if chunks.has(coord) and !dirty_chunks.has(coord):
+    var chunk_exists := chunks.has(coord)
+    var terrain_dirty := !chunk_exists or dirty_chunks.has(coord)
+    var surface_dirty := !chunk_exists or surface_dirty_chunks.has(coord)
+    if !terrain_dirty and !surface_dirty:
         return
 
     var center_east_m := float(coord.x) * CHUNK_SIZE_M
     var center_north_m := float(coord.y) * CHUNK_SIZE_M
-    var heights := sim.sample_terrain_patch(
-        center_east_m,
-        center_north_m,
-        SAMPLE_SPACING_M,
-        CHUNK_RESOLUTION
-    )
     var surface := sim.sample_surface_visual_patch(
         center_east_m,
         center_north_m,
         SAMPLE_SPACING_M,
         CHUNK_RESOLUTION
     )
-    if (
-        heights.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION
-        or !_surface_packet_valid(surface, heights.size())
+    if !_surface_packet_valid(
+        surface,
+        CHUNK_RESOLUTION * CHUNK_RESOLUTION
     ):
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
+
+    if !terrain_dirty:
+        var cached_heights: PackedFloat32Array = chunk_heights.get(
+            coord,
+            PackedFloat32Array()
+        )
+        if cached_heights.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION:
+            # Missing cache is treated as terrain invalidation, never as a
+            # surface-only shortcut.
+            dirty_chunks[coord] = true
+            terrain_dirty = true
+        else:
+            var cached_chunk: Node3D = chunks[coord]
+            var cached_mesh := cached_chunk.get_node("Mesh") as MeshInstance3D
+            cached_mesh.mesh = _recolor_chunk_mesh(
+                cached_mesh.mesh as ArrayMesh,
+                surface
+            )
+            _update_chunk_vegetation(
+                cached_chunk,
+                coord,
+                cached_heights,
+                surface
+            )
+            surface_dirty_chunks.erase(coord)
+            return
+
+    var normal_heights := sim.sample_terrain_patch(
+        center_east_m,
+        center_north_m,
+        SAMPLE_SPACING_M,
+        NORMAL_PATCH_RESOLUTION
+    )
+    if normal_heights.size() != NORMAL_PATCH_RESOLUTION * NORMAL_PATCH_RESOLUTION:
+        status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
+        return
+
+    var heights := PackedFloat32Array()
+    heights.resize(CHUNK_RESOLUTION * CHUNK_RESOLUTION)
+    for z in range(CHUNK_RESOLUTION):
+        for x in range(CHUNK_RESOLUTION):
+            heights[z * CHUNK_RESOLUTION + x] = normal_heights[
+                (z + 1) * NORMAL_PATCH_RESOLUTION + x + 1
+            ]
+    chunk_heights[coord] = heights
 
     var shape := HeightMapShape3D.new()
     shape.map_width = CHUNK_RESOLUTION
@@ -508,11 +642,17 @@ func _create_chunk(coord: Vector2i) -> void:
             )
     shape.map_data = collision_heights
 
-    if chunks.has(coord):
+    if chunk_exists:
         var existing_chunk: Node3D = chunks[coord]
         var existing_mesh := existing_chunk.get_node("Mesh") as MeshInstance3D
-        var existing_collision := existing_chunk.get_node("Body/Collision") as CollisionShape3D
-        existing_mesh.mesh = _build_chunk_mesh(heights, surface)
+        var existing_collision := existing_chunk.get_node(
+            "Body/Collision"
+        ) as CollisionShape3D
+        existing_mesh.mesh = _build_chunk_mesh(
+            heights,
+            surface,
+            normal_heights
+        )
         existing_collision.shape = shape
         existing_chunk.position = _chunk_local_position(coord)
         _update_chunk_vegetation(existing_chunk, coord, heights, surface)
@@ -524,7 +664,11 @@ func _create_chunk(coord: Vector2i) -> void:
 
         var mesh_instance := MeshInstance3D.new()
         mesh_instance.name = "Mesh"
-        mesh_instance.mesh = _build_chunk_mesh(heights, surface)
+        mesh_instance.mesh = _build_chunk_mesh(
+            heights,
+            surface,
+            normal_heights
+        )
         mesh_instance.material_override = terrain_material
         mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
         chunk.add_child(mesh_instance)
@@ -542,6 +686,7 @@ func _create_chunk(coord: Vector2i) -> void:
         chunks[coord] = chunk
 
     dirty_chunks.erase(coord)
+    surface_dirty_chunks.erase(coord)
 
 func _observe_surface_revision() -> void:
     var next_revision := sim.get_surface_revision()
@@ -565,7 +710,7 @@ func _refresh_surface_revision(delta: float) -> void:
     surface_revision = pending_surface_revision
     for key in chunks.keys():
         var coord: Vector2i = key
-        dirty_chunks[coord] = true
+        surface_dirty_chunks[coord] = true
     _queue_visible_chunks(current_chunk)
 
 func _refresh_terrain_revision(
@@ -598,9 +743,60 @@ func _refresh_terrain_revision(
     _create_chunk(current_chunk)
     _queue_visible_chunks(current_chunk)
 
+func _recolor_chunk_mesh(
+    mesh: ArrayMesh,
+    surface: Dictionary
+) -> ArrayMesh:
+    if mesh == null or mesh.get_surface_count() < 1:
+        return mesh
+
+    var arrays := mesh.surface_get_arrays(0)
+    var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+    var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+    if (
+        vertices.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION
+        or normals.size() != vertices.size()
+    ):
+        return mesh
+
+    var colors := PackedColorArray()
+    colors.resize(vertices.size())
+    var grass: PackedFloat32Array = surface["grass_density_kg_m2"]
+    var shrub: PackedFloat32Array = surface["shrub_density_kg_m2"]
+    var tree: PackedFloat32Array = surface["tree_density_kg_m2"]
+    var snow: PackedFloat32Array = surface["snow_cover_fraction"]
+    var flooded: PackedFloat32Array = surface["flooded_fraction"]
+    var fire_active: PackedFloat32Array = surface["fire_active_fraction"]
+    var fire_burned: PackedFloat32Array = surface["fire_burned_fraction"]
+
+    for z in range(CHUNK_RESOLUTION):
+        for x in range(CHUNK_RESOLUTION):
+            var i := z * CHUNK_RESOLUTION + x
+            var source_z := CHUNK_RESOLUTION - 1 - z
+            var source_i := source_z * CHUNK_RESOLUTION + x
+            colors[i] = SurfaceVisual.terrain_color(
+                float(vertices[i].y),
+                float(grass[source_i]),
+                float(shrub[source_i]),
+                float(tree[source_i]),
+                float(snow[source_i]),
+                float(flooded[source_i]),
+                float(fire_active[source_i]),
+                float(fire_burned[source_i]),
+                Vector2(normals[i].x, normals[i].z).length()
+                / maxf(normals[i].y, 0.001),
+                SurfaceVisual.relief_light(normals[i])
+            )
+
+    arrays[Mesh.ARRAY_COLOR] = colors
+    var recolored := ArrayMesh.new()
+    recolored.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    return recolored
+
 func _build_chunk_mesh(
     heights: PackedFloat32Array,
-    surface: Dictionary
+    surface: Dictionary,
+    normal_heights: PackedFloat32Array
 ) -> ArrayMesh:
     var vertex_count := CHUNK_RESOLUTION * CHUNK_RESOLUTION
     var vertices := PackedVector3Array()
@@ -631,19 +827,28 @@ func _build_chunk_mesh(
                 float(z) * SAMPLE_SPACING_M - half
             )
 
+            var normal_z := source_z + 1
+            var normal_x := x + 1
             var left := float(
-                heights[source_z * CHUNK_RESOLUTION + maxi(x - 1, 0)]
+                normal_heights[
+                    normal_z * NORMAL_PATCH_RESOLUTION + normal_x - 1
+                ]
             )
             var right_h := float(
-                heights[source_z * CHUNK_RESOLUTION + mini(
-                    x + 1,
-                    CHUNK_RESOLUTION - 1
-                )]
+                normal_heights[
+                    normal_z * NORMAL_PATCH_RESOLUTION + normal_x + 1
+                ]
             )
-            var north_z := mini(source_z + 1, CHUNK_RESOLUTION - 1)
-            var south_z := maxi(source_z - 1, 0)
-            var north_h := float(heights[north_z * CHUNK_RESOLUTION + x])
-            var south_h := float(heights[south_z * CHUNK_RESOLUTION + x])
+            var north_h := float(
+                normal_heights[
+                    (normal_z + 1) * NORMAL_PATCH_RESOLUTION + normal_x
+                ]
+            )
+            var south_h := float(
+                normal_heights[
+                    (normal_z - 1) * NORMAL_PATCH_RESOLUTION + normal_x
+                ]
+            )
             normals[i] = Vector3(
                 left - right_h,
                 2.0 * SAMPLE_SPACING_M,
@@ -658,7 +863,10 @@ func _build_chunk_mesh(
                 float(snow[source_i]),
                 float(flooded[source_i]),
                 float(fire_active[source_i]),
-                float(fire_burned[source_i])
+                float(fire_burned[source_i]),
+                Vector2(normals[i].x, normals[i].z).length()
+                / maxf(normals[i].y, 0.001),
+                SurfaceVisual.relief_light(normals[i])
             )
 
     # Godot 4.7 culls counter-clockwise triangles. Clockwise from +Y is

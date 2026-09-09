@@ -19,7 +19,8 @@ const LOD_SPACINGS_M := [
     8192.0,
     16384.0,
 ]
-const TERRAIN_INNER_HALF_M := 640.0
+const TERRAIN_INNER_HALF_M := 0.0
+const NEAR_UNDERLAY_DROP_M := 48.0
 const WALK_RECENTER_DISTANCE_M := 256.0
 const SURVEY_RECENTER_DISTANCE_M := 65536.0
 const REVISION_REFRESH_INTERVAL_S := 5.0
@@ -29,8 +30,11 @@ var terrain_material: StandardMaterial3D
 var ocean_material: StandardMaterial3D
 var level_nodes: Array[Node3D] = []
 var level_positions: Array[PackedVector3Array] = []
+var level_normals: Array[PackedVector3Array] = []
+var level_heights: Array[PackedFloat32Array] = []
 var level_sea_positions: Array[PackedVector3Array] = []
 var pending_levels: Array[int] = []
+var surface_only_levels: Dictionary = {}
 
 var origin_east_m := 0.0
 var origin_north_m := 0.0
@@ -41,12 +45,15 @@ var queued_center_east_m := 0.0
 var queued_center_north_m := 0.0
 var terrain_revision := 0
 var surface_revision := 0
-var revision_dirty := false
+var terrain_revision_dirty := false
+var surface_revision_dirty := false
 var revision_elapsed_s := 0.0
 var initialized := false
 
 func initialize(
     sim_node: WorldSimulationNode,
+    initial_center_east_m: float,
+    initial_center_north_m: float,
     initial_origin_east_m: float,
     initial_origin_north_m: float,
     initial_origin_height_m: float
@@ -55,8 +62,8 @@ func initialize(
     origin_east_m = initial_origin_east_m
     origin_north_m = initial_origin_north_m
     origin_height_m = initial_origin_height_m
-    target_center_east_m = initial_origin_east_m
-    target_center_north_m = initial_origin_north_m
+    target_center_east_m = initial_center_east_m
+    target_center_north_m = initial_center_north_m
     queued_center_east_m = target_center_east_m
     queued_center_north_m = target_center_north_m
     terrain_revision = sim.get_terrain_revision()
@@ -64,6 +71,7 @@ func initialize(
 
     terrain_material = StandardMaterial3D.new()
     terrain_material.vertex_color_use_as_albedo = true
+    terrain_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
     terrain_material.roughness = 0.95
 
     ocean_material = StandardMaterial3D.new()
@@ -72,9 +80,13 @@ func initialize(
     ocean_material.metallic = 0.06
 
     level_positions.resize(LOD_SPACINGS_M.size())
+    level_normals.resize(LOD_SPACINGS_M.size())
+    level_heights.resize(LOD_SPACINGS_M.size())
     level_sea_positions.resize(LOD_SPACINGS_M.size())
     for level in range(LOD_SPACINGS_M.size()):
         level_positions[level] = PackedVector3Array()
+        level_normals[level] = PackedVector3Array()
+        level_heights[level] = PackedFloat32Array()
         level_sea_positions[level] = PackedVector3Array()
         var level_node := Node3D.new()
         level_node.name = "Lod%d" % level
@@ -101,13 +113,13 @@ func set_terrain_revision(revision: int) -> void:
     if !initialized or revision == terrain_revision:
         return
     terrain_revision = revision
-    revision_dirty = true
+    terrain_revision_dirty = true
 
 func set_surface_revision(revision: int) -> void:
     if !initialized or revision == surface_revision:
         return
     surface_revision = revision
-    revision_dirty = true
+    surface_revision_dirty = true
 
 func set_view_state(
     center_east_m: float,
@@ -162,28 +174,79 @@ func _process(delta: float) -> void:
     if !initialized:
         return
 
-    if revision_dirty:
+    if terrain_revision_dirty or surface_revision_dirty:
         revision_elapsed_s += delta
-        if revision_elapsed_s >= REVISION_REFRESH_INTERVAL_S and pending_levels.is_empty():
-            revision_dirty = false
+        if (
+            revision_elapsed_s >= REVISION_REFRESH_INTERVAL_S
+            and pending_levels.is_empty()
+        ):
             revision_elapsed_s = 0.0
-            _queue_all_levels()
+            if terrain_revision_dirty:
+                terrain_revision_dirty = false
+                surface_revision_dirty = false
+                _queue_all_levels(false)
+            else:
+                surface_revision_dirty = false
+                _queue_all_levels(true)
 
     if pending_levels.is_empty():
         return
 
     var level: int = pending_levels.pop_front()
-    _rebuild_level(level)
+    var surface_only := surface_only_levels.has(level)
+    surface_only_levels.erase(level)
+    _rebuild_level(level, surface_only)
 
-func _queue_all_levels() -> void:
+func _queue_all_levels(surface_only: bool = false) -> void:
     pending_levels.clear()
+    surface_only_levels.clear()
     # Coarse-to-fine guarantees that every fine outer transition can morph onto
     # the matching newly sampled coarser ring.
     for level in range(LOD_SPACINGS_M.size() - 1, -1, -1):
         pending_levels.push_back(level)
+        if surface_only:
+            surface_only_levels[level] = true
 
-func _rebuild_level(level: int) -> void:
+func _rebuild_level(level: int, surface_only: bool = false) -> void:
     var spacing_m := float(LOD_SPACINGS_M[level])
+    var expected := LOD_RESOLUTION * LOD_RESOLUTION
+
+    if surface_only:
+        var cached_positions: PackedVector3Array = level_positions[level]
+        var cached_normals: PackedVector3Array = level_normals[level]
+        var cached_heights: PackedFloat32Array = level_heights[level]
+        if (
+            cached_positions.size() == expected
+            and cached_normals.size() == expected
+            and cached_heights.size() == expected
+        ):
+            var cached_surface := sim.sample_surface_visual_patch(
+                queued_center_east_m,
+                queued_center_north_m,
+                spacing_m,
+                LOD_RESOLUTION
+            )
+            if !_surface_packet_valid(cached_surface, expected):
+                push_error(
+                    "Distant terrain LOD %d surface refresh failed: %s"
+                    % [level, sim.get_last_error()]
+                )
+                return
+            var cached_node: Node3D = level_nodes[level]
+            var cached_terrain := cached_node.get_node(
+                "Terrain"
+            ) as MeshInstance3D
+            cached_terrain.mesh = _build_mesh(
+                cached_positions,
+                cached_heights,
+                cached_surface,
+                spacing_m,
+                _terrain_inner_half_m(level),
+                true,
+                cached_normals
+            )
+            return
+
     var packet := sim.sample_terrain_visual_patch(
         queued_center_east_m,
         queued_center_north_m,
@@ -193,34 +256,64 @@ func _rebuild_level(level: int) -> void:
         origin_north_m,
         origin_height_m
     )
-    var positions: PackedVector3Array = packet.get("positions", PackedVector3Array())
-    var sea_positions: PackedVector3Array = packet.get("sea_positions", PackedVector3Array())
-    var heights: PackedFloat32Array = packet.get("heights", PackedFloat32Array())
+    var positions: PackedVector3Array = packet.get(
+        "positions",
+        PackedVector3Array()
+    )
+    var sea_positions: PackedVector3Array = packet.get(
+        "sea_positions",
+        PackedVector3Array()
+    )
+    var heights: PackedFloat32Array = packet.get(
+        "heights",
+        PackedFloat32Array()
+    )
     var surface := sim.sample_surface_visual_patch(
         queued_center_east_m,
         queued_center_north_m,
         spacing_m,
         LOD_RESOLUTION
     )
-    var expected := LOD_RESOLUTION * LOD_RESOLUTION
     if (
         positions.size() != expected
         or sea_positions.size() != expected
         or heights.size() != expected
         or !_surface_packet_valid(surface, expected)
     ):
-        push_error("Distant terrain LOD %d sampling failed: %s" % [level, sim.get_last_error()])
+        push_error(
+            "Distant terrain LOD %d sampling failed: %s"
+            % [level, sim.get_last_error()]
+        )
         return
+
+    # Lod0 is a cheap safety underlay below the streamed 8 m near chunks.
+    # It fills temporary streaming holes, then converges back to the exact
+    # sampled terrain at Lod0's outer boundary before the Lod1 handoff.
+    if level == 0:
+        positions = _apply_near_underlay_drop(positions, spacing_m)
 
     if level + 1 < LOD_SPACINGS_M.size():
         var coarse_positions: PackedVector3Array = level_positions[level + 1]
-        var coarse_sea_positions: PackedVector3Array = level_sea_positions[level + 1]
+        var coarse_sea_positions: PackedVector3Array = level_sea_positions[
+            level + 1
+        ]
         if coarse_positions.size() == expected:
             positions = _morph_outer_transition(positions, coarse_positions)
         if coarse_sea_positions.size() == expected:
-            sea_positions = _morph_outer_transition(sea_positions, coarse_sea_positions)
+            sea_positions = _morph_outer_transition(
+                sea_positions,
+                coarse_sea_positions
+            )
+
+    var normals := _compute_normals(positions)
+    if level + 1 < LOD_SPACINGS_M.size():
+        var coarse_normals: PackedVector3Array = level_normals[level + 1]
+        if coarse_normals.size() == expected:
+            normals = _morph_outer_normals(normals, coarse_normals)
 
     level_positions[level] = positions
+    level_normals[level] = normals
+    level_heights[level] = heights
     level_sea_positions[level] = sea_positions
 
     var level_node: Node3D = level_nodes[level]
@@ -233,7 +326,8 @@ func _rebuild_level(level: int) -> void:
         surface,
         spacing_m,
         _terrain_inner_half_m(level),
-        true
+        true,
+        normals
     )
     ocean_instance.mesh = _build_mesh(
         sea_positions,
@@ -243,6 +337,24 @@ func _rebuild_level(level: int) -> void:
         _ocean_inner_half_m(level),
         false
     )
+
+func _apply_near_underlay_drop(
+    positions: PackedVector3Array,
+    spacing_m: float
+) -> PackedVector3Array:
+    var center := 0.5 * float(LOD_RESOLUTION - 1)
+    var outer_half_m := center * spacing_m
+    for z in range(LOD_RESOLUTION):
+        for x in range(LOD_RESOLUTION):
+            var radius_m := maxf(
+                absf((float(x) - center) * spacing_m),
+                absf((float(z) - center) * spacing_m)
+            )
+            var t := clampf(radius_m / maxf(outer_half_m, 1.0), 0.0, 1.0)
+            var fade := t * t * (3.0 - 2.0 * t)
+            var index := z * LOD_RESOLUTION + x
+            positions[index].y -= NEAR_UNDERLAY_DROP_M * (1.0 - fade)
+    return positions
 
 func _terrain_inner_half_m(level: int) -> float:
     if level == 0:
@@ -279,6 +391,67 @@ func _morph_outer_transition(
             positions[index] = positions[index].lerp(coarse_position, blend)
     return positions
 
+func _compute_normals(
+    positions: PackedVector3Array
+) -> PackedVector3Array:
+    var normals := PackedVector3Array()
+    normals.resize(positions.size())
+    for z in range(LOD_RESOLUTION):
+        for x in range(LOD_RESOLUTION):
+            var index := z * LOD_RESOLUTION + x
+            var left := positions[z * LOD_RESOLUTION + maxi(x - 1, 0)]
+            var right := positions[z * LOD_RESOLUTION + mini(x + 1, LOD_RESOLUTION - 1)]
+            var down := positions[maxi(z - 1, 0) * LOD_RESOLUTION + x]
+            var up := positions[mini(z + 1, LOD_RESOLUTION - 1) * LOD_RESOLUTION + x]
+            normals[index] = (right - left).cross(up - down).normalized()
+    return normals
+
+func _morph_outer_normals(
+    normals: PackedVector3Array,
+    coarse_normals: PackedVector3Array
+) -> PackedVector3Array:
+    var center := floori(float(LOD_RESOLUTION - 1) * 0.5)
+    for z in range(LOD_RESOLUTION):
+        for x in range(LOD_RESOLUTION):
+            var ring := maxi(absi(x - center), absi(z - center))
+            if ring < center - 1:
+                continue
+            var blend := 1.0 if ring == center else 0.5
+            var coarse_x := float(center) + float(x - center) * 0.5
+            var coarse_z := float(center) + float(z - center) * 0.5
+            var coarse_normal := _sample_normal_bilinear(
+                coarse_normals,
+                coarse_x,
+                coarse_z
+            )
+            var index := z * LOD_RESOLUTION + x
+            normals[index] = normals[index].lerp(
+                coarse_normal,
+                blend
+            ).normalized()
+    return normals
+
+func _sample_normal_bilinear(
+    normals: PackedVector3Array,
+    x: float,
+    z: float
+) -> Vector3:
+    var x0 := clampi(floori(x), 0, LOD_RESOLUTION - 1)
+    var z0 := clampi(floori(z), 0, LOD_RESOLUTION - 1)
+    var x1 := mini(x0 + 1, LOD_RESOLUTION - 1)
+    var z1 := mini(z0 + 1, LOD_RESOLUTION - 1)
+    var tx := clampf(x - float(x0), 0.0, 1.0)
+    var tz := clampf(z - float(z0), 0.0, 1.0)
+    var a := normals[z0 * LOD_RESOLUTION + x0].lerp(
+        normals[z0 * LOD_RESOLUTION + x1],
+        tx
+    )
+    var b := normals[z1 * LOD_RESOLUTION + x0].lerp(
+        normals[z1 * LOD_RESOLUTION + x1],
+        tx
+    )
+    return a.lerp(b, tz).normalized()
+
 func _sample_grid_bilinear(
     positions: PackedVector3Array,
     x: float,
@@ -306,10 +479,12 @@ func _build_mesh(
     surface: Dictionary,
     spacing_m: float,
     inner_half_m: float,
-    use_elevation_colors: bool
+    use_elevation_colors: bool,
+    provided_normals: PackedVector3Array = PackedVector3Array()
 ) -> ArrayMesh:
-    var normals := PackedVector3Array()
-    normals.resize(positions.size())
+    var normals := provided_normals
+    if normals.size() != positions.size():
+        normals = _compute_normals(positions)
     var colors := PackedColorArray()
     var grass := PackedFloat32Array()
     var shrub := PackedFloat32Array()
@@ -328,14 +503,10 @@ func _build_mesh(
         fire_active = surface["fire_active_fraction"]
         fire_burned = surface["fire_burned_fraction"]
 
+    var half_cells := float(LOD_RESOLUTION - 1) * 0.5
     for z in range(LOD_RESOLUTION):
         for x in range(LOD_RESOLUTION):
             var index := z * LOD_RESOLUTION + x
-            var left := positions[z * LOD_RESOLUTION + maxi(x - 1, 0)]
-            var right := positions[z * LOD_RESOLUTION + mini(x + 1, LOD_RESOLUTION - 1)]
-            var down := positions[maxi(z - 1, 0) * LOD_RESOLUTION + x]
-            var up := positions[mini(z + 1, LOD_RESOLUTION - 1) * LOD_RESOLUTION + x]
-            normals[index] = (right - left).cross(up - down).normalized()
             if use_elevation_colors:
                 colors[index] = SurfaceVisual.terrain_color(
                     float(heights[index]),
@@ -345,11 +516,13 @@ func _build_mesh(
                     float(snow[index]),
                     float(flooded[index]),
                     float(fire_active[index]),
-                    float(fire_burned[index])
+                    float(fire_burned[index]),
+                    Vector2(normals[index].x, normals[index].z).length()
+                    / maxf(normals[index].y, 0.001),
+                    SurfaceVisual.relief_light(normals[index])
                 )
 
     var indices := PackedInt32Array()
-    var half_cells := float(LOD_RESOLUTION - 1) * 0.5
     for z in range(LOD_RESOLUTION - 1):
         for x in range(LOD_RESOLUTION - 1):
             var mid_x := (float(x) + 0.5 - half_cells) * spacing_m

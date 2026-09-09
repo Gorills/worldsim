@@ -64,11 +64,15 @@ coarse/fine separation used in established AMR practice:
 - Berger & Colella (1989), conservative coarse/fine AMR synchronization:
   https://doi.org/10.1016/0021-9991(89)90035-1
 
-The adapter exposes a transient terrain revision derived from active cell ids
-and authoritative elevation values. A revision change dirties existing chunks.
-The chunk under the player updates its `ArrayMesh` and `HeightMapShape3D`
-synchronously; remaining visible chunks update at one per frame. Render and
-collision always use the same sampled height array. Godot 4.7 documents the
+The adapter exposes separate transient terrain and living-surface revisions.
+A terrain revision dirties height/collision data: the chunk under the player
+updates its `ArrayMesh` and `HeightMapShape3D` synchronously, while remaining
+visible chunks update at one per frame. A surface-only revision no longer
+resamples reconstructed terrain or rebuilds collision. Near chunks cache their
+central 33 x 33 heights and only rebuild vertex colors/decorative vegetation;
+distant LODs reuse cached positions, normals and heights and resample only the
+living-surface packet. Render and collision still use the same sampled height
+array whenever terrain authority actually changes. Godot 4.7 documents the
 relevant mutable height-map data and procedural mesh contracts:
 
 - https://docs.godotengine.org/en/4.7/classes/class_arraymesh.html
@@ -111,6 +115,9 @@ walking chunks remain the only physics terrain:
 - chunk size: 256 m;
 - mesh resolution: 33 x 33 vertices;
 - vertex spacing: 8 m;
+- terrain sampling uses a 35 x 35 patch and keeps the outer one-cell border only
+  for central-difference render normals; collision and mesh heights remain the
+  central authoritative 33 x 33 samples;
 - visible radius: 3 chunks;
 - retained radius: 4 chunks;
 - at most one missing or dirty near chunk is generated per rendered frame;
@@ -118,31 +125,70 @@ walking chunks remain the only physics terrain:
 
 For the fixed seed-42 walking demonstration, startup placement is intentionally
 inside the existing mountain regression region instead of the projection origin.
-The viewer samples the same 40 km x 40 km reconstructed-terrain window centered
-at east 5,573 km / north -1,800.3 km, starts at that window's lowest 625 m-grid
-sample, and initially faces its highest sample. This changes only presentation
-placement: terrain authority, simulation focus, snapshots and the reconstruction
-formula are unchanged. The purpose is diagnostic as well as presentational: if
-the standard walk scene still appears flat, the failure is in terrain
-reconstruction/rendering rather than in requiring the user to travel thousands
-of kilometres to the known mountain belt.
+The runtime uses a prevalidated spawn/target pair instead of rescanning the
+65 x 65 diagnostic patch before the first frame. The CI terrain regression still
+samples the 40 km x 40 km window centered at east 5,573 km / north -1,800.3 km
+and verifies that the fixed target remains a 3-cell-radius local summit with at
+least 700 m regional relief. The fixed dry viewpoint is 2.5 km from the
+target ridge crest and must retain at least 950 m rise, fifteen degrees of
+elevation and 0.5 degrees of skyline separation. This removes 4,225 reconstructed-terrain queries
+from normal viewer startup while preserving an independently checked mountain
+frame. Terrain authority, simulation focus, snapshots and the reconstruction
+formula are unchanged.
 
-The walker now also renders visual-only nested spherical terrain rings. Every
+The walker also renders visual-only nested spherical terrain rings. Every
 ring is a 33 x 33 regular grid, sample spacing doubles from 64 m through
-16,384 m, and the outer half-extent therefore grows from 1.024 km to
-262.144 km. Heights come from the same reconstructed terrain adapter used by
-walking collision. The regional baseline remains authoritative geology; the
-adapter then adds deterministic presentation-only orography below the adaptive
-cell scale in convergent dry-land belts. That visual/collision relief is bounded,
-sphere-native and never mutates simulation fields, conserved stores or snapshots.
-The adapter converts the sampled sphere directions to a player-local tangent
-frame in double precision before returning float scene coordinates, so the stock
-single-precision Godot scene tree never stores planet-radius coordinates.
+16,384 m, and the outer half-extent grows from 1.024 km to 262.144 km.
+The canonical mountain viewpoint is now only 3-7 km from its selected summit,
+so 256 m sampling still covers the visible target range without paying the
+4x per-ring vertex/sampling cost of the rejected 65 x 65 pass. Heights come
+from the same reconstructed terrain adapter used by walking collision. The
+regional baseline remains authoritative geology; the adapter retains the
+deterministic presentation-only 60/28/16 km ridge and summit orography in
+convergent dry-land belts. Summit amplitude is slightly stronger than the broad ridge term. A single
+3.2 km, single-octave sphere-native value-noise lookup is transformed into a
+narrow positive ridged term inside the existing mountain gate. This restores
+local ribs and saddles without restoring the rejected multi-FBM crag/gully/spur
+stack; the number of added detail-noise lookups is one per terrain sample. The visual/collision relief remains bounded,
+sphere-native and never mutates simulation fields, conserved stores or
+snapshots. The adapter converts the sampled sphere directions to a
+player-local tangent frame in double precision before returning float scene
+coordinates, so the stock single-precision Godot scene tree never stores
+planet-radius coordinates.
 
 Coarse-to-fine updates morph the final two fine-grid rows onto bilinear samples
 of the next coarser ring. Exact shared outer/inner boundaries therefore meet
 without a T-junction crack while local detail is retained away from the
-transition. Distant rings have no collision.
+transition. Lod0 is intentionally rendered as a full safety underlay beneath
+the streamed near chunks instead of cutting a central hole. While walking,
+the distant center is snapped to the same 256 m chunk center used by near
+streaming. Lod0 is lowered by up to 48 m near the center and smoothly rejoins
+the exact sampled surface at its outer edge. This prevents a temporarily
+missing near chunk from exposing sky/ocean and prevents the coarser Lod0
+surface from cutting through loaded 8 m near terrain. Distant rings have no
+collision.
+
+Terrain albedo receives a presentation-only rock cue from rendered slope
+gradient and elevation. The gradient is derived from the mesh normal as
+horizontal-normal magnitude divided by vertical-normal magnitude, so ordinary
+10-30 degree mountain faces no longer collapse into near-zero values as they did
+with the previous `1 - normal.y` proxy. Near chunks use the 35 x 35 ghost border
+for those normals instead of clamping the derivative at every 256 m chunk edge.
+The rejected per-vertex procedural tint pass was removed from the runtime path;
+slope/elevation color and the deterministic hillshade remain presentation-only
+and do not feed back into ecology or geography.
+
+The walking camera uses a 65-degree field of view, and the environment keeps
+lower ambient energy with a warm directional light. Nested distant rings do not
+cast shadow maps: rendered CI frames exposed a dark clipmap-boundary seam when
+overlapping LODs were allowed to shadow one another. Terrain materials therefore
+render unshaded vertex colors and the shared surface presentation applies the
+directional hillshade explicitly. Coarse-to-fine rebuilds persist each ring's
+terrain normals; the final two rows of a fine ring morph those normals onto the
+same coarser grid used by the existing positional transition. Slope rock cues and
+hillshade are then derived from the morphed normal, so adjacent rings agree at
+their shared boundary instead of hiding the discontinuity with a neutral color
+band.
 
 A separate visual-only sea-level surface uses the exact same spherical sample
 directions at elevation 0 m. It is opaque in this first slice to stay on the
@@ -184,10 +230,19 @@ chunk boundary:
 - https://docs.godotengine.org/en/4.7/classes/class_environment.html
 
 Sampling cost and frame time on target player hardware remain **NOT VERIFIED**.
-The implementation limits work to one distant LOD rebuild per rendered frame,
-recenters every 256 m while walking, uses a much larger threshold during survey
-flight, and throttles simulation-driven distant refreshes to avoid coupling
-hourly simulation steps to full-horizon mesh regeneration.
+The rejected 65 x 65 pass raised each ring from 1,089 to 4,225 vertices and
+produced severe runtime slowdown in manual testing, so the runtime contract is
+back to 33 x 33. The implementation still limits work to one distant LOD rebuild
+per rendered frame, recenters on 256 m near-chunk transitions while walking,
+uses a much larger threshold during survey flight, and throttles
+simulation-driven distant refreshes. Surface-only revisions use cached terrain geometry instead of re-running
+reconstructed-height sampling, preventing hourly ecology/climate changes from
+repeatedly entering the expensive terrain/collision path. The rendered CI gate
+also records a fixed 60-frame llvmpipe proxy plus forced near-terrain and
+surface-only refresh timings. The accepted pass must remain at or above 12 proxy
+FPS, at or below 20 ms for a forced near rebuild and at or below 8 ms for a
+surface-only refresh; these are regression bounds, not target-hardware FPS
+claims.
 
 ## Global map inspection
 
@@ -273,6 +328,6 @@ A spatial bake is intentionally deferred. Plate ownership, crust affinity, and t
 
 - Walking terrain follows reconstructed stateful geology. Convergent dry-land belts additionally receive bounded deterministic sub-cell orographic peaks for traversable/rendered mountain relief; this does not change authoritative geography fields or snapshots. Surface color and near decorative vegetation project authoritative climate/hydrology/ecology state through the separate [living-surface contract](LIVING_SURFACE.md).
 - The walker has a visual sea-level surface but no river/lake surface geometry, wave simulation, shoreline foam, refraction, or water collision.
-- Distant terrain is spherical and extends to roughly 262 km from the viewer; it is visual-only and uses progressively coarser samples.
+- Distant terrain is spherical and extends to roughly 262 km from its center; it is visual-only and uses progressively coarser samples. Long-range depth fog hides the finite visual-ring boundary before it becomes a local flat cutoff.
 - Terrain revision and synchronized local mesh/collision refresh remain immediate; distant terrain revision refresh is intentionally throttled and continuous fastest-tier survey-flight quality is not verified.
 - Frame-time and GPU performance on target player hardware are NOT VERIFIED by CI; CI can verify build, parsing, headless runtime, terrain API, collision scene resources, and core invariants only.
