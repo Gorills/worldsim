@@ -162,7 +162,7 @@ The dedicated `worldsim_nitrogen_tests` suite checks:
 - finite mineral-N limitation of plant production and exact plant uptake debit;
 - 30-day coupled-scheduler nitrogen closure;
 - extensive N preservation through refine/coarsen plus aggregate reconstruction; and
-- snapshot epoch 31 round-trip and deterministic continuation.
+- snapshot epoch 33 round-trip and deterministic continuation.
 
 The dedicated `worldsim_soil_carbon_tests` suite checks:
 
@@ -172,7 +172,7 @@ The dedicated `worldsim_soil_carbon_tests` suite checks:
 - submerged stock remains dormant instead of being deleted;
 - all component pools and the cumulative ledger survive refine/coarsen; and
 - historical epoch-20 soil-carbon snapshots round-tripped and continued
-  deterministically; the current combined world uses epoch 31.
+  deterministically; the current combined world uses epoch 33.
 
 The dedicated `worldsim_fauna_v2_tests` suite checks the movement and fauna
 carbon contracts:
@@ -187,7 +187,7 @@ carbon contracts:
   time, so a controlled half-day pass removes half the forage of a one-day pass;
 - starvation cannot create population and over-capacity cohorts decline even
   when standing forage is abundant; and
-- the current epoch-31 snapshot includes the fauna-respiration and nitrogen fields, rejects stale authoritative epochs, and round-trips exactly.
+- the current epoch-33 snapshot includes fauna respiration plus cohort-derived fauna nitrogen semantics, rejects stale authoritative epochs, and round-trips exactly.
 
 The dedicated `worldsim_fire_tests` suite checks:
 
