@@ -143,7 +143,7 @@ double stochastic_weather_unit(
     Tick tick,
     CellId cell
 ) {
-    constexpr std::uint64_t stream=fnv1a64("climate.weather.v2");
+    static const std::uint64_t stream=fnv1a64("climate.weather.v2");
     if (cell.level()>=weather_reference_level)
         return deterministic_unit(seed,stream,tick,cell.raw());
 
