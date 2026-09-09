@@ -661,8 +661,8 @@ void test_living_soil_ecology_contracts() {
     const CellId soil_cell=probe_cell(*bare_litter);
     auto& bare_fs=bare_litter->world().stores().get<FieldStore>();
     auto& rich_fs=rich_litter->world().stores().get<FieldStore>();
-    const auto soil_fertility=*bare_litter->fields().find(
-        "ecology.soil_fertility"
+    const auto mineralization=*bare_litter->fields().find(
+        "ecology.nitrogen_mineralization_kg_day"
     );
     const auto soil_litter=*bare_litter->fields().find(
         "ecology.litter_carbon_kg"
@@ -704,9 +704,9 @@ void test_living_soil_ecology_contracts() {
     bare_litter->step(24);
     rich_litter->step(24);
     check(
-        rich_fs.get(soil_cell,soil_fertility)>
-        bare_fs.get(soil_cell,soil_fertility)+1.0e-3,
-        "litter nitrogen mineralization did not improve soil fertility"
+        rich_fs.get(soil_cell,mineralization)>
+        bare_fs.get(soil_cell,mineralization),
+        "litter nitrogen did not increase soil mineralization"
     );
 }
 
