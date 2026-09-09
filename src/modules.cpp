@@ -240,26 +240,24 @@ double initial_reference_mean_lapse_elevation_m(
     const GeologyModel& geology,
     CellId cell
 ) {
-    double represented_area=0.0;
-    double positive_elevation_area=0.0;
+    double represented_land_area=0.0;
+    double positive_elevation_land_area=0.0;
     for (CellId sample:geography_reference_cells(cell)) {
         const double area=world.topology().area_m2(sample);
-        represented_area+=area;
-        positive_elevation_area+=
-            area*std::max(
-                0.0,
-                initial_flexed_reference_elevation_m(
-                    world,
-                    geology,
-                    sample
-                )
+        const double elevation=
+            initial_flexed_reference_elevation_m(
+                world,
+                geology,
+                sample
             );
+        const double land_area=
+            area*land_fraction_from_elevation(elevation);
+        represented_land_area+=land_area;
+        positive_elevation_land_area+=
+            land_area*std::max(0.0,elevation);
     }
-    if (!(represented_area>0.0))
-        throw std::runtime_error(
-            "geography lapse reference has zero represented area"
-        );
-    return positive_elevation_area/represented_area;
+    if (!(represented_land_area>0.0)) return 0.0;
+    return positive_elevation_land_area/represented_land_area;
 }
 
 struct CoastalReferenceSample {
