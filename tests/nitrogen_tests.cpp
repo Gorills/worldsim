@@ -435,6 +435,50 @@ void planetary_reservoirs_close_boundary_and_return_fluxes() {
     );
 }
 
+void fixation_uses_authoritative_mineral_stock() {
+    auto make_fixture=[](double mineral_density) {
+        auto simulation=make_default_simulation(
+            8206,SimulationConfig{1,1,3'600.0}
+        );
+        const CellId cell=land_cell(*simulation);
+        auto& fields=simulation->world().stores().get<FieldStore>();
+        const double area=
+            simulation->world().topology().area_m2(cell)*
+            fields.get(
+                cell,field(*simulation,"geography.land_fraction")
+            );
+        fields.set(
+            cell,field(*simulation,"ecology.mineral_nitrogen_kg"),
+            mineral_density*area
+        );
+        // Deliberately stale diagnostic: the planetary cycle must use the
+        // authoritative mineral stock rather than trusting this value.
+        fields.set(
+            cell,field(*simulation,"ecology.soil_fertility"),0.0
+        );
+        run_system(*simulation,"ecology.nitrogen_cycle",1.0);
+        return std::pair{
+            std::move(simulation),
+            cell
+        };
+    };
+
+    auto [poor,poor_cell]=make_fixture(0.0);
+    auto [rich,rich_cell]=make_fixture(0.03);
+    const auto& poor_fields=poor->world().stores().get<FieldStore>();
+    const auto& rich_fields=rich->world().stores().get<FieldStore>();
+    const double poor_fixation=poor_fields.get(
+        poor_cell,field(*poor,"ecology.nitrogen_fixation_kg_day")
+    );
+    const double rich_fixation=rich_fields.get(
+        rich_cell,field(*rich,"ecology.nitrogen_fixation_kg_day")
+    );
+    check(
+        poor_fixation>rich_fixation,
+        "nitrogen fixation trusted stale fertility instead of mineral stock"
+    );
+}
+
 void coupled_scheduler_closes_planetary_nitrogen() {
     auto simulation=make_default_simulation(
         8205,SimulationConfig{1,1,3'600.0}
@@ -551,6 +595,7 @@ int main() {
         soil_system_closes_and_reports_fluxes();
         vegetation_is_limited_by_finite_nitrogen();
         planetary_reservoirs_close_boundary_and_return_fluxes();
+        fixation_uses_authoritative_mineral_stock();
         coupled_scheduler_closes_planetary_nitrogen();
         lod_and_snapshot_preserve_nitrogen();
         std::cout<<"nitrogen_tests: OK\n";
