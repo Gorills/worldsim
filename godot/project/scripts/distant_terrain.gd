@@ -29,6 +29,7 @@ var terrain_material: StandardMaterial3D
 var ocean_material: StandardMaterial3D
 var level_nodes: Array[Node3D] = []
 var level_positions: Array[PackedVector3Array] = []
+var level_normals: Array[PackedVector3Array] = []
 var level_sea_positions: Array[PackedVector3Array] = []
 var pending_levels: Array[int] = []
 
@@ -73,9 +74,11 @@ func initialize(
     ocean_material.metallic = 0.06
 
     level_positions.resize(LOD_SPACINGS_M.size())
+    level_normals.resize(LOD_SPACINGS_M.size())
     level_sea_positions.resize(LOD_SPACINGS_M.size())
     for level in range(LOD_SPACINGS_M.size()):
         level_positions[level] = PackedVector3Array()
+        level_normals[level] = PackedVector3Array()
         level_sea_positions[level] = PackedVector3Array()
         var level_node := Node3D.new()
         level_node.name = "Lod%d" % level
@@ -221,7 +224,14 @@ func _rebuild_level(level: int) -> void:
         if coarse_sea_positions.size() == expected:
             sea_positions = _morph_outer_transition(sea_positions, coarse_sea_positions)
 
+    var normals := _compute_normals(positions)
+    if level + 1 < LOD_SPACINGS_M.size():
+        var coarse_normals: PackedVector3Array = level_normals[level + 1]
+        if coarse_normals.size() == expected:
+            normals = _morph_outer_normals(normals, coarse_normals)
+
     level_positions[level] = positions
+    level_normals[level] = normals
     level_sea_positions[level] = sea_positions
 
     var level_node: Node3D = level_nodes[level]
@@ -234,7 +244,8 @@ func _rebuild_level(level: int) -> void:
         surface,
         spacing_m,
         _terrain_inner_half_m(level),
-        true
+        true,
+        normals
     )
     ocean_instance.mesh = _build_mesh(
         sea_positions,
@@ -280,6 +291,67 @@ func _morph_outer_transition(
             positions[index] = positions[index].lerp(coarse_position, blend)
     return positions
 
+func _compute_normals(
+    positions: PackedVector3Array
+) -> PackedVector3Array:
+    var normals := PackedVector3Array()
+    normals.resize(positions.size())
+    for z in range(LOD_RESOLUTION):
+        for x in range(LOD_RESOLUTION):
+            var index := z * LOD_RESOLUTION + x
+            var left := positions[z * LOD_RESOLUTION + maxi(x - 1, 0)]
+            var right := positions[z * LOD_RESOLUTION + mini(x + 1, LOD_RESOLUTION - 1)]
+            var down := positions[maxi(z - 1, 0) * LOD_RESOLUTION + x]
+            var up := positions[mini(z + 1, LOD_RESOLUTION - 1) * LOD_RESOLUTION + x]
+            normals[index] = (right - left).cross(up - down).normalized()
+    return normals
+
+func _morph_outer_normals(
+    normals: PackedVector3Array,
+    coarse_normals: PackedVector3Array
+) -> PackedVector3Array:
+    var center := floori(float(LOD_RESOLUTION - 1) * 0.5)
+    for z in range(LOD_RESOLUTION):
+        for x in range(LOD_RESOLUTION):
+            var ring := maxi(absi(x - center), absi(z - center))
+            if ring < center - 1:
+                continue
+            var blend := 1.0 if ring == center else 0.5
+            var coarse_x := float(center) + float(x - center) * 0.5
+            var coarse_z := float(center) + float(z - center) * 0.5
+            var coarse_normal := _sample_normal_bilinear(
+                coarse_normals,
+                coarse_x,
+                coarse_z
+            )
+            var index := z * LOD_RESOLUTION + x
+            normals[index] = normals[index].lerp(
+                coarse_normal,
+                blend
+            ).normalized()
+    return normals
+
+func _sample_normal_bilinear(
+    normals: PackedVector3Array,
+    x: float,
+    z: float
+) -> Vector3:
+    var x0 := clampi(floori(x), 0, LOD_RESOLUTION - 1)
+    var z0 := clampi(floori(z), 0, LOD_RESOLUTION - 1)
+    var x1 := mini(x0 + 1, LOD_RESOLUTION - 1)
+    var z1 := mini(z0 + 1, LOD_RESOLUTION - 1)
+    var tx := clampf(x - float(x0), 0.0, 1.0)
+    var tz := clampf(z - float(z0), 0.0, 1.0)
+    var a := normals[z0 * LOD_RESOLUTION + x0].lerp(
+        normals[z0 * LOD_RESOLUTION + x1],
+        tx
+    )
+    var b := normals[z1 * LOD_RESOLUTION + x0].lerp(
+        normals[z1 * LOD_RESOLUTION + x1],
+        tx
+    )
+    return a.lerp(b, tz).normalized()
+
 func _sample_grid_bilinear(
     positions: PackedVector3Array,
     x: float,
@@ -307,10 +379,12 @@ func _build_mesh(
     surface: Dictionary,
     spacing_m: float,
     inner_half_m: float,
-    use_elevation_colors: bool
+    use_elevation_colors: bool,
+    provided_normals: PackedVector3Array = PackedVector3Array()
 ) -> ArrayMesh:
-    var normals := PackedVector3Array()
-    normals.resize(positions.size())
+    var normals := provided_normals
+    if normals.size() != positions.size():
+        normals = _compute_normals(positions)
     var colors := PackedColorArray()
     var grass := PackedFloat32Array()
     var shrub := PackedFloat32Array()
@@ -330,35 +404,10 @@ func _build_mesh(
         fire_burned = surface["fire_burned_fraction"]
 
     var half_cells := float(LOD_RESOLUTION - 1) * 0.5
-    var outer_half_m := half_cells * spacing_m
     for z in range(LOD_RESOLUTION):
         for x in range(LOD_RESOLUTION):
             var index := z * LOD_RESOLUTION + x
-            var left := positions[z * LOD_RESOLUTION + maxi(x - 1, 0)]
-            var right := positions[z * LOD_RESOLUTION + mini(x + 1, LOD_RESOLUTION - 1)]
-            var down := positions[maxi(z - 1, 0) * LOD_RESOLUTION + x]
-            var up := positions[mini(z + 1, LOD_RESOLUTION - 1) * LOD_RESOLUTION + x]
-            normals[index] = (right - left).cross(up - down).normalized()
             if use_elevation_colors:
-                var grid_x_m := absf((float(x) - half_cells) * spacing_m)
-                var grid_z_m := absf((float(z) - half_cells) * spacing_m)
-                var square_radius_m := maxf(grid_x_m, grid_z_m)
-                var boundary_distance_m := outer_half_m - square_radius_m
-                if inner_half_m > 0.0:
-                    boundary_distance_m = minf(
-                        boundary_distance_m,
-                        absf(square_radius_m - inner_half_m)
-                    )
-                var seam_blend := smoothstep(
-                    0.0,
-                    3.0 * spacing_m,
-                    maxf(boundary_distance_m, 0.0)
-                )
-                var relief_light := lerpf(
-                    0.90,
-                    SurfaceVisual.relief_light(normals[index]),
-                    seam_blend
-                )
                 colors[index] = SurfaceVisual.terrain_color(
                     float(heights[index]),
                     float(grass[index]),
@@ -370,7 +419,7 @@ func _build_mesh(
                     float(fire_burned[index]),
                     Vector2(normals[index].x, normals[index].z).length()
                     / maxf(normals[index].y, 0.001),
-                    relief_light
+                    SurfaceVisual.relief_light(normals[index])
                 )
 
     var indices := PackedInt32Array()
