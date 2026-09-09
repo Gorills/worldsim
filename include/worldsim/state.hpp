@@ -99,15 +99,22 @@ struct Cohort {
     double reserve_kg{};
 };
 
-// Reduced wet-mass-to-carbon conversion used by the fauna material budget.
-// body_mass_kg and reserve_kg are per-individual wet masses; population count
-// is the only demographic degree of freedom in the current cohort model.
+// Reduced material composition used by the fauna budget. body_mass_kg and
+// reserve_kg are per-individual wet masses; population count remains the only
+// demographic degree of freedom. Nitrogen is derived from cohort carbon under
+// strict homeostasis instead of becoming an independent state that could drift
+// from the cohort biomass.
 inline constexpr double kFaunaCarbonFractionOfWetMass=0.15;
+inline constexpr double kFaunaCarbonNitrogenRatio=4.0;
 
 [[nodiscard]] inline double cohort_carbon_kg(const Cohort& cohort) {
     return cohort.count*
         (cohort.body_mass_kg+cohort.reserve_kg)*
         kFaunaCarbonFractionOfWetMass;
+}
+
+[[nodiscard]] inline double cohort_nitrogen_kg(const Cohort& cohort) {
+    return cohort_carbon_kg(cohort)/kFaunaCarbonNitrogenRatio;
 }
 
 class CohortStore final : public IStateStore {
