@@ -70,8 +70,8 @@ static func terrain_color(
         0.82
     )
     if rock_strength > 0.0:
-        var rock_color := Color(0.30, 0.29, 0.28).lerp(
-            Color(0.56, 0.55, 0.54),
+        var rock_color := Color(0.28, 0.28, 0.28).lerp(
+            Color(0.60, 0.59, 0.58),
             elevation_t
         )
         color = color.lerp(rock_color, rock_strength)
