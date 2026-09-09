@@ -114,7 +114,7 @@ func _prepare_and_capture() -> void:
     rendered_fps_samples.sort()
     var rendered_fps_min := rendered_fps_samples[0]
     var rendered_fps_median := rendered_fps_samples[
-        BENCHMARK_WINDOWS / 2
+        int(BENCHMARK_WINDOWS / 2)
     ]
     var rendered_fps := rendered_fps_samples[BENCHMARK_WINDOWS - 1]
 
