@@ -57,7 +57,9 @@ var terrain_material: StandardMaterial3D
 var tree_mesh: Mesh
 var shrub_mesh: Mesh
 var chunks: Dictionary = {}
+var chunk_heights: Dictionary = {}
 var dirty_chunks: Dictionary = {}
+var surface_dirty_chunks: Dictionary = {}
 var pending_chunks: Array[Vector2i] = []
 var current_chunk := Vector2i(0, 0)
 var terrain_revision := 0
@@ -538,7 +540,11 @@ func _queue_visible_chunks(center: Vector2i) -> void:
                 if maxi(absi(dx), absi(dz)) != ring:
                     continue
                 var coord := center + Vector2i(dx, dz)
-                if !chunks.has(coord) or dirty_chunks.has(coord):
+                if (
+                    !chunks.has(coord)
+                    or dirty_chunks.has(coord)
+                    or surface_dirty_chunks.has(coord)
+                ):
                     pending_chunks.push_back(coord)
 
 func _trim_chunks(center: Vector2i) -> void:
@@ -549,33 +555,65 @@ func _trim_chunks(center: Vector2i) -> void:
             var chunk: Node3D = chunks[coord]
             chunk.queue_free()
             chunks.erase(coord)
+            chunk_heights.erase(coord)
             dirty_chunks.erase(coord)
+            surface_dirty_chunks.erase(coord)
 
 func _create_chunk(coord: Vector2i) -> void:
-    if chunks.has(coord) and !dirty_chunks.has(coord):
+    var chunk_exists := chunks.has(coord)
+    var terrain_dirty := !chunk_exists or dirty_chunks.has(coord)
+    var surface_dirty := !chunk_exists or surface_dirty_chunks.has(coord)
+    if !terrain_dirty and !surface_dirty:
         return
 
     var center_east_m := float(coord.x) * CHUNK_SIZE_M
     var center_north_m := float(coord.y) * CHUNK_SIZE_M
-    var normal_heights := sim.sample_terrain_patch(
-        center_east_m,
-        center_north_m,
-        SAMPLE_SPACING_M,
-        NORMAL_PATCH_RESOLUTION
-    )
     var surface := sim.sample_surface_visual_patch(
         center_east_m,
         center_north_m,
         SAMPLE_SPACING_M,
         CHUNK_RESOLUTION
     )
-    if (
-        normal_heights.size() != NORMAL_PATCH_RESOLUTION * NORMAL_PATCH_RESOLUTION
-        or !_surface_packet_valid(
-            surface,
-            CHUNK_RESOLUTION * CHUNK_RESOLUTION
-        )
+    if !_surface_packet_valid(
+        surface,
+        CHUNK_RESOLUTION * CHUNK_RESOLUTION
     ):
+        status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
+        return
+
+    if !terrain_dirty:
+        var cached_heights: PackedFloat32Array = chunk_heights.get(
+            coord,
+            PackedFloat32Array()
+        )
+        if cached_heights.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION:
+            # Missing cache is treated as terrain invalidation, never as a
+            # surface-only shortcut.
+            dirty_chunks[coord] = true
+            terrain_dirty = true
+        else:
+            var cached_chunk: Node3D = chunks[coord]
+            var cached_mesh := cached_chunk.get_node("Mesh") as MeshInstance3D
+            cached_mesh.mesh = _recolor_chunk_mesh(
+                cached_mesh.mesh as ArrayMesh,
+                surface
+            )
+            _update_chunk_vegetation(
+                cached_chunk,
+                coord,
+                cached_heights,
+                surface
+            )
+            surface_dirty_chunks.erase(coord)
+            return
+
+    var normal_heights := sim.sample_terrain_patch(
+        center_east_m,
+        center_north_m,
+        SAMPLE_SPACING_M,
+        NORMAL_PATCH_RESOLUTION
+    )
+    if normal_heights.size() != NORMAL_PATCH_RESOLUTION * NORMAL_PATCH_RESOLUTION:
         status.text = tr("HUD_STATUS_ERROR") % sim.get_last_error()
         return
 
@@ -586,6 +624,7 @@ func _create_chunk(coord: Vector2i) -> void:
             heights[z * CHUNK_RESOLUTION + x] = normal_heights[
                 (z + 1) * NORMAL_PATCH_RESOLUTION + x + 1
             ]
+    chunk_heights[coord] = heights
 
     var shape := HeightMapShape3D.new()
     shape.map_width = CHUNK_RESOLUTION
@@ -603,10 +642,12 @@ func _create_chunk(coord: Vector2i) -> void:
             )
     shape.map_data = collision_heights
 
-    if chunks.has(coord):
+    if chunk_exists:
         var existing_chunk: Node3D = chunks[coord]
         var existing_mesh := existing_chunk.get_node("Mesh") as MeshInstance3D
-        var existing_collision := existing_chunk.get_node("Body/Collision") as CollisionShape3D
+        var existing_collision := existing_chunk.get_node(
+            "Body/Collision"
+        ) as CollisionShape3D
         existing_mesh.mesh = _build_chunk_mesh(
             heights,
             surface,
@@ -645,6 +686,7 @@ func _create_chunk(coord: Vector2i) -> void:
         chunks[coord] = chunk
 
     dirty_chunks.erase(coord)
+    surface_dirty_chunks.erase(coord)
 
 func _observe_surface_revision() -> void:
     var next_revision := sim.get_surface_revision()
@@ -668,7 +710,7 @@ func _refresh_surface_revision(delta: float) -> void:
     surface_revision = pending_surface_revision
     for key in chunks.keys():
         var coord: Vector2i = key
-        dirty_chunks[coord] = true
+        surface_dirty_chunks[coord] = true
     _queue_visible_chunks(current_chunk)
 
 func _refresh_terrain_revision(
@@ -700,6 +742,56 @@ func _refresh_terrain_revision(
     # the remaining visible chunks retain the one-update-per-frame budget.
     _create_chunk(current_chunk)
     _queue_visible_chunks(current_chunk)
+
+func _recolor_chunk_mesh(
+    mesh: ArrayMesh,
+    surface: Dictionary
+) -> ArrayMesh:
+    if mesh == null or mesh.get_surface_count() < 1:
+        return mesh
+
+    var arrays := mesh.surface_get_arrays(0)
+    var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+    var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+    if (
+        vertices.size() != CHUNK_RESOLUTION * CHUNK_RESOLUTION
+        or normals.size() != vertices.size()
+    ):
+        return mesh
+
+    var colors := PackedColorArray()
+    colors.resize(vertices.size())
+    var grass: PackedFloat32Array = surface["grass_density_kg_m2"]
+    var shrub: PackedFloat32Array = surface["shrub_density_kg_m2"]
+    var tree: PackedFloat32Array = surface["tree_density_kg_m2"]
+    var snow: PackedFloat32Array = surface["snow_cover_fraction"]
+    var flooded: PackedFloat32Array = surface["flooded_fraction"]
+    var fire_active: PackedFloat32Array = surface["fire_active_fraction"]
+    var fire_burned: PackedFloat32Array = surface["fire_burned_fraction"]
+
+    for z in range(CHUNK_RESOLUTION):
+        for x in range(CHUNK_RESOLUTION):
+            var i := z * CHUNK_RESOLUTION + x
+            var source_z := CHUNK_RESOLUTION - 1 - z
+            var source_i := source_z * CHUNK_RESOLUTION + x
+            colors[i] = SurfaceVisual.terrain_color(
+                float(vertices[i].y),
+                float(grass[source_i]),
+                float(shrub[source_i]),
+                float(tree[source_i]),
+                float(snow[source_i]),
+                float(flooded[source_i]),
+                float(fire_active[source_i]),
+                float(fire_burned[source_i]),
+                Vector2(normals[i].x, normals[i].z).length()
+                / maxf(normals[i].y, 0.001),
+                SurfaceVisual.relief_light(normals[i])
+            )
+
+    arrays[Mesh.ARRAY_COLOR] = colors
+    var recolored := ArrayMesh.new()
+    recolored.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    return recolored
 
 func _build_chunk_mesh(
     heights: PackedFloat32Array,
