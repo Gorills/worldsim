@@ -474,11 +474,11 @@ double flat_surface_l2_l3_temperature_mae_k() {
     return absolute_error_area/std::max(1.0,total_area);
 }
 
-void resolution_diagnostic() {
+void horizontal_heat_transport_is_resolution_consistent() {
     const double error=flat_surface_l2_l3_temperature_mae_k();
-    throw std::runtime_error(
-        "CLIMATE_FLAT_L2_L3_TEMPERATURE_MAE_K="+
-        std::to_string(error)
+    check(
+        error<0.35,
+        "flat-surface L2/L3 climate temperature diverged"
     );
 }
 
@@ -607,7 +607,7 @@ int main() {
         snow_coupling_is_lod_independent();
         snow_burial_suppresses_short_vegetation();
         orographic_precipitation();
-        resolution_diagnostic();
+        horizontal_heat_transport_is_resolution_consistent();
         lod_independent_reference_state();
         coupled_planet_water_and_snapshot();
         malformed_climate_store_is_rejected();
