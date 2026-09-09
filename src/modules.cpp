@@ -116,166 +116,125 @@ double land_fraction_from_elevation(double elevation_m) {
 
 constexpr std::uint8_t kCoastalReferenceLevel=4;
 
-GeologyState reconstruct_subcell_geology_state(
-    const GeologyModel& geology,
-    const GeologyState& current,
-    const GeologyState& initial_cell,
-    double cell_area_m2,
-    Vec3d sample_direction,
-    double sample_area_m2
-) {
-    const GeologyState initial_sample=geology.initial_state(
-        sample_direction,
-        sample_area_m2
-    );
-    const auto shifted=[](
-        double sample_value,
-        double current_value,
-        double initial_value,
-        double minimum,
-        double maximum
-    ) {
-        return std::clamp(
-            sample_value+(current_value-initial_value),
-            minimum,
-            maximum
-        );
-    };
+struct CoastalReferenceSample {
+    double area_m2{};
+    double elevation_m{};
+};
 
-    const double current_sediment_thickness=
-        geology.sediment_column_thickness_m(
-            current.sediment_mass_kg,
-            cell_area_m2
-        );
-    const double initial_cell_sediment_thickness=
-        geology.sediment_column_thickness_m(
-            initial_cell.sediment_mass_kg,
-            cell_area_m2
-        );
-    const double initial_sample_sediment_thickness=
-        geology.sediment_column_thickness_m(
-            initial_sample.sediment_mass_kg,
-            sample_area_m2
-        );
-    const double sample_sediment_thickness=std::max(
-        0.0,
-        initial_sample_sediment_thickness+
-            current_sediment_thickness-
-            initial_cell_sediment_thickness
-    );
+struct CoastalReferenceProfile {
+    double center_elevation_m{};
+    double represented_area_m2{};
+    std::vector<CoastalReferenceSample> samples;
+};
 
-    return {
-        shifted(
-            initial_sample.crust_thickness_m,
-            current.crust_thickness_m,
-            initial_cell.crust_thickness_m,
-            3'000.0,
-            70'000.0
-        ),
-        shifted(
-            initial_sample.crust_density_kg_m3,
-            current.crust_density_kg_m3,
-            initial_cell.crust_density_kg_m3,
-            2'500.0,
-            3'300.0
-        ),
-        shifted(
-            initial_sample.continental_fraction,
-            current.continental_fraction,
-            initial_cell.continental_fraction,
-            0.0,
-            1.0
-        ),
-        shifted(
-            initial_sample.lithosphere_age_ma,
-            current.lithosphere_age_ma,
-            initial_cell.lithosphere_age_ma,
-            0.0,
-            4'500.0
-        ),
-        geology.sediment_mass_for_thickness_kg(
-            sample_sediment_thickness,
-            sample_area_m2
-        ),
-        shifted(
-            initial_sample.regolith_thickness_m,
-            current.regolith_thickness_m,
-            initial_cell.regolith_thickness_m,
-            0.0,
-            100.0
-        )
-    };
-}
+using CoastalReferenceCache=std::map<CellId,CoastalReferenceProfile>;
 
-double coastal_land_fraction(
+CoastalReferenceProfile build_coastal_reference_profile(
     const WorldState& world,
     const GeologyModel& geology,
-    CellId cell,
-    const GeologyState& state,
-    double flexural_offset_m,
-    double flexed_center_elevation_m
+    CellId cell
 ) {
-    if (cell.level()>=kCoastalReferenceLevel)
-        return land_fraction_from_elevation(flexed_center_elevation_m);
-
-    const Vec3d cell_direction=world.topology().center_unit(cell);
+    CoastalReferenceProfile profile;
     const double cell_area=world.topology().area_m2(cell);
+    const Vec3d cell_direction=world.topology().center_unit(cell);
     const GeologyState initial_cell=geology.initial_state(
         cell_direction,
         cell_area
     );
-    std::vector<CellId> samples{cell};
-    while (!samples.empty() &&
-           samples.front().level()<kCoastalReferenceLevel) {
+    profile.center_elevation_m=geology.surface_elevation_m(
+        initial_cell,
+        cell_direction,
+        cell_area
+    );
+
+    std::vector<CellId> cells{cell};
+    while (!cells.empty() &&
+           cells.front().level()<kCoastalReferenceLevel) {
         std::vector<CellId> refined;
-        refined.reserve(samples.size()*4U);
-        for (CellId sample:samples) {
-            const auto children=sample.children();
+        refined.reserve(cells.size()*4U);
+        for (CellId current:cells) {
+            const auto children=current.children();
             refined.insert(
                 refined.end(),
                 children.begin(),
                 children.end()
             );
         }
-        samples=std::move(refined);
+        cells=std::move(refined);
     }
 
-    double represented_area=0.0;
-    double represented_land_area=0.0;
-    for (CellId sample:samples) {
+    profile.samples.reserve(cells.size());
+    for (CellId sample:cells) {
         const double sample_area=world.topology().area_m2(sample);
         const Vec3d sample_direction=
             world.topology().center_unit(sample);
-        const GeologyState sample_state=
-            reconstruct_subcell_geology_state(
-                geology,
-                state,
-                initial_cell,
-                cell_area,
-                sample_direction,
-                sample_area
-            );
-        const double sample_elevation=
+        const GeologyState sample_state=geology.initial_state(
+            sample_direction,
+            sample_area
+        );
+        profile.samples.push_back({
+            sample_area,
             geology.surface_elevation_m(
                 sample_state,
                 sample_direction,
                 sample_area
-            )+
-            flexural_offset_m;
-        represented_area+=sample_area;
-        represented_land_area+=
-            sample_area*
-            land_fraction_from_elevation(sample_elevation);
+            )
+        });
+        profile.represented_area_m2+=sample_area;
     }
-    return represented_area>0.0
-        ? represented_land_area/represented_area
+    return profile;
+}
+
+double coastal_land_fraction(
+    const WorldState& world,
+    const GeologyModel& geology,
+    CellId cell,
+    double flexed_center_elevation_m,
+    CoastalReferenceCache* cache
+) {
+    if (cell.level()>=kCoastalReferenceLevel)
+        return land_fraction_from_elevation(flexed_center_elevation_m);
+
+    std::optional<CoastalReferenceProfile> local_profile;
+    const CoastalReferenceProfile* profile=nullptr;
+    if (cache) {
+        const auto [it,inserted]=cache->try_emplace(cell);
+        if (inserted)
+            it->second=build_coastal_reference_profile(
+                world,
+                geology,
+                cell
+            );
+        profile=&it->second;
+    } else {
+        local_profile=build_coastal_reference_profile(
+            world,
+            geology,
+            cell
+        );
+        profile=&*local_profile;
+    }
+
+    const double vertical_offset=
+        flexed_center_elevation_m-profile->center_elevation_m;
+    double represented_land_area=0.0;
+    for (const CoastalReferenceSample& sample:profile->samples) {
+        represented_land_area+=
+            sample.area_m2*
+            land_fraction_from_elevation(
+                sample.elevation_m+vertical_offset
+            );
+    }
+    return profile->represented_area_m2>0.0
+        ? represented_land_area/profile->represented_area_m2
         : land_fraction_from_elevation(flexed_center_elevation_m);
 }
 
 void update_geography_surface(
     WorldState& world,
     const FieldRegistry& r,
-    const GeologyModel& geology
+    const GeologyModel& geology,
+    CoastalReferenceCache* coastal_cache=nullptr
 ) {
     auto& fs=world.stores().get<FieldStore>();
     const GeologyFieldIds ids=geology_fields(r);
@@ -335,9 +294,8 @@ void update_geography_surface(
                 world,
                 geology,
                 cell,
-                read_geology_state(fs,cell,ids),
-                flexed-local,
-                flexed
+                flexed,
+                coastal_cache
             )
         );
     }
@@ -449,7 +407,7 @@ public:
         // iteration order cannot create or destroy transported mass.
         for (const auto& [cell,state]:states)
             write_geology_state(fs,cell,ids_,state);
-        update_geography_surface(ctx.world,ctx.fields,geology);
+        update_geography_surface(ctx.world,ctx.fields,geology,&coastal_reference_);
 
         struct FlowTarget {
             CellId cell;
@@ -663,7 +621,7 @@ public:
         for (const auto& [cell,state]:states)
             write_geology_state(fs,cell,ids_,state);
 
-        update_geography_surface(ctx.world,ctx.fields,geology);
+        update_geography_surface(ctx.world,ctx.fields,geology,&coastal_reference_);
         if (has_hydrology_) {
             for (auto& [cell,height]:bed_before) height=fs.get(cell,ids_.elevation)-height;
             for (auto& [cell,land]:land_before) land=fs.get(cell,ids_.land_fraction)-land;
@@ -675,6 +633,7 @@ public:
 
 private:
     GeologyFieldIds ids_;
+    CoastalReferenceCache coastal_reference_;
     bool has_climate_{};
     bool has_climate_exchange_{};
     bool has_hydrology_{};
