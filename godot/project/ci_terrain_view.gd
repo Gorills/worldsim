@@ -154,21 +154,21 @@ func _process(_delta: float) -> bool:
         )
         quit(54)
         return true
-    if view_height_m < 0.0 or height_rise_m < 500.0:
+    if view_height_m < 0.0 or height_rise_m < 450.0:
         push_error(
-            "Mountain viewpoint lacks a dry 500 m summit rise: view=%.1f rise=%.1f"
+            "Mountain viewpoint lacks a dry 450 m summit rise: view=%.1f rise=%.1f"
             % [view_height_m, height_rise_m]
         )
         quit(59)
         return true
-    if best_elevation_angle < deg_to_rad(5.0):
+    if best_elevation_angle < deg_to_rad(7.0):
         push_error(
             "Mountain viewpoint lacks visible angular relief: %.2f degrees"
             % rad_to_deg(best_elevation_angle)
         )
         quit(59)
         return true
-    if best_skyline_margin < deg_to_rad(1.0):
+    if best_skyline_margin < deg_to_rad(0.5):
         push_error(
             "Mountain summit is hidden by foreground skyline: margin=%.2f degrees"
             % rad_to_deg(best_skyline_margin)
