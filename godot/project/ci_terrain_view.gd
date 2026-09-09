@@ -295,14 +295,12 @@ func _process(_delta: float) -> bool:
     var distant_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod8/Terrain") as MeshInstance3D
     var distant_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod8/Ocean") as MeshInstance3D
     var near_ocean := root.get_node_or_null("WorldViewer/DistantTerrain/Lod0/Ocean") as MeshInstance3D
-    var shadow_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod3/Terrain") as MeshInstance3D
-    var nonshadow_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod4/Terrain") as MeshInstance3D
+    var near_distant_terrain := root.get_node_or_null("WorldViewer/DistantTerrain/Lod0/Terrain") as MeshInstance3D
     if (
         distant_terrain == null
         or distant_ocean == null
         or near_ocean == null
-        or shadow_terrain == null
-        or nonshadow_terrain == null
+        or near_distant_terrain == null
     ):
         push_error("Spherical distant terrain/ocean nodes were not created")
         quit(11)
@@ -363,24 +361,19 @@ func _process(_delta: float) -> bool:
         push_error("Environment does not use long-range depth fog")
         quit(16)
         return true
-    if world_environment.environment.ambient_light_energy > 0.5 or sun.light_energy < 1.4:
+    if world_environment.environment.ambient_light_energy > 0.45 or sun.light_energy < 1.2:
         push_error("Terrain lighting regressed to flat ambient-dominated shading")
         quit(57)
         return true
-    if (
-        !sun.shadow_enabled
-        or sun.directional_shadow_mode != 1
-        or sun.directional_shadow_max_distance < 15_000.0
-        or sun.directional_shadow_max_distance > 25_000.0
-    ):
-        push_error("Mountain shadows are disabled or no longer bounded to the near horizon")
+    if sun.shadow_enabled:
+        push_error("Nested distant terrain must not use shadow maps that expose LOD seams")
         quit(60)
         return true
     if (
-        shadow_terrain.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-        or nonshadow_terrain.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        distant_terrain.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        or near_distant_terrain.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     ):
-        push_error("Distant terrain shadow casters exceed the intended LOD budget")
+        push_error("Distant terrain shadow casting regressed and can expose clipmap seams")
         quit(61)
         return true
 
@@ -398,6 +391,13 @@ func _process(_delta: float) -> bool:
     if slope_color_delta < 0.08:
         push_error("Steep terrain no longer receives a visible rock presentation cue")
         quit(58)
+        return true
+
+    var sun_facing := SurfaceVisual.relief_light(Vector3(-0.43, 0.76, -0.49))
+    var lee_facing := SurfaceVisual.relief_light(Vector3(0.43, 0.76, 0.49))
+    if sun_facing - lee_facing < 0.18:
+        push_error("Seam-safe aspect hillshade no longer separates sun and lee slopes")
+        quit(62)
         return true
 
     # The first focused simulation step refines the authoritative cover. Its
