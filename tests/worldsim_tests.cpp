@@ -1616,6 +1616,59 @@ void test_authoritative_terrain_scale_and_determinism() {
           "authoritative tectonic terrain has degenerate global land coverage");
 }
 
+void test_visual_orography_has_local_mountain_prominence() {
+    const TerrainGenerator terrain(42);
+
+    constexpr double mountain_east_m=5'573'000.0;
+    constexpr double mountain_north_m=-1'800'300.0;
+    constexpr double probe_radius_m=20'000.0;
+    constexpr int direction_count=32;
+
+    const TerrainSample authoritative=terrain.sample_projected(
+        mountain_east_m,
+        mountain_north_m
+    );
+    const TerrainSample visual=terrain.sample_visual_projected(
+        mountain_east_m,
+        mountain_north_m
+    );
+    check(
+        visual.elevation_m-authoritative.elevation_m>650.0,
+        "visual orography did not raise the reported mountain above its regional terrain"
+    );
+
+    double ring_min=std::numeric_limits<double>::infinity();
+    double ring_max=-std::numeric_limits<double>::infinity();
+    for (int i=0;i<direction_count;++i) {
+        const double angle=
+            2.0*kPi*static_cast<double>(i)/
+            static_cast<double>(direction_count);
+        const TerrainSample sample=terrain.sample_visual_projected(
+            mountain_east_m+probe_radius_m*std::cos(angle),
+            mountain_north_m+probe_radius_m*std::sin(angle)
+        );
+        ring_min=std::min(ring_min,sample.elevation_m);
+        ring_max=std::max(ring_max,sample.elevation_m);
+    }
+    check(
+        visual.elevation_m-ring_min>550.0,
+        "reported mountain lacks local peak prominence within 20 km"
+    );
+    check(
+        ring_max-ring_min>850.0,
+        "convergent visual terrain remains a broad plateau at mountain scale"
+    );
+
+    const TerrainSample origin_authoritative=terrain.sample_projected(0.0,0.0);
+    const TerrainSample origin_visual=terrain.sample_visual_projected(0.0,0.0);
+    near(
+        origin_visual.elevation_m,
+        origin_authoritative.elevation_m,
+        1e-15,
+        "visual orography added generic relief outside an uplift belt"
+    );
+}
+
 void test_sphere_native_terrain_continuity() {
     const TerrainGenerator terrain(42);
     const Vec3d center=TerrainGenerator::projected_to_direction(0.0,0.0);
@@ -2457,6 +2510,7 @@ int main() {
         test_tectonic_model_multiseed_robustness();
         test_authoritative_terrain_tracks_tectonic_macro_relief();
         test_authoritative_terrain_scale_and_determinism();
+        test_visual_orography_has_local_mountain_prominence();
         test_sphere_native_terrain_continuity();
         test_geology_model_process_contracts();
         test_geology_hillslope_transport_without_runoff();
