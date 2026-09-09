@@ -459,6 +459,16 @@ func _select_mountain_demo_spawn() -> bool:
     var diagnostic_rise_m := 0.0
     var diagnostic_angle := 0.0
     var diagnostic_margin := 0.0
+    var best_visible_margin := -INF
+    var best_visible_margin_rise_m := 0.0
+    var best_visible_margin_angle := 0.0
+    var best_visible_margin_view := -1
+    var best_visible_margin_target := -1
+    var best_visible_angle := -INF
+    var best_visible_angle_rise_m := 0.0
+    var best_visible_angle_margin := 0.0
+    var best_visible_angle_view := -1
+    var best_visible_angle_target := -1
     for summit_index in summit_indices:
         var target_x := summit_index % MOUNTAIN_DEMO_RESOLUTION
         var target_z := floori(
@@ -499,6 +509,20 @@ func _select_mountain_demo_spawn() -> bool:
                     diagnostic_rise_m = rise_m
                     diagnostic_angle = elevation_angle
                     diagnostic_margin = skyline_margin
+            if rise_m >= 300.0 and elevation_angle >= deg_to_rad(3.0):
+                if skyline_margin > best_visible_margin:
+                    best_visible_margin = skyline_margin
+                    best_visible_margin_rise_m = rise_m
+                    best_visible_margin_angle = elevation_angle
+                    best_visible_margin_view = i
+                    best_visible_margin_target = summit_index
+            if rise_m >= 300.0 and skyline_margin >= deg_to_rad(0.05):
+                if elevation_angle > best_visible_angle:
+                    best_visible_angle = elevation_angle
+                    best_visible_angle_rise_m = rise_m
+                    best_visible_angle_margin = skyline_margin
+                    best_visible_angle_view = i
+                    best_visible_angle_target = summit_index
             if rise_m < MOUNTAIN_VIEW_MIN_RISE_M:
                 continue
             if elevation_angle < MOUNTAIN_VIEW_MIN_ANGLE_RAD:
@@ -536,6 +560,28 @@ func _select_mountain_demo_spawn() -> bool:
                     diagnostic_view_z,
                     diagnostic_target_x,
                     diagnostic_target_z,
+                ]
+            )
+        if best_visible_margin_view >= 0:
+            print(
+                "WORLDSIM_MOUNTAIN_VISIBLE_MARGIN rise_m=%.1f angle_deg=%.2f skyline_margin_deg=%.2f view_index=%d target_index=%d"
+                % [
+                    best_visible_margin_rise_m,
+                    rad_to_deg(best_visible_margin_angle),
+                    rad_to_deg(best_visible_margin),
+                    best_visible_margin_view,
+                    best_visible_margin_target,
+                ]
+            )
+        if best_visible_angle_view >= 0:
+            print(
+                "WORLDSIM_MOUNTAIN_VISIBLE_ANGLE rise_m=%.1f angle_deg=%.2f skyline_margin_deg=%.2f view_index=%d target_index=%d"
+                % [
+                    best_visible_angle_rise_m,
+                    rad_to_deg(best_visible_angle),
+                    rad_to_deg(best_visible_angle_margin),
+                    best_visible_angle_view,
+                    best_visible_angle_target,
                 ]
             )
         return false
