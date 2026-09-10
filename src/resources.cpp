@@ -233,13 +233,29 @@ void PlayerInventoryStore::add(ResourceKind kind,double amount_to_add) {
     amounts_[index]=updated;
 }
 
+void PlayerInventoryStore::craft_stone_axe() {
+    if (stone_axe_)
+        throw std::runtime_error("stone axe already crafted");
+    const auto wood=resource_index(ResourceKind::Wood);
+    const auto stone=resource_index(ResourceKind::Stone);
+    if (amounts_[wood]<kStoneAxeWoodCostKg ||
+        amounts_[stone]<kStoneAxeStoneCostKg) {
+        throw std::runtime_error("insufficient materials for stone axe");
+    }
+    amounts_[wood]-=kStoneAxeWoodCostKg;
+    amounts_[stone]-=kStoneAxeStoneCostKg;
+    stone_axe_=true;
+}
+
 void PlayerInventoryStore::save(BinaryWriter& writer) const {
     writer.pod<std::uint32_t>(static_cast<std::uint32_t>(amounts_.size()));
     for (double amount_value:amounts_) writer.pod(amount_value);
+    writer.pod<std::uint8_t>(stone_axe_ ? 1U : 0U);
 }
 
 void PlayerInventoryStore::load(BinaryReader& reader,std::uint32_t version) {
-    if (version!=1) throw std::runtime_error("unsupported player inventory version");
+    if (version!=1 && version!=2)
+        throw std::runtime_error("unsupported player inventory version");
     const auto count=reader.pod<std::uint32_t>();
     if (count!=amounts_.size())
         throw std::runtime_error("player inventory resource count mismatch");
@@ -249,7 +265,14 @@ void PlayerInventoryStore::load(BinaryReader& reader,std::uint32_t version) {
         if (!std::isfinite(amount_value) || amount_value<0.0 || amount_value>1.0e30)
             throw std::runtime_error("invalid player inventory amount");
     }
+    bool staged_stone_axe=false;
+    if (version==2) {
+        const auto flag=reader.pod<std::uint8_t>();
+        if (flag>1U) throw std::runtime_error("invalid stone axe inventory flag");
+        staged_stone_axe=flag==1U;
+    }
     amounts_=staged;
+    stone_axe_=staged_stone_axe;
 }
 
 void ResourceModule::register_fields(FieldRegistry& registry) {
@@ -427,12 +450,40 @@ double collect_resource(
     return requested_amount;
 }
 
+double gather_resource(
+    Simulation& simulation,
+    Vec3d direction,
+    ResourceKind kind
+) {
+    (void)resource_descriptor(kind);
+    const double available=resource_availability(simulation,direction,kind);
+    if (!(available>0.0))
+        throw std::runtime_error("resource is unavailable at player location");
+    double action_amount=1.0;
+    if (kind==ResourceKind::Wood) {
+        action_amount=player_has_stone_axe(simulation)
+            ? kStoneAxeWoodGatherKg
+            : kBareHandWoodGatherKg;
+    }
+    return collect_resource(
+        simulation,direction,kind,std::min(action_amount,available)
+    );
+}
+
+void craft_stone_axe(Simulation& simulation) {
+    simulation.world().stores().get<PlayerInventoryStore>().craft_stone_axe();
+}
+
 double player_inventory_amount(
     const Simulation& simulation,
     ResourceKind kind
 ) {
     (void)resource_descriptor(kind);
     return simulation.world().stores().get<PlayerInventoryStore>().amount(kind);
+}
+
+bool player_has_stone_axe(const Simulation& simulation) {
+    return simulation.world().stores().get<PlayerInventoryStore>().has_stone_axe();
 }
 
 } // namespace worldsim
