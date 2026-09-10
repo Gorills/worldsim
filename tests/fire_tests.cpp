@@ -494,6 +494,20 @@ void spread_resolves_refined_neighbor_region() {
         "spread source did not close its fire carbon transfers"
     );
 
+    const auto physical_sides=
+        simulation->world().active_face_neighbors4(source);
+    std::size_t expected_interface_children=0;
+    for (const auto& side:physical_sides) {
+        for (const ActiveFacePart& part:side) {
+            if (part.cell.parent()==target_region)
+                ++expected_interface_children;
+        }
+    }
+    check(
+        expected_interface_children==2U,
+        "fire fixture did not resolve two physical target subfaces"
+    );
+
     double target_active_area=0.0;
     std::size_t active_children=0;
     for (CellId child:target_region.children()) {
@@ -509,8 +523,9 @@ void spread_resolves_refined_neighbor_region() {
             active*simulation->world().topology().area_m2(child);
     }
     check(
-        active_children==4U && target_active_area>0.0,
-        "fire did not spread across the refined active neighbor region"
+        active_children==expected_interface_children &&
+        target_active_area>0.0,
+        "fire spread did not stay on the physical refined interface"
     );
 
     const double active_area_before= [&] {
