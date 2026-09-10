@@ -192,10 +192,11 @@ double SurvivalSimulationNode::gather_resource_at(
         last_error_.clear();
         return realized;
     } catch (const std::exception& error) {
-        report_error(error.what());
+        // Unavailable resources are normal player feedback, not engine faults.
+        last_error_=error.what();
         return 0.0;
     } catch (...) {
-        report_error("unknown C++ exception in gather_resource_at");
+        last_error_="unknown C++ exception in gather_resource_at";
         return 0.0;
     }
 }
@@ -207,10 +208,12 @@ bool SurvivalSimulationNode::craft_stone_axe() {
         last_error_.clear();
         return true;
     } catch (const std::exception& error) {
-        report_error(error.what());
+        // Insufficient materials and duplicate craft attempts are expected
+        // gameplay rejections surfaced through get_last_error().
+        last_error_=error.what();
         return false;
     } catch (...) {
-        report_error("unknown C++ exception in craft_stone_axe");
+        last_error_="unknown C++ exception in craft_stone_axe";
         return false;
     }
 }
