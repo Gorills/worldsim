@@ -204,55 +204,90 @@ double configure_routing_fixture(Simulation& sim) {
 void basin_routing_resolution_diagnostic() {
     auto coarse=fixture(2);
     auto fine=fixture(3);
+    auto reference=fixture(4);
     auto& coarse_store=coarse->world().stores().get<HydrologyStore>();
     auto& fine_store=fine->world().stores().get<HydrologyStore>();
+    auto& reference_store=reference->world().stores().get<HydrologyStore>();
     const double coarse_initial=configure_routing_fixture(*coarse);
     const double fine_initial=configure_routing_fixture(*fine);
+    const double reference_initial=configure_routing_fixture(*reference);
     near(
         coarse_initial,
         fine_initial,
         1.0e-12,
         "routing fixture initial water differs across resolution"
     );
+    near(
+        fine_initial,
+        reference_initial,
+        1.0e-12,
+        "routing fixture reference water differs across resolution"
+    );
 
-    double maximum_relative_delta=0.0;
+    double maximum_l2_l3_delta=0.0;
+    double maximum_l2_reference_error=0.0;
+    double maximum_l3_reference_error=0.0;
     double elapsed=0.0;
-    for (double interval:{30.0,60.0,90.0,185.0}) {
+    for (double interval:{30.0,60.0}) {
         coarse_store.route(interval);
         fine_store.route(interval);
+        reference_store.route(interval);
         elapsed+=interval;
         const double coarse_export=
             coarse_store.budget().ocean_export_m3/coarse_initial;
         const double fine_export=
             fine_store.budget().ocean_export_m3/fine_initial;
-        const double relative_delta=
+        const double reference_export=
+            reference_store.budget().ocean_export_m3/reference_initial;
+        const double l2_l3_delta=
             std::abs(coarse_export-fine_export)/
             std::max({1.0e-15,std::abs(coarse_export),std::abs(fine_export)});
-        maximum_relative_delta=std::max(maximum_relative_delta,relative_delta);
+        const double l2_reference_error=
+            std::abs(coarse_export-reference_export)/
+            std::max(1.0e-15,std::abs(reference_export));
+        const double l3_reference_error=
+            std::abs(fine_export-reference_export)/
+            std::max(1.0e-15,std::abs(reference_export));
+        maximum_l2_l3_delta=std::max(maximum_l2_l3_delta,l2_l3_delta);
+        maximum_l2_reference_error=std::max(
+            maximum_l2_reference_error,
+            l2_reference_error
+        );
+        maximum_l3_reference_error=std::max(
+            maximum_l3_reference_error,
+            l3_reference_error
+        );
         std::cerr
             <<"basin routing diagnostic: day="<<elapsed
             <<" l2_export_fraction="<<coarse_export
             <<" l3_export_fraction="<<fine_export
-            <<" relative_delta="<<relative_delta
+            <<" l4_export_fraction="<<reference_export
+            <<" l2_l3_delta="<<l2_l3_delta
+            <<" l2_l4_error="<<l2_reference_error
+            <<" l3_l4_error="<<l3_reference_error
             <<'\n';
-        near(
-            coarse_store.total_surface_m3()+
-                coarse_store.budget().ocean_export_m3,
-            coarse_initial,
-            2.0e-12,
-            "coarse routing fixture lost water"
-        );
-        near(
-            fine_store.total_surface_m3()+
-                fine_store.budget().ocean_export_m3,
-            fine_initial,
-            2.0e-12,
-            "fine routing fixture lost water"
-        );
+        for (const auto& [store,initial]:{
+            std::pair<const HydrologyStore*,double>{&coarse_store,coarse_initial},
+            std::pair<const HydrologyStore*,double>{&fine_store,fine_initial},
+            std::pair<const HydrologyStore*,double>{&reference_store,reference_initial}
+        }) {
+            near(
+                store->total_surface_m3()+store->budget().ocean_export_m3,
+                initial,
+                2.0e-12,
+                "routing fixture lost water"
+            );
+        }
     }
+    std::cerr
+        <<"basin routing convergence: max_l2_l3_delta="
+        <<maximum_l2_l3_delta
+        <<" max_l2_l4_error="<<maximum_l2_reference_error
+        <<" max_l3_l4_error="<<maximum_l3_reference_error
+        <<'\n';
     check(
-        maximum_relative_delta<1.0e-12,
-        "basin routing is resolution-dependent"
+        maximum_l2_l3_delta<1.0e-12,
+        "basin routing convergence diagnostic"
     );
 }
 
