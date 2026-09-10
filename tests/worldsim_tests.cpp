@@ -1,6 +1,8 @@
 #include "worldsim/c_api.h"
 #include "worldsim/geology.hpp"
+#include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/soil_nitrogen.hpp"
 #include "worldsim/simulation.hpp"
 #include "worldsim/terrain.hpp"
 #include "worldsim/tectonics.hpp"
