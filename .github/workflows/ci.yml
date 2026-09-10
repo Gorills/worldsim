@@ -76,6 +76,44 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  long-stability:
+    name: 100y stability / seed ${{ matrix.seed }} / L${{ matrix.level }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [0, 42, 999]
+        level: [2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake --preset dev
+
+      - name: Build long-run harness
+        run: cmake --build --preset dev --target worldsim_long_run --parallel
+
+      - name: Run 100-year coupled case
+        run: >-
+          ./out/dev/worldsim_long_run
+          --years 100
+          --level ${{ matrix.level }}
+          --seed ${{ matrix.seed }}
+          --mode coupled
+          --assert-stable
+          --output out/long-stability/seed-${{ matrix.seed }}-L${{ matrix.level }}.csv
+
+      - name: Upload 100-year case
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worldsim-100y-seed-${{ matrix.seed }}-L${{ matrix.level }}
+          path: out/long-stability
+          if-no-files-found: warn
+          retention-days: 14
+
   godot-linux:
     name: Godot 4.7 / Linux integration
     runs-on: ubuntu-22.04
