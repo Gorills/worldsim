@@ -219,7 +219,8 @@ double initial_flexed_reference_elevation_m(
     const auto sample_elevation=[&](CellId sample) {
         const double area=world.topology().area_m2(sample);
         const Vec3d direction=world.topology().center_unit(sample);
-        const GeologyState state=geology.initial_state(direction,area);
+        const GeologyState state=
+            initial_geology_state_for_cell(world,geology,sample);
         return geology.surface_elevation_m(state,direction,area);
     };
 
@@ -278,36 +279,23 @@ CoastalReferenceProfile build_coastal_reference_profile(
     CellId cell
 ) {
     CoastalReferenceProfile profile;
-    const double cell_area=world.topology().area_m2(cell);
-    const Vec3d cell_direction=world.topology().center_unit(cell);
-    const GeologyState initial_cell=
-        initial_geology_state_for_cell(
+    profile.center_elevation_m=
+        initial_flexed_reference_elevation_m(
             world,
             geology,
             cell
         );
-    profile.center_elevation_m=geology.surface_elevation_m(
-        initial_cell,
-        cell_direction,
-        cell_area
-    );
 
     const std::vector<CellId> cells=geography_reference_cells(cell);
     profile.samples.reserve(cells.size());
     for (CellId sample:cells) {
         const double sample_area=world.topology().area_m2(sample);
-        const Vec3d sample_direction=
-            world.topology().center_unit(sample);
-        const GeologyState sample_state=geology.initial_state(
-            sample_direction,
-            sample_area
-        );
         profile.samples.push_back({
             sample_area,
-            geology.surface_elevation_m(
-                sample_state,
-                sample_direction,
-                sample_area
+            initial_flexed_reference_elevation_m(
+                world,
+                geology,
+                sample
             )
         });
         profile.represented_area_m2+=sample_area;

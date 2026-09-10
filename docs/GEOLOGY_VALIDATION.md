@@ -81,9 +81,12 @@ coarsening; sediment mass is summed as an extensive stock. Thus a level-2 or
 level-3 new world starts from the conservative restriction of the same level-4
 geology instead of unrelated center samples.
 
-The same level-4 samples provide deterministic initial surface elevations for
-a subgrid hypsometric profile. The current authoritative flexed center elevation
-shifts that profile vertically as geology evolves, and land fraction is the
+The same level-4 samples provide deterministic initial **flexed** surface
+elevations for a subgrid hypsometric profile. Initial coarse land fraction is
+therefore exactly the area restriction of the authoritative level-4 coastline,
+rather than a restriction of unflexed sample heights shifted by one coarse
+flexural offset. The current authoritative flexed center elevation then shifts
+that fixed profile vertically as geology evolves, and land fraction is the
 area-weighted share above the existing smooth sea-level transition. The profile
 is deterministic from seed + hierarchy cell and is cached inside the geology
 system, so a daily coarse simulation does not regenerate tectonics and terrain
