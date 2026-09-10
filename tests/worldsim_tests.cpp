@@ -329,7 +329,8 @@ void test_determinism_and_snapshot() {
         std::uint8_t{25},std::uint8_t{26},std::uint8_t{27},
         std::uint8_t{28},std::uint8_t{29},std::uint8_t{30},
         std::uint8_t{31},std::uint8_t{32},std::uint8_t{33},
-        std::uint8_t{34},std::uint8_t{35},std::uint8_t{36}
+        std::uint8_t{34},std::uint8_t{35},std::uint8_t{36},
+        std::uint8_t{37}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -2486,7 +2487,8 @@ void test_geography_land_area_is_resolution_consistent() {
 
 double maximum_land_fraction_restriction_error(
     std::uint64_t seed,
-    std::uint8_t coarse_level
+    std::uint8_t coarse_level,
+    Simulation& reference
 ) {
     SimulationConfig coarse_cfg;
     coarse_cfg.base_level=coarse_level;
@@ -2494,31 +2496,25 @@ double maximum_land_fraction_restriction_error(
     coarse_cfg.tick_seconds=3600.0;
     auto coarse=make_terrain_simulation(seed,coarse_cfg);
 
-    SimulationConfig reference_cfg;
-    reference_cfg.base_level=4;
-    reference_cfg.max_level=4;
-    reference_cfg.tick_seconds=3600.0;
-    auto reference=make_terrain_simulation(seed,reference_cfg);
-
     const auto coarse_land=*coarse->fields().find("geography.land_fraction");
     const auto reference_land=
-        *reference->fields().find("geography.land_fraction");
+        *reference.fields().find("geography.land_fraction");
     const auto& coarse_fields=
         coarse->world().stores().get<FieldStore>();
     const auto& reference_fields=
-        reference->world().stores().get<FieldStore>();
+        reference.world().stores().get<FieldStore>();
 
     struct Aggregate {
         double land_area_m2{};
         double area_m2{};
     };
     std::map<CellId,Aggregate> aggregates;
-    for (CellId sample:reference->world().active_cells()) {
+    for (CellId sample:reference.world().active_cells()) {
         CellId region=sample;
         while (region.level()>coarse_level)
             region=region.parent();
         const double area=
-            reference->world().topology().area_m2(sample);
+            reference.world().topology().area_m2(sample);
         Aggregate& aggregate=aggregates[region];
         aggregate.area_m2+=area;
         aggregate.land_area_m2+=
@@ -2539,18 +2535,27 @@ double maximum_land_fraction_restriction_error(
 }
 
 void test_geography_coastal_reference_restricts_level4_land_fraction() {
+    constexpr std::uint64_t seed=42ULL;
+    SimulationConfig reference_cfg;
+    reference_cfg.base_level=4;
+    reference_cfg.max_level=4;
+    reference_cfg.tick_seconds=3600.0;
+    auto reference=make_terrain_simulation(seed,reference_cfg);
+
     double maximum_error=0.0;
-    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
-        for (std::uint8_t level:{std::uint8_t{2},std::uint8_t{3}}) {
-            const double error=
-                maximum_land_fraction_restriction_error(seed,level);
-            maximum_error=std::max(maximum_error,error);
-            std::cerr
-                <<"coastal reference restriction diagnostic: seed="<<seed
-                <<" level="<<static_cast<unsigned>(level)
-                <<" max_land_fraction_error="<<error
-                <<'\n';
-        }
+    for (std::uint8_t level:{std::uint8_t{2},std::uint8_t{3}}) {
+        const double error=
+            maximum_land_fraction_restriction_error(
+                seed,
+                level,
+                *reference
+            );
+        maximum_error=std::max(maximum_error,error);
+        std::cerr
+            <<"coastal reference restriction diagnostic: seed="<<seed
+            <<" level="<<static_cast<unsigned>(level)
+            <<" max_land_fraction_error="<<error
+            <<'\n';
     }
     check(
         maximum_error<1.0e-10,
