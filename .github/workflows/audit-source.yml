@@ -13,8 +13,10 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: de0cf2ee18af2aaa86885a6f156cbbe23917e903
       - name: Export pinned baseline for offline audit
-        run: git archive --format=tar.gz --output=worldsim-source.tar.gz de0cf2ee18af2aaa86885a6f156cbbe23917e903
+        run: git archive --format=tar.gz --output=worldsim-source.tar.gz HEAD
       - uses: actions/upload-artifact@v4
         with:
           name: worldsim-audit-source
