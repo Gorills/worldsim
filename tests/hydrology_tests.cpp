@@ -49,6 +49,31 @@ void set_all(Simulation& sim,const char* key,double value) {
     auto& fs=sim.world().stores().get<FieldStore>();
     for (CellId cell:sim.world().active_cells()) fs.set(cell,id(sim,key),value);
 }
+double sum_field(const Simulation& sim,const char* key) {
+    const auto& column=sim.world().stores().get<FieldStore>().column(id(sim,key));
+    double total=0.0;
+    for (double value:column) total+=value;
+    return total;
+}
+struct LocalWaterTotals {
+    double snow{};
+    double soil{};
+    double groundwater{};
+    double surface{};
+    double precipitation{};
+    double evaporation{};
+};
+LocalWaterTotals local_water_totals(const Simulation& sim) {
+    const auto& store=sim.world().stores().get<HydrologyStore>();
+    return {
+        sum_field(sim,"hydrology.snow_water_m3"),
+        sum_field(sim,"hydrology.soil_water_m3"),
+        sum_field(sim,"hydrology.groundwater_m3"),
+        store.total_surface_m3(),
+        store.budget().precipitation_m3,
+        store.budget().evaporation_m3
+    };
+}
 std::vector<CellId> channel(Simulation& sim,bool lake=false) {
     auto& store=sim.world().stores().get<HydrologyStore>();
     std::vector<CellId> cells;
@@ -63,6 +88,62 @@ void assert_budget(const Simulation& sim,double initial) {
     const auto& b=sim.world().stores().get<HydrologyStore>().budget();
     near(initial+b.precipitation_m3,total_land_water_m3(sim.world(),sim.fields())+b.evaporation_m3+b.ocean_export_m3,2e-11,"land water budget does not close");
 }
+void flat_local_water_balance_resolution_diagnostic() {
+    auto coarse=fixture(2);
+    auto fine=fixture(3);
+    for (int day=0;day<365;++day) {
+        const double phase=2.0*kPi*static_cast<double>(day)/365.0;
+        const double temperature=273.0+14.0*std::sin(phase);
+        const double precipitation=4.0+3.0*std::sin(phase+0.7);
+        set_all(*coarse,"climate.surface_temperature_k",temperature);
+        set_all(*fine,"climate.surface_temperature_k",temperature);
+        set_all(*coarse,"climate.precipitation_mm_day",precipitation);
+        set_all(*fine,"climate.precipitation_mm_day",precipitation);
+        advance(*coarse,1.0);
+        advance(*fine,1.0);
+    }
+
+    const LocalWaterTotals a=local_water_totals(*coarse);
+    const LocalWaterTotals b=local_water_totals(*fine);
+    const std::array<std::pair<const char*,std::pair<double,double>>,6> values{{
+        {"snow",{a.snow,b.snow}},
+        {"soil",{a.soil,b.soil}},
+        {"groundwater",{a.groundwater,b.groundwater}},
+        {"surface",{a.surface,b.surface}},
+        {"precipitation",{a.precipitation,b.precipitation}},
+        {"evaporation",{a.evaporation,b.evaporation}}
+    }};
+    double maximum_relative_delta=0.0;
+    for (const auto& [name,pair]:values) {
+        const double relative_delta=
+            std::abs(pair.first-pair.second)/
+            std::max({1.0,std::abs(pair.first),std::abs(pair.second)});
+        maximum_relative_delta=std::max(maximum_relative_delta,relative_delta);
+        std::cerr
+            <<"flat local hydrology diagnostic: metric="<<name
+            <<" l2="<<pair.first
+            <<" l3="<<pair.second
+            <<" relative_delta="<<relative_delta
+            <<'\n';
+    }
+    near(
+        coarse->world().stores().get<HydrologyStore>().budget().ocean_export_m3,
+        0.0,
+        0.0,
+        "flat all-land local fixture exported water"
+    );
+    near(
+        fine->world().stores().get<HydrologyStore>().budget().ocean_export_m3,
+        0.0,
+        0.0,
+        "flat all-land local fixture exported water"
+    );
+    check(
+        maximum_relative_delta<1.0e-11,
+        "flat local hydrology closure is resolution-dependent"
+    );
+}
+
 void snow_recharge_and_recession() {
     auto sim=fixture();
     const double initial=total_land_water_m3(sim->world(),sim->fields());
@@ -262,6 +343,7 @@ void seasonal_continuation() {
 int main() {
     try {
         for (const auto& [name,test]:std::vector<std::pair<const char*,void(*)()>>{
+            {"flat local resolution diagnostic",flat_local_water_balance_resolution_diagnostic},
             {"snow, recharge and recession",snow_recharge_and_recession},
             {"delayed routing and timestep",delayed_routing_and_timestep},
             {"lakes, spill and terrain change",lakes_spill_connect_and_terrain_change},
