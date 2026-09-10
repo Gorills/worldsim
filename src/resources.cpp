@@ -1,5 +1,6 @@
 #include "worldsim/resources.hpp"
 
+#include "worldsim/campsite.hpp"
 #include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
 
@@ -355,6 +356,7 @@ std::unique_ptr<Simulation> make_survival_simulation(
     simulation->add_module(std::make_unique<HydrologyModule>());
     simulation->add_module(std::make_unique<EcologyModule>());
     simulation->add_module(std::make_unique<ResourceModule>());
+    simulation->add_module(std::make_unique<CampsiteModule>());
     simulation->build();
     return simulation;
 }
