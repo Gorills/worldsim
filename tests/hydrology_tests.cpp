@@ -144,6 +144,118 @@ void flat_local_water_balance_resolution_diagnostic() {
     );
 }
 
+double routing_sample_bed_m(
+    const CubeSphereTopology& topology,
+    CellId sample
+) {
+    if (sample.face()==1U) return -100.0;
+    const Vec3d position=topology.center_unit(sample);
+    return 500.0+1'000.0*(position.x+1.0);
+}
+
+double routing_reference_bed_m(
+    const CubeSphereTopology& topology,
+    CellId region
+) {
+    std::vector<CellId> samples{region};
+    while (samples.front().level()<4U) {
+        std::vector<CellId> refined;
+        refined.reserve(samples.size()*4U);
+        for (CellId sample:samples) {
+            const auto children=sample.children();
+            refined.insert(
+                refined.end(),
+                children.begin(),
+                children.end()
+            );
+        }
+        samples=std::move(refined);
+    }
+    double represented_area=0.0;
+    double bed_area=0.0;
+    for (CellId sample:samples) {
+        const double area=topology.area_m2(sample);
+        represented_area+=area;
+        bed_area+=area*routing_sample_bed_m(topology,sample);
+    }
+    return bed_area/represented_area;
+}
+
+double configure_routing_fixture(Simulation& sim) {
+    auto& store=sim.world().stores().get<HydrologyStore>();
+    const CubeSphereTopology topology;
+    std::map<CellId,double> bed_changes;
+    for (const HydrologyNode& node:store.nodes()) {
+        const double target=routing_reference_bed_m(topology,node.cell);
+        bed_changes[node.cell]=target-node.bed_m;
+    }
+    store.apply_bed_changes(sim.world(),bed_changes);
+
+    double initial=0.0;
+    for (const HydrologyNode& node:store.nodes()) {
+        if (node.bed_m<0.0) continue;
+        const double volume=0.25*node.land_area_m2;
+        store.add_surface_water(node.cell,volume);
+        initial+=volume;
+    }
+    return initial;
+}
+
+void basin_routing_resolution_diagnostic() {
+    auto coarse=fixture(2);
+    auto fine=fixture(3);
+    auto& coarse_store=coarse->world().stores().get<HydrologyStore>();
+    auto& fine_store=fine->world().stores().get<HydrologyStore>();
+    const double coarse_initial=configure_routing_fixture(*coarse);
+    const double fine_initial=configure_routing_fixture(*fine);
+    near(
+        coarse_initial,
+        fine_initial,
+        2.0e-15,
+        "routing fixture initial water differs across resolution"
+    );
+
+    double maximum_relative_delta=0.0;
+    double elapsed=0.0;
+    for (double interval:{30.0,60.0,90.0,185.0}) {
+        coarse_store.route(interval);
+        fine_store.route(interval);
+        elapsed+=interval;
+        const double coarse_export=
+            coarse_store.budget().ocean_export_m3/coarse_initial;
+        const double fine_export=
+            fine_store.budget().ocean_export_m3/fine_initial;
+        const double relative_delta=
+            std::abs(coarse_export-fine_export)/
+            std::max({1.0e-15,std::abs(coarse_export),std::abs(fine_export)});
+        maximum_relative_delta=std::max(maximum_relative_delta,relative_delta);
+        std::cerr
+            <<"basin routing diagnostic: day="<<elapsed
+            <<" l2_export_fraction="<<coarse_export
+            <<" l3_export_fraction="<<fine_export
+            <<" relative_delta="<<relative_delta
+            <<'\n';
+        near(
+            coarse_store.total_surface_m3()+
+                coarse_store.budget().ocean_export_m3,
+            coarse_initial,
+            2.0e-12,
+            "coarse routing fixture lost water"
+        );
+        near(
+            fine_store.total_surface_m3()+
+                fine_store.budget().ocean_export_m3,
+            fine_initial,
+            2.0e-12,
+            "fine routing fixture lost water"
+        );
+    }
+    check(
+        maximum_relative_delta<1.0e-12,
+        "basin routing is resolution-dependent"
+    );
+}
+
 void snow_recharge_and_recession() {
     auto sim=fixture();
     const double initial=total_land_water_m3(sim->world(),sim->fields());
@@ -344,6 +456,7 @@ int main() {
     try {
         for (const auto& [name,test]:std::vector<std::pair<const char*,void(*)()>>{
             {"flat local resolution diagnostic",flat_local_water_balance_resolution_diagnostic},
+            {"basin routing resolution diagnostic",basin_routing_resolution_diagnostic},
             {"snow, recharge and recession",snow_recharge_and_recession},
             {"delayed routing and timestep",delayed_routing_and_timestep},
             {"lakes, spill and terrain change",lakes_spill_connect_and_terrain_change},
