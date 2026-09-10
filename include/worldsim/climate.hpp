@@ -79,8 +79,8 @@ private:
         std::size_t a{},b{};
         double distance_m{};
         double interface_m{};
-        Vec3d tangent_a_to_b;
-        Vec3d tangent_b_to_a;
+        Vec3d edge_start;
+        Vec3d edge_end;
     };
 
     struct WeatherSample {
@@ -94,7 +94,7 @@ private:
     void update_diagnostics(double day);
     void project_surface_exchange(WorldState&, const FieldRegistry&) const;
     void advance_energy(double dt_days);
-    void advance_moisture(double dt_days);
+    void advance_moisture(double dt_days, double day);
 
     std::uint8_t reference_level_{};
     bool has_level_{};
