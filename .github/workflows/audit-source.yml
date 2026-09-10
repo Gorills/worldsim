@@ -1,0 +1,23 @@
+name: Audit source snapshot
+
+on:
+  push:
+    branches: [audit/source-snapshot-20260910]
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export pinned baseline for offline audit
+        run: git archive --format=tar.gz --output=worldsim-source.tar.gz de0cf2ee18af2aaa86885a6f156cbbe23917e903
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worldsim-audit-source
+          path: worldsim-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
