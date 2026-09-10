@@ -42,6 +42,7 @@ public:
     void initialize(WorldState& world, const FieldRegistry& r) override {
         auto& fields=world.stores().get<FieldStore>();
         const FieldId elevation=*r.find("geography.elevation_m");
+        const FieldId land=*r.find("geography.land_fraction");
         for (CellId cell:world.active_cells()) {
             const auto [latitude,longitude]=world.topology().lat_lon_rad(cell);
             const bool ridge=mountain_ &&
@@ -96,7 +97,6 @@ public:
         const FieldId elevation=*r.find("geography.elevation_m");
         const FieldId reference_elevation=
             *r.find("geography.reference_elevation_m");
-        const FieldId land=*r.find("geography.land_fraction");
         for (CellId cell:world.active_cells()) {
             if (variant_==GeographyClimateVariant::FlatElevation) {
                 fields.set(cell,elevation,0.0);
