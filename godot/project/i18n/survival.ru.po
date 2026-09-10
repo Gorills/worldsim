@@ -1,0 +1,175 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: WorldSim\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "SURVIVAL_CONTROLS"
+msgstr "WASD: движение    Мышь: обзор    Пробел: прыжок/вверх    E: действия    F: прогулка/облёт\nВ полёте: Q вниз    Колесо: скорость    Shift: ускорение x4    Esc: освободить/захватить мышь"
+
+msgid "SURVIVAL_RESOURCE_FRESH_WATER"
+msgstr "Пресная вода"
+
+msgid "SURVIVAL_RESOURCE_PLANT_FOOD"
+msgstr "Растительная пища"
+
+msgid "SURVIVAL_RESOURCE_WOOD"
+msgstr "Древесина"
+
+msgid "SURVIVAL_RESOURCE_STONE"
+msgstr "Камень"
+
+msgid "SURVIVAL_RESOURCE_METAL_ORE"
+msgstr "Металлическая руда"
+
+msgid "SURVIVAL_HUD_REGIONAL"
+msgstr "Региональный запас (прототип): %s"
+
+msgid "SURVIVAL_HUD_CARRIED"
+msgstr "С собой: %s"
+
+msgid "SURVIVAL_HUD_TOOL"
+msgstr "Инструмент: каменный топор — %s"
+
+msgid "SURVIVAL_HUD_SITE"
+msgstr "Текущее место лагеря: подходит %s    укрытие %s    костёр %s    топливо %.2f кг"
+
+msgid "SURVIVAL_HUD_INTERACT"
+msgstr "[E] Действия — добыча, крафт, лагерь"
+
+msgid "SURVIVAL_HUD_REGIONAL_NOTE"
+msgstr "Ограничение прототипа: добыча идёт из показанного регионального авторитетного запаса; видимые деревья и камни пока не являются целями взаимодействия."
+
+msgid "SURVIVAL_STATE_YES"
+msgstr "да"
+
+msgid "SURVIVAL_STATE_NO"
+msgstr "нет"
+
+msgid "SURVIVAL_STATE_OWNED"
+msgstr "есть"
+
+msgid "SURVIVAL_STATE_NOT_CRAFTED"
+msgstr "не создан"
+
+msgid "SURVIVAL_STATE_BUILT"
+msgstr "построено"
+
+msgid "SURVIVAL_STATE_MISSING"
+msgstr "нет"
+
+msgid "SURVIVAL_STATE_LIT"
+msgstr "горит"
+
+msgid "SURVIVAL_STATE_UNLIT"
+msgstr "не горит"
+
+msgid "SURVIVAL_MENU_TITLE"
+msgstr "Действия выживания"
+
+msgid "SURVIVAL_MENU_GATHER"
+msgstr "Добыча в текущем регионе"
+
+msgid "SURVIVAL_MENU_CRAFT"
+msgstr "Крафт"
+
+msgid "SURVIVAL_MENU_CAMPSITE"
+msgstr "Лагерь"
+
+msgid "SURVIVAL_ACTION_GATHER"
+msgstr "Добыть: %s — запас %.2f %s"
+
+msgid "SURVIVAL_ACTION_CRAFT_AXE"
+msgstr "Создать каменный топор — 1 кг древесины + 1 кг камня"
+
+msgid "SURVIVAL_ACTION_AXE_OWNED"
+msgstr "Каменный топор — уже создан"
+
+msgid "SURVIVAL_ACTION_BUILD_SHELTER"
+msgstr "Построить простое укрытие — 6 кг древесины + 2 кг камня, нужен каменный топор"
+
+msgid "SURVIVAL_ACTION_SHELTER_BUILT"
+msgstr "Простое укрытие — построено"
+
+msgid "SURVIVAL_ACTION_BUILD_CAMPFIRE"
+msgstr "Сложить костёр — 2 кг камня"
+
+msgid "SURVIVAL_ACTION_CAMPFIRE_BUILT"
+msgstr "Костёр — построен"
+
+msgid "SURVIVAL_ACTION_ADD_FUEL"
+msgstr "Добавить в костёр 1 кг древесины"
+
+msgid "SURVIVAL_ACTION_LIGHT_FIRE"
+msgstr "Разжечь костёр"
+
+msgid "SURVIVAL_ACTION_EXTINGUISH_FIRE"
+msgstr "Потушить костёр"
+
+msgid "SURVIVAL_RESULT_GATHERED"
+msgstr "Добыто: %.2f %s %s"
+
+msgid "SURVIVAL_RESULT_AXE"
+msgstr "Каменный топор создан"
+
+msgid "SURVIVAL_RESULT_SHELTER"
+msgstr "Простое укрытие построено"
+
+msgid "SURVIVAL_RESULT_CAMPFIRE"
+msgstr "Костёр построен"
+
+msgid "SURVIVAL_RESULT_FUEL"
+msgstr "В костёр добавлен 1 кг древесины"
+
+msgid "SURVIVAL_RESULT_FIRE_LIT"
+msgstr "Костёр разожжён"
+
+msgid "SURVIVAL_RESULT_FIRE_OUT"
+msgstr "Костёр потушен"
+
+msgid "SURVIVAL_ERROR_SIM_UNAVAILABLE"
+msgstr "Симуляция выживания недоступна"
+
+msgid "SURVIVAL_ERROR_RESOURCE_UNAVAILABLE"
+msgstr "Этот ресурс недоступен в текущем регионе"
+
+msgid "SURVIVAL_ERROR_AXE_MATERIALS"
+msgstr "Недостаточно материалов для каменного топора"
+
+msgid "SURVIVAL_ERROR_AXE_DUP"
+msgstr "Каменный топор уже создан"
+
+msgid "SURVIVAL_ERROR_SITE"
+msgstr "Лагерь можно разбить только на незатопленной суше"
+
+msgid "SURVIVAL_ERROR_SHELTER_DUP"
+msgstr "В этом лагере уже есть простое укрытие"
+
+msgid "SURVIVAL_ERROR_SHELTER_AXE"
+msgstr "Для простого укрытия нужен каменный топор"
+
+msgid "SURVIVAL_ERROR_SHELTER_MATERIALS"
+msgstr "Недостаточно материалов для простого укрытия"
+
+msgid "SURVIVAL_ERROR_FIRE_DUP"
+msgstr "В этом лагере уже есть костёр"
+
+msgid "SURVIVAL_ERROR_FIRE_STONE"
+msgstr "Недостаточно камня для костра"
+
+msgid "SURVIVAL_ERROR_FIRE_MISSING"
+msgstr "В этом лагере нет костра"
+
+msgid "SURVIVAL_ERROR_FIRE_WOOD"
+msgstr "Недостаточно древесины с собой для топлива"
+
+msgid "SURVIVAL_ERROR_FIRE_NO_FUEL"
+msgstr "В костре нет топлива"
+
+msgid "SURVIVAL_ERROR_STATE"
+msgstr "Состояние выживания недоступно: %s"
+
+msgid "SURVIVAL_ERROR_GENERIC"
+msgstr "Действие не выполнено: %s"
