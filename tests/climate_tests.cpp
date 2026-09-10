@@ -42,7 +42,6 @@ public:
     void initialize(WorldState& world, const FieldRegistry& r) override {
         auto& fields=world.stores().get<FieldStore>();
         const FieldId elevation=*r.find("geography.elevation_m");
-        const FieldId land=*r.find("geography.land_fraction");
         for (CellId cell:world.active_cells()) {
             const auto [latitude,longitude]=world.topology().lat_lon_rad(cell);
             const bool ridge=mountain_ &&
@@ -76,7 +75,6 @@ std::unique_ptr<Simulation> climate_fixture(
 
 enum class GeographyClimateVariant {
     Generated,
-    UniformLand,
     FlatElevation
 };
 
@@ -100,8 +98,6 @@ public:
             *r.find("geography.reference_elevation_m");
         const FieldId land=*r.find("geography.land_fraction");
         for (CellId cell:world.active_cells()) {
-            if (variant_==GeographyClimateVariant::UniformLand)
-                fields.set(cell,land,0.5);
             if (variant_==GeographyClimateVariant::FlatElevation) {
                 fields.set(cell,elevation,0.0);
                 fields.set(cell,reference_elevation,0.0);
@@ -659,7 +655,7 @@ GeographyClimateConvergence geography_climate_convergence(
     return result;
 }
 
-void real_geography_precipitation_resolution_diagnostic() {
+void real_geography_precipitation_resolution_converges() {
     constexpr std::uint64_t seed=999ULL;
     const GeographyClimateConvergence generated=
         geography_climate_convergence(
@@ -681,9 +677,11 @@ void real_geography_precipitation_resolution_diagnostic() {
         <<" flat_l3_land_error="<<flat_elevation.l3_land_error
         <<'\n';
     check(
-        generated.l2_total_error<1.0e-12 &&
-        generated.l3_total_error<1.0e-12,
-        "real-geography climate convergence diagnostic"
+        generated.l3_total_error<=0.25*generated.l2_total_error &&
+        generated.l3_land_error<=0.25*generated.l2_land_error &&
+        flat_elevation.l3_total_error<=0.25*flat_elevation.l2_total_error &&
+        flat_elevation.l3_land_error<=0.25*flat_elevation.l2_land_error,
+        "real-geography climate did not converge toward level 4"
     );
 }
 
@@ -1018,7 +1016,7 @@ int main() {
         snow_burial_suppresses_short_vegetation();
         horizontal_heat_transport_is_resolution_consistent();
         flat_moisture_transport_resolution_diagnostic();
-        real_geography_precipitation_resolution_diagnostic();
+        real_geography_precipitation_resolution_converges();
         orographic_precipitation();
         orographic_reference_elevation_is_resolution_consistent();
         stochastic_weather_forcing_is_resolution_consistent();
