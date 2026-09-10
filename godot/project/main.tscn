@@ -107,8 +107,8 @@ autowrap_mode = 2
 [node name="ResourcePanel" type="PanelContainer" parent="HUD"]
 offset_left = 16.0
 offset_top = 148.0
-offset_right = 760.0
-offset_bottom = 238.0
+offset_right = 920.0
+offset_bottom = 306.0
 theme = ExtResource("2")
 
 [node name="Margin" type="MarginContainer" parent="HUD/ResourcePanel"]
