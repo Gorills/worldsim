@@ -271,6 +271,17 @@ void test_adaptive_cover_resolution() {
         1.0e-12,
         "refined face parts do not reconstruct coarse interface length"
     );
+    check(
+        fine_neighbor_world.coarsen(right),
+        "face-neighbor cache fixture could not coarsen neighbor"
+    );
+    const auto coarsened_face_sides=
+        fine_neighbor_world.active_face_neighbors4(source);
+    check(
+        coarsened_face_sides[1].size()==1U &&
+        coarsened_face_sides[1][0].cell==right,
+        "face-neighbor cache survived an active-cover change"
+    );
 
     WorldState coarse_neighbor_world(8);
     coarse_neighbor_world.initialize_cover(1);
