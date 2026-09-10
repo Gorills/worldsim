@@ -3,9 +3,11 @@
 #include "worldsim/climate.hpp"
 
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string_view>
 
 namespace worldsim {
@@ -57,6 +59,16 @@ public:
     [[nodiscard]] double amount(ResourceKind kind) const;
     [[nodiscard]] bool has_stone_axe() const { return stone_axe_; }
     void add(ResourceKind kind,double amount);
+    void consume(ResourceKind kind,double amount_to_consume) {
+        if (!std::isfinite(amount_to_consume) || !(amount_to_consume>0.0))
+            throw std::invalid_argument("inventory consumption must be finite and positive");
+        const auto index=static_cast<std::size_t>(kind);
+        if (index>=amounts_.size())
+            throw std::invalid_argument("invalid resource kind");
+        if (amount_to_consume>amounts_[index])
+            throw std::runtime_error("insufficient player inventory");
+        amounts_[index]-=amount_to_consume;
+    }
     void craft_stone_axe();
 private:
     std::array<double,5> amounts_{};

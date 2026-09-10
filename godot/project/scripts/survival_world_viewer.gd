@@ -60,17 +60,38 @@ func _unhandled_input(event: InputEvent) -> void:
             _craft_stone_axe()
             get_viewport().set_input_as_handled()
             return
+        if event.keycode == KEY_B and !survey_flight_enabled:
+            _build_basic_shelter()
+            get_viewport().set_input_as_handled()
+            return
+        if event.keycode == KEY_G and !survey_flight_enabled:
+            _build_campfire()
+            get_viewport().set_input_as_handled()
+            return
+        if event.keycode == KEY_R and !survey_flight_enabled:
+            _add_campfire_fuel()
+            get_viewport().set_input_as_handled()
+            return
+        if event.keycode == KEY_T and !survey_flight_enabled:
+            _toggle_campfire()
+            get_viewport().set_input_as_handled()
+            return
     super._unhandled_input(event)
+
+func _player_projected_position() -> Vector2:
+    return Vector2(
+        origin_east_m + float(player.position.x),
+        origin_north_m - float(player.position.z)
+    )
 
 func _gather_selected_resource() -> void:
     var survival_sim := sim as SurvivalSimulationNode
     if survival_sim == null:
         interaction_message = "Resource simulation unavailable"
         return
-    var east_m := origin_east_m + float(player.position.x)
-    var north_m := origin_north_m - float(player.position.z)
+    var position := _player_projected_position()
     var key: String = RESOURCE_KEYS[selected_resource]
-    var realized := survival_sim.gather_resource_at(east_m, north_m, key)
+    var realized := survival_sim.gather_resource_at(position.x, position.y, key)
     if realized > 0.0:
         interaction_message = "Gathered %.2f %s %s" % [
             realized,
@@ -92,21 +113,80 @@ func _craft_stone_axe() -> void:
         interaction_message = survival_sim.get_last_error()
     _update_resource_status()
 
+func _build_basic_shelter() -> void:
+    var survival_sim := sim as SurvivalSimulationNode
+    if survival_sim == null:
+        interaction_message = "Resource simulation unavailable"
+        return
+    var position := _player_projected_position()
+    if survival_sim.build_basic_shelter_at(position.x, position.y):
+        interaction_message = "Built basic shelter"
+    else:
+        interaction_message = survival_sim.get_last_error()
+    _update_resource_status()
+
+func _build_campfire() -> void:
+    var survival_sim := sim as SurvivalSimulationNode
+    if survival_sim == null:
+        interaction_message = "Resource simulation unavailable"
+        return
+    var position := _player_projected_position()
+    if survival_sim.build_campfire_at(position.x, position.y):
+        interaction_message = "Built campfire"
+    else:
+        interaction_message = survival_sim.get_last_error()
+    _update_resource_status()
+
+func _add_campfire_fuel() -> void:
+    var survival_sim := sim as SurvivalSimulationNode
+    if survival_sim == null:
+        interaction_message = "Resource simulation unavailable"
+        return
+    var position := _player_projected_position()
+    if survival_sim.add_campfire_fuel_at(position.x, position.y, 1.0):
+        interaction_message = "Added 1 kg wood to campfire"
+    else:
+        interaction_message = survival_sim.get_last_error()
+    _update_resource_status()
+
+func _toggle_campfire() -> void:
+    var survival_sim := sim as SurvivalSimulationNode
+    if survival_sim == null:
+        interaction_message = "Resource simulation unavailable"
+        return
+    var position := _player_projected_position()
+    var campsite := survival_sim.get_campsite(position.x, position.y)
+    if campsite.is_empty():
+        interaction_message = survival_sim.get_last_error()
+        return
+    var target_lit := !bool(campsite.get("campfire_lit", false))
+    if survival_sim.set_campfire_lit_at(position.x, position.y, target_lit):
+        interaction_message = "Campfire lit" if target_lit else "Campfire extinguished"
+    else:
+        interaction_message = survival_sim.get_last_error()
+    _update_resource_status()
+
 func _update_resource_status() -> void:
     var survival_sim := sim as SurvivalSimulationNode
     if survival_sim == null:
         return
-    var east_m := origin_east_m + float(player.position.x)
-    var north_m := origin_north_m - float(player.position.z)
-    var local := survival_sim.get_local_resources(east_m, north_m)
+    var position := _player_projected_position()
+    var local := survival_sim.get_local_resources(position.x, position.y)
     var inventory := survival_sim.get_inventory()
-    if local.is_empty() or inventory.is_empty():
+    var campsite := survival_sim.get_campsite(position.x, position.y)
+    if local.is_empty() or inventory.is_empty() or campsite.is_empty():
         resource_status.text = "Resource error: %s" % survival_sim.get_last_error()
         return
 
     var key: String = RESOURCE_KEYS[selected_resource]
     var unit: String = RESOURCE_UNITS[selected_resource]
     var axe_text := "owned" if survival_sim.has_stone_axe() else "not crafted"
+    var shelter_text := "built" if bool(campsite.get("shelter", false)) else "missing"
+    var fire_text := "missing"
+    if bool(campsite.get("campfire", false)):
+        fire_text = "lit" if bool(campsite.get("campfire_lit", false)) else "unlit"
+    var suitable_text := "yes" if bool(campsite.get("suitable", false)) else "no"
+
     var line := "%s  local %.2f %s  carried %.2f %s  [Q] select  [E] gather" % [
         RESOURCE_NAMES[selected_resource],
         float(local.get(key, 0.0)),
@@ -115,6 +195,12 @@ func _update_resource_status() -> void:
         unit,
     ]
     line += "\nStone axe: %s  [C] craft (1 kg wood + 1 kg stone)" % axe_text
+    line += "\nSite suitable: %s  Shelter: %s [B]  Campfire: %s fuel %.2f kg [G/R/T]" % [
+        suitable_text,
+        shelter_text,
+        fire_text,
+        float(campsite.get("campfire_fuel_kg", 0.0)),
+    ]
     if !interaction_message.is_empty():
-        line += "  |  " + interaction_message
+        line += "\n" + interaction_message
     resource_status.text = line

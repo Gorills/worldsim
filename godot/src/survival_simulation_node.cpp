@@ -1,5 +1,6 @@
 #include "survival_simulation_node.hpp"
 
+#include "worldsim/campsite.hpp"
 #include "worldsim/resources.hpp"
 #include "worldsim/terrain.hpp"
 
@@ -33,6 +34,10 @@ void SurvivalSimulationNode::_bind_methods() {
         &SurvivalSimulationNode::has_stone_axe
     );
     ClassDB::bind_method(
+        godot::D_METHOD("get_campsite","east_m","north_m"),
+        &SurvivalSimulationNode::get_campsite
+    );
+    ClassDB::bind_method(
         godot::D_METHOD(
             "collect_resource_at",
             "east_m",
@@ -54,6 +59,22 @@ void SurvivalSimulationNode::_bind_methods() {
     ClassDB::bind_method(
         godot::D_METHOD("craft_stone_axe"),
         &SurvivalSimulationNode::craft_stone_axe
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD("build_basic_shelter_at","east_m","north_m"),
+        &SurvivalSimulationNode::build_basic_shelter_at
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD("build_campfire_at","east_m","north_m"),
+        &SurvivalSimulationNode::build_campfire_at
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD("add_campfire_fuel_at","east_m","north_m","wood_kg"),
+        &SurvivalSimulationNode::add_campfire_fuel_at
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD("set_campfire_lit_at","east_m","north_m","lit"),
+        &SurvivalSimulationNode::set_campfire_lit_at
     );
 }
 
@@ -145,6 +166,34 @@ bool SurvivalSimulationNode::has_stone_axe() const {
     }
 }
 
+Dictionary SurvivalSimulationNode::get_campsite(
+    double east_m,
+    double north_m
+) const {
+    Dictionary result;
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        const auto direction=worldsim::TerrainGenerator::projected_to_direction(
+            east_m,
+            north_m
+        );
+        const auto state=worldsim::campsite_state(*sim_,direction);
+        result["suitable"]=worldsim::campsite_site_suitable(*sim_,direction);
+        result["shelter"]=state.shelter;
+        result["campfire"]=state.campfire;
+        result["campfire_lit"]=state.campfire_lit;
+        result["campfire_fuel_kg"]=state.campfire_fuel_kg;
+        last_error_.clear();
+    } catch (const std::exception& error) {
+        report_error(error.what());
+        result.clear();
+    } catch (...) {
+        report_error("unknown C++ exception in get_campsite");
+        result.clear();
+    }
+    return result;
+}
+
 bool SurvivalSimulationNode::collect_resource_at(
     double east_m,
     double north_m,
@@ -214,6 +263,92 @@ bool SurvivalSimulationNode::craft_stone_axe() {
         return false;
     } catch (...) {
         last_error_="unknown C++ exception in craft_stone_axe";
+        return false;
+    }
+}
+
+bool SurvivalSimulationNode::build_basic_shelter_at(
+    double east_m,
+    double north_m
+) {
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        const auto direction=worldsim::TerrainGenerator::projected_to_direction(
+            east_m,north_m
+        );
+        worldsim::build_basic_shelter(*sim_,direction);
+        last_error_.clear();
+        return true;
+    } catch (const std::exception& error) {
+        last_error_=error.what();
+        return false;
+    } catch (...) {
+        last_error_="unknown C++ exception in build_basic_shelter_at";
+        return false;
+    }
+}
+
+bool SurvivalSimulationNode::build_campfire_at(
+    double east_m,
+    double north_m
+) {
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        const auto direction=worldsim::TerrainGenerator::projected_to_direction(
+            east_m,north_m
+        );
+        worldsim::build_campfire(*sim_,direction);
+        last_error_.clear();
+        return true;
+    } catch (const std::exception& error) {
+        last_error_=error.what();
+        return false;
+    } catch (...) {
+        last_error_="unknown C++ exception in build_campfire_at";
+        return false;
+    }
+}
+
+bool SurvivalSimulationNode::add_campfire_fuel_at(
+    double east_m,
+    double north_m,
+    double wood_kg
+) {
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        const auto direction=worldsim::TerrainGenerator::projected_to_direction(
+            east_m,north_m
+        );
+        worldsim::add_campfire_fuel(*sim_,direction,wood_kg);
+        last_error_.clear();
+        return true;
+    } catch (const std::exception& error) {
+        last_error_=error.what();
+        return false;
+    } catch (...) {
+        last_error_="unknown C++ exception in add_campfire_fuel_at";
+        return false;
+    }
+}
+
+bool SurvivalSimulationNode::set_campfire_lit_at(
+    double east_m,
+    double north_m,
+    bool lit
+) {
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        const auto direction=worldsim::TerrainGenerator::projected_to_direction(
+            east_m,north_m
+        );
+        worldsim::set_campfire_lit(*sim_,direction,lit);
+        last_error_.clear();
+        return true;
+    } catch (const std::exception& error) {
+        last_error_=error.what();
+        return false;
+    } catch (...) {
+        last_error_="unknown C++ exception in set_campfire_lit_at";
         return false;
     }
 }
