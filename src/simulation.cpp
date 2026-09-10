@@ -303,22 +303,20 @@ std::vector<std::byte> Simulation::save_snapshot() const {
 
 void Simulation::restore_active_cells(WorldState& world, const std::vector<CellId>& cells) const {
     // Reconstruct only in a newly staged world, starting from its uniform base.
-    std::set<CellId> desired(cells.begin(),cells.end());
-    bool progress=true;
-    while (progress) {
-        progress=false;
-        std::vector<CellId> refine_list;
-        for (CellId active:world.active_cells()) {
-            bool has_descendant=false;
-            for (CellId d:desired) {
-                CellId p=d;
-                while (p.level()>active.level()) p=p.parent();
-                if (p==active && d!=active) { has_descendant=true; break; }
-            }
-            if (has_descendant) refine_list.push_back(active);
+    const std::set<CellId> desired(cells.begin(),cells.end());
+    std::vector<std::set<CellId>> refinements(config_.max_level);
+    for (CellId leaf:desired) {
+        CellId ancestor=leaf;
+        while (ancestor.level()>config_.base_level) {
+            ancestor=ancestor.parent();
+            // An already indexed parent also has all its ancestors indexed.
+            if (!refinements[ancestor.level()].insert(ancestor).second) break;
         }
-        for (CellId c:refine_list) { world.refine(c); progress=true; }
     }
+    // Preserve the original level/CellId hook order without repeatedly scanning
+    // all desired leaves for every active cell (quadratic in the cover size).
+    for (const auto& level:refinements)
+        for (CellId parent:level) world.refine(parent);
     if (world.active_cells()!=desired) throw std::runtime_error("snapshot active-cell cover is invalid");
 }
 

@@ -127,6 +127,17 @@ if(WORLDSIM_BUILD_TESTS)
   worldsim_enable_warnings(worldsim_campsite_tests)
   add_test(NAME worldsim_campsite_tests COMMAND worldsim_campsite_tests)
 
+  add_executable(worldsim_snapshot_cover_tests tests/snapshot_cover_tests.cpp)
+  target_link_libraries(worldsim_snapshot_cover_tests PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_snapshot_cover_tests)
+  add_test(NAME worldsim_snapshot_cover_tests COMMAND worldsim_snapshot_cover_tests)
+  set_tests_properties(worldsim_snapshot_cover_tests PROPERTIES TIMEOUT 60)
+
+  add_executable(worldsim_snapshot_file_tests tests/snapshot_file_tests.cpp)
+  target_link_libraries(worldsim_snapshot_file_tests PRIVATE worldsim_c)
+  worldsim_enable_warnings(worldsim_snapshot_file_tests)
+  add_test(NAME worldsim_snapshot_file_tests COMMAND worldsim_snapshot_file_tests)
+
   add_executable(worldsim_sanitizer_smoke tests/sanitizer_smoke.cpp)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_sanitizer_smoke)
