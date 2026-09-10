@@ -49,6 +49,31 @@ void set_all(Simulation& sim,const char* key,double value) {
     auto& fs=sim.world().stores().get<FieldStore>();
     for (CellId cell:sim.world().active_cells()) fs.set(cell,id(sim,key),value);
 }
+double sum_field(const Simulation& sim,const char* key) {
+    const auto& column=sim.world().stores().get<FieldStore>().column(id(sim,key));
+    double total=0.0;
+    for (double value:column) total+=value;
+    return total;
+}
+struct LocalWaterTotals {
+    double snow{};
+    double soil{};
+    double groundwater{};
+    double surface{};
+    double precipitation{};
+    double evaporation{};
+};
+LocalWaterTotals local_water_totals(const Simulation& sim) {
+    const auto& store=sim.world().stores().get<HydrologyStore>();
+    return {
+        sum_field(sim,"hydrology.snow_water_m3"),
+        sum_field(sim,"hydrology.soil_water_m3"),
+        sum_field(sim,"hydrology.groundwater_m3"),
+        store.total_surface_m3(),
+        store.budget().precipitation_m3,
+        store.budget().evaporation_m3
+    };
+}
 std::vector<CellId> channel(Simulation& sim,bool lake=false) {
     auto& store=sim.world().stores().get<HydrologyStore>();
     std::vector<CellId> cells;
@@ -63,6 +88,194 @@ void assert_budget(const Simulation& sim,double initial) {
     const auto& b=sim.world().stores().get<HydrologyStore>().budget();
     near(initial+b.precipitation_m3,total_land_water_m3(sim.world(),sim.fields())+b.evaporation_m3+b.ocean_export_m3,2e-11,"land water budget does not close");
 }
+void flat_local_water_balance_resolution_diagnostic() {
+    auto coarse=fixture(2);
+    auto fine=fixture(3);
+    for (int day=0;day<365;++day) {
+        const double phase=2.0*kPi*static_cast<double>(day)/365.0;
+        const double temperature=273.0+14.0*std::sin(phase);
+        const double precipitation=4.0+3.0*std::sin(phase+0.7);
+        set_all(*coarse,"climate.surface_temperature_k",temperature);
+        set_all(*fine,"climate.surface_temperature_k",temperature);
+        set_all(*coarse,"climate.precipitation_mm_day",precipitation);
+        set_all(*fine,"climate.precipitation_mm_day",precipitation);
+        advance(*coarse,1.0);
+        advance(*fine,1.0);
+    }
+
+    const LocalWaterTotals a=local_water_totals(*coarse);
+    const LocalWaterTotals b=local_water_totals(*fine);
+    const std::array<std::pair<const char*,std::pair<double,double>>,6> values{{
+        {"snow",{a.snow,b.snow}},
+        {"soil",{a.soil,b.soil}},
+        {"groundwater",{a.groundwater,b.groundwater}},
+        {"surface",{a.surface,b.surface}},
+        {"precipitation",{a.precipitation,b.precipitation}},
+        {"evaporation",{a.evaporation,b.evaporation}}
+    }};
+    double maximum_relative_delta=0.0;
+    for (const auto& [name,pair]:values) {
+        const double relative_delta=
+            std::abs(pair.first-pair.second)/
+            std::max({1.0,std::abs(pair.first),std::abs(pair.second)});
+        maximum_relative_delta=std::max(maximum_relative_delta,relative_delta);
+        std::cerr
+            <<"flat local hydrology diagnostic: metric="<<name
+            <<" l2="<<pair.first
+            <<" l3="<<pair.second
+            <<" relative_delta="<<relative_delta
+            <<'\n';
+    }
+    near(
+        coarse->world().stores().get<HydrologyStore>().budget().ocean_export_m3,
+        0.0,
+        0.0,
+        "flat all-land local fixture exported water"
+    );
+    near(
+        fine->world().stores().get<HydrologyStore>().budget().ocean_export_m3,
+        0.0,
+        0.0,
+        "flat all-land local fixture exported water"
+    );
+    check(
+        maximum_relative_delta<1.0e-11,
+        "flat local hydrology closure is resolution-dependent"
+    );
+}
+
+double routing_sample_bed_m(
+    const CubeSphereTopology& topology,
+    CellId sample
+) {
+    if (sample.face()==1U) return -100.0;
+    const Vec3d position=topology.center_unit(sample);
+    return 500.0+1'000.0*(position.x+1.0);
+}
+
+double routing_reference_bed_m(
+    const CubeSphereTopology& topology,
+    CellId region
+) {
+    std::vector<CellId> samples{region};
+    while (samples.front().level()<4U) {
+        std::vector<CellId> refined;
+        refined.reserve(samples.size()*4U);
+        for (CellId sample:samples) {
+            const auto children=sample.children();
+            refined.insert(
+                refined.end(),
+                children.begin(),
+                children.end()
+            );
+        }
+        samples=std::move(refined);
+    }
+    double represented_area=0.0;
+    double bed_area=0.0;
+    for (CellId sample:samples) {
+        const double area=topology.area_m2(sample);
+        represented_area+=area;
+        bed_area+=area*routing_sample_bed_m(topology,sample);
+    }
+    return bed_area/represented_area;
+}
+
+double configure_routing_fixture(Simulation& sim) {
+    auto& store=sim.world().stores().get<HydrologyStore>();
+    const CubeSphereTopology topology;
+    std::map<CellId,double> bed_changes;
+    for (const HydrologyNode& node:store.nodes()) {
+        const double target=routing_reference_bed_m(topology,node.cell);
+        bed_changes[node.cell]=target-node.bed_m;
+    }
+    store.apply_bed_changes(sim.world(),bed_changes);
+
+    // Keep the physical source support identical across reference levels:
+    // one level-2 hierarchy region, represented by 1/4/16 storage nodes at
+    // levels 2/3/4. This also avoids rebuilding lake connectivity for every
+    // node on the planet merely to construct the regression fixture.
+    const CellId source_region=CellId::make(0,2,3,2);
+    double initial=0.0;
+    for (const HydrologyNode& node:store.nodes()) {
+        CellId ancestor=node.cell;
+        while (ancestor.level()>source_region.level())
+            ancestor=ancestor.parent();
+        if (ancestor!=source_region) continue;
+        const double volume=0.25*node.land_area_m2;
+        store.add_surface_water(node.cell,volume);
+        initial+=volume;
+    }
+    return initial;
+}
+
+void basin_routing_resolution_converges() {
+    auto coarse=fixture(2);
+    auto fine=fixture(3);
+    auto reference=fixture(4);
+    auto& coarse_store=coarse->world().stores().get<HydrologyStore>();
+    auto& fine_store=fine->world().stores().get<HydrologyStore>();
+    auto& reference_store=reference->world().stores().get<HydrologyStore>();
+    const double coarse_initial=configure_routing_fixture(*coarse);
+    const double fine_initial=configure_routing_fixture(*fine);
+    const double reference_initial=configure_routing_fixture(*reference);
+    near(
+        coarse_initial,
+        fine_initial,
+        1.0e-12,
+        "routing fixture initial water differs across resolution"
+    );
+    near(
+        fine_initial,
+        reference_initial,
+        1.0e-12,
+        "routing fixture reference water differs across resolution"
+    );
+
+    constexpr double interval_days=30.0;
+    coarse_store.route(interval_days);
+    fine_store.route(interval_days);
+    reference_store.route(interval_days);
+    const double coarse_export=
+        coarse_store.budget().ocean_export_m3/coarse_initial;
+    const double fine_export=
+        fine_store.budget().ocean_export_m3/fine_initial;
+    const double reference_export=
+        reference_store.budget().ocean_export_m3/reference_initial;
+    const double l2_reference_error=
+        std::abs(coarse_export-reference_export)/
+        std::max(1.0e-15,std::abs(reference_export));
+    const double l3_reference_error=
+        std::abs(fine_export-reference_export)/
+        std::max(1.0e-15,std::abs(reference_export));
+
+    std::cerr
+        <<"basin routing convergence: day="<<interval_days
+        <<" l2_export_fraction="<<coarse_export
+        <<" l3_export_fraction="<<fine_export
+        <<" l4_export_fraction="<<reference_export
+        <<" l2_l4_error="<<l2_reference_error
+        <<" l3_l4_error="<<l3_reference_error
+        <<'\n';
+
+    for (const auto& [store,initial]:{
+        std::pair<const HydrologyStore*,double>{&coarse_store,coarse_initial},
+        std::pair<const HydrologyStore*,double>{&fine_store,fine_initial},
+        std::pair<const HydrologyStore*,double>{&reference_store,reference_initial}
+    }) {
+        near(
+            store->total_surface_m3()+store->budget().ocean_export_m3,
+            initial,
+            2.0e-12,
+            "routing fixture lost water"
+        );
+    }
+    check(
+        l3_reference_error<=0.60*l2_reference_error+1.0e-12,
+        "basin routing did not converge toward the level-4 reference"
+    );
+}
+
 void snow_recharge_and_recession() {
     auto sim=fixture();
     const double initial=total_land_water_m3(sim->world(),sim->fields());
@@ -262,6 +475,8 @@ void seasonal_continuation() {
 int main() {
     try {
         for (const auto& [name,test]:std::vector<std::pair<const char*,void(*)()>>{
+            {"flat local resolution diagnostic",flat_local_water_balance_resolution_diagnostic},
+            {"basin routing resolution convergence",basin_routing_resolution_converges},
             {"snow, recharge and recession",snow_recharge_and_recession},
             {"delayed routing and timestep",delayed_routing_and_timestep},
             {"lakes, spill and terrain change",lakes_spill_connect_and_terrain_change},
