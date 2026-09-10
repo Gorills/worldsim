@@ -454,6 +454,89 @@ void test_migration_resolves_refined_neighbor_region() {
     cohorts.validate_active_cover(sim->world().active_cells());
 }
 
+
+double controlled_migration_into_region(std::uint8_t level) {
+    check(
+        level==2 || level==3,
+        "fauna resolution fixture supports only levels 2 and 3"
+    );
+    auto simulation=make_default_simulation(
+        5151,SimulationConfig{level,level,3'600.0}
+    );
+    clear_fauna(*simulation);
+    clear_plants(*simulation);
+
+    auto& fields=simulation->world().stores().get<FieldStore>();
+    const auto land=*simulation->fields().find(
+        "geography.land_fraction"
+    );
+    for (CellId cell:simulation->world().active_cells())
+        fields.set(cell,land,1.0);
+
+    const CellId source_region=CellId::make(0,2,1,1);
+    const CellId target_region=
+        simulation->world().topology().neighbors4(source_region)[1];
+    check(
+        target_region==CellId::make(0,2,2,1),
+        "fauna resolution fixture crossed a cube face"
+    );
+
+    std::vector<CellId> source_cells;
+    std::vector<CellId> target_cells;
+    if (level==2) {
+        source_cells.push_back(source_region);
+        target_cells.push_back(target_region);
+    } else {
+        const auto source_children=source_region.children();
+        const auto target_children=target_region.children();
+        source_cells.assign(source_children.begin(),source_children.end());
+        target_cells.assign(target_children.begin(),target_children.end());
+    }
+
+    for (CellId cell:target_cells)
+        set_grass_density(*simulation,cell,1.0);
+
+    constexpr std::uint64_t lineage=99001;
+    constexpr double total_count=100.0;
+    double source_area=0.0;
+    for (CellId cell:source_cells)
+        source_area+=simulation->world().topology().area_m2(cell);
+
+    auto& cohorts=simulation->world().stores().get<CohortStore>();
+    for (CellId cell:source_cells) {
+        const double area=simulation->world().topology().area_m2(cell);
+        cohorts.add({
+            0,lineage,cell,9901,1,
+            total_count*area/source_area,35.0,2.0
+        });
+    }
+
+    run_system(*simulation,"ecology.fauna",1.0);
+
+    double arrived=0.0;
+    for (CellId cell:target_cells)
+        arrived+=lineage_count_in_cell(cohorts,cell,lineage);
+    return arrived;
+}
+
+void test_migration_is_resolution_consistent() {
+    const double level2=controlled_migration_into_region(2);
+    const double level3=controlled_migration_into_region(3);
+    check(
+        level2>0.0 && level3>0.0,
+        "fauna resolution fixture produced no migration"
+    );
+    const double relative_delta=
+        std::abs(level2-level3)/std::max(level2,level3);
+    if (relative_delta>=0.05) {
+        throw std::runtime_error(
+            "fauna migration depends on simulation resolution: L2="+
+            std::to_string(level2)+", L3="+std::to_string(level3)+
+            ", relative_delta="+std::to_string(relative_delta)
+        );
+    }
+}
+
 void test_grazing_rate_scales_with_elapsed_time() {
     const SimulationConfig config{1,1,3600.0};
     constexpr std::uint64_t seed=5051;
@@ -778,6 +861,7 @@ int main() {
         test_indexed_transfer_conserves_population();
         test_uniform_habitat_selection();
         test_migration_resolves_refined_neighbor_region();
+        test_migration_is_resolution_consistent();
         test_grazing_rate_scales_with_elapsed_time();
         test_fauna_nitrogen_stoichiometry();
         test_predation_transfers_fauna_nitrogen();
