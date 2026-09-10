@@ -1,333 +1,90 @@
-# Terrain vertical slice
+# Terrain rendering contract
 
-This document records the architecture and performance decisions for the first walkable procedural world slice.
+This document describes the current walkable terrain presentation contract. It is not a product roadmap and it does not define natural-world development priority.
 
-## Scope
+## Authority
 
-The slice intentionally contains only terrain presentation:
+The authoritative spatial model is the simulation's cube-sphere hierarchy and adaptive cover. Persistent geology owns macro elevation and related state.
 
-- stateful planet-scale geological elevation reconstructed from the simulation cover;
-- bounded sphere-native procedural sub-cell detail over that reconstructed macro relief;
-- no rendered or simulated water;
-- no rendered rivers or other hydrological surface features;
-- no climate, hydrology, vegetation, fauna, settlements, or other gameplay domains in the Godot terrain scene;
-- a first-person walker over streamed terrain chunks.
+Godot terrain rendering may reconstruct and decorate that state for visual/physics resolution, but presentation detail never becomes a second authoritative terrain model and is never fed back into geology, hydrology or ecology.
 
-The existing full default simulation remains available for kernel/domain tests and the diagnostic adapter API.
+Rendering LOD and simulation LOD remain separate.
 
-## Authority and coordinate model
+## Walking-surface reconstruction
 
-The authoritative spatial model remains the existing cube-sphere hierarchy. No second flat world model is introduced.
+Simulation cells are much larger than walking-mesh vertices. Rendering the active-cell value directly would create broad terraces, while refining simulation state to render resolution would make presentation requirements own the world-simulation budget.
 
-`TerrainGenerator` is a deterministic core service keyed by world seed. It owns a `TectonicModel` and can be sampled either from a unit direction on the planet or from local projected meter coordinates. Current authoritative geography uses persistent `GeologyModel` state. The walking height/patch APIs now reconstruct that adaptive `geography.elevation_m` field and retain `TerrainGenerator` only for deterministic sub-cell presentation detail. The global elevation map continues to read the actual active geography field without that detail, while tectonic debug layers show the seed model.
-
-The walking projection is azimuthal-equidistant and centered at 45° N, 70° E, but it is not part of terrain generation. `sample_projected()` converts local walker meters to a unit direction and delegates to `sample_direction()`. The static preview sampler uses `TectonicModel::macro_elevation_m` as its broad hypsometric base. The previous fixed anisotropic continent cap no longer participates in generation. Existing sphere-native FBM remains only as bounded 180 km rolling relief and 900 m local detail, plus a bounded ridged orogenic term modulated by tectonic uplift and continental affinity. Final `land_fraction` is derived from final elevation across a narrow sea-level transition.
-
-A regression samples 1,024 sphere directions and requires procedural preview elevation to correlate above 0.95 with tectonic macro relief while retaining measurable detail and keeping the detail residual below 1.5 km. A separate level-5 cube-sphere integration keeps seed-42 global land coverage in a broad non-degenerate range and preserves dry land at the existing local-walker origin.
-
-### Authoritative walking-surface reconstruction
-
-Simulation LOD and rendering LOD remain separate. At the configured maximum
-simulation level, cells near the seed-42 walker origin are still roughly 59 km
-in characteristic size, while a walking mesh vertex is spaced 8 m apart. Direct
-piecewise-constant sampling would therefore turn the active cover into broad
-terraces. Raising simulation LOD to render resolution would incorrectly make a
-presentation requirement own the authoritative world budget.
-
-The adapter instead evaluates
+The adapter therefore reconstructs a smooth macro surface from authoritative `geography.elevation_m` and adds only a deterministic high-frequency residual from the seed terrain generator:
 
 ```text
-render_height(p) = R(geography.elevation_m, p)
-                 + TerrainGenerator(p) - R(TerrainGenerator anchors, p)
+render_height(p)
+  = reconstruct(authoritative elevation, p)
+  + seed_detail(p)
+  - reconstruct(seed_detail anchors, p)
 ```
 
-`R` is a normalized compact-support reconstruction over virtual cells at the
-configured maximum simulation level. Each virtual-cell value is first resolved
-through `WorldState::resolve_active_cover()`, so a coarse active ancestor or
-active descendants are combined through the existing area-weighted contract.
-The renderer never treats same-level `neighbors4()` results as if they were
-active leaves. Positive normalized weights keep the reconstructed macro surface
-inside the range of its contributing cell values. The second pair of terms is a
-high-pass residual: it preserves deterministic local shape without replacing
-the evolving simulation height with the immutable seed terrain.
-
-The compact weight is the standard Wendland C2 form
-`(1-r)^4 * (1+4r)` for normalized radius `r < 1`. It is a presentation
-reconstruction, not a conservative simulation prolongation: stored cell values,
-mass budgets, erosion routing, snapshots and all other domain consumers remain
-unchanged. Resolving the adaptive cover before reconstruction follows the same
-coarse/fine separation used in established AMR practice:
-
-- H. Wendland (1995), *Piecewise polynomial, positive definite and compactly
-  supported radial functions of minimal degree*:
-  https://doi.org/10.1007/BF02123482
-- Berger & Colella (1989), conservative coarse/fine AMR synchronization:
-  https://doi.org/10.1016/0021-9991(89)90035-1
-
-The adapter exposes separate transient terrain and living-surface revisions.
-A terrain revision dirties height/collision data: the chunk under the player
-updates its `ArrayMesh` and `HeightMapShape3D` synchronously, while remaining
-visible chunks update at one per frame. A surface-only revision no longer
-resamples reconstructed terrain or rebuilds collision. Near chunks cache their
-central 33 x 33 heights and only rebuild vertex colors/decorative vegetation;
-distant LODs reuse cached positions, normals and heights and resample only the
-living-surface packet. Render and collision still use the same sampled height
-array whenever terrain authority actually changes. Godot 4.7 documents the
-relevant mutable height-map data and procedural mesh contracts:
-
-- https://docs.godotengine.org/en/4.7/classes/class_arraymesh.html
-- https://docs.godotengine.org/en/4.7/classes/class_heightmapshape3d.html
-
-The reconstruction cost and dirty-chunk update budget on target player hardware
-remain **NOT VERIFIED** until profiled outside CI.
-
-This follows the same relevant large-planet practice as Demiurge: terrain is a deterministic function of seed plus spherical position, and its macro pipeline is angular/normalized rather than derived from a global flat map. WorldSim uses its own analytical tectonic model and does not copy Demiurge's implementation:
-
-- https://github.com/owenyuwono/demiurge
-
-After simulation-cover refinement/coarsening, derived geography is recomputed from retained geology state through the module lifecycle. The state is not reset to seed terrain. The walker reconstruction consumes that derived field without taking ownership of it.
-
-Because authoritative geography semantics are part of persistent world state, snapshot compatibility advances whenever that terrain/geology contract changes. Tectonic authority introduced version 3, orogenic shaping version 4, plate-layout diversification version 5, the minimum-separation correction version 6, stateful geological evolution version 7, burial-dependent sediment compaction version 8, separated fluvial/hillslope geomorphology version 9, depth-dependent regolith production version 10, critical-slope hillslope acceleration version 11, and coast-to-basin marine sediment routing version 12. Global snapshot version 13 added persistent living-soil ecology fields; version 14 added persistent grass/shrub/tree functional-type pools and propagule-limited vegetation semantics; version 15 added habitat-selected fauna redistribution. Version 16 corrects crust restriction/buoyancy, seasons and vegetation loss accounting, version 17 adds persistent basin hydrology, version 18 adds persistent coupled climate heat/moisture state, version 19 adds authoritative wildfire state, version 20 adds persistent fast/slow soil carbon and respiration accounting, and version 21 adds snow-cover/albedo feedback state. At epoch 21, versions 2 through 20 were rejected by the authoritative-world snapshot contract.
-
-Fauna carbon accounting subsequently introduced epoch 22. The grazing-timestep
-correction introduced epoch 23. The magic forcing timebase correction introduced
-epoch 24, and the wildfire burn-cap timebase correction introduces epoch 25. The
-current reader therefore rejects global snapshot versions 2 through 24; the
-preceding history through epoch 24 is retained to show which terrain-era
-states they contain.
-
-## Godot large-world strategy
-
-The stock Godot project remains a normal single-precision build. Logical projected coordinates are kept as GDScript scalar values while scene-tree coordinates are periodically shifted back near the origin. Terrain chunk transforms are rebuilt relative to that logical origin. Scene cardinal axes follow Godot's right-handed convention: +X is east and -Z is north, so projected north is reflected into negative scene Z before rendering or movement is compared with a north-up map.
-
-This follows Godot's documented precision limits for large single-precision worlds and uses origin shifting instead of requiring a custom double-precision engine build:
-
-- https://docs.godotengine.org/en/4.7/tutorials/physics/large_world_coordinates.html
-- https://docs.godotengine.org/en/4.7/tutorials/assets_pipeline/importing_3d_scenes/model_export_considerations.html
-
-The initial shift threshold is 1,024 m, comfortably inside the range where Godot documents high positional precision for first-person gameplay.
-
-## Terrain streaming
-
-Near collision and distant rendering use separate LOD contracts. The existing
-walking chunks remain the only physics terrain:
-
-- chunk size: 256 m;
-- mesh resolution: 33 x 33 vertices;
-- vertex spacing: 8 m;
-- terrain sampling uses a 35 x 35 patch and keeps the outer one-cell border only
-  for central-difference render normals; collision and mesh heights remain the
-  central authoritative 33 x 33 samples;
-- visible radius: 3 chunks;
-- retained radius: 4 chunks;
-- at most one missing or dirty near chunk is generated per rendered frame;
-- the chunk under the initial player position is built synchronously before movement starts.
-
-For the fixed seed-42 walking demonstration, startup placement is intentionally
-inside the existing mountain regression region instead of the projection origin.
-The runtime uses a prevalidated spawn/target pair instead of rescanning the
-65 x 65 diagnostic patch before the first frame. The CI terrain regression still
-samples the 40 km x 40 km window centered at east 5,573 km / north -1,800.3 km
-and verifies that the fixed target remains a 3-cell-radius local summit with at
-least 700 m regional relief. The fixed dry viewpoint is 2.5 km from the
-target ridge crest and must retain at least 950 m rise, fifteen degrees of
-elevation and 0.5 degrees of skyline separation. This removes 4,225 reconstructed-terrain queries
-from normal viewer startup while preserving an independently checked mountain
-frame. Terrain authority, simulation focus, snapshots and the reconstruction
-formula are unchanged.
-
-The walker also renders visual-only nested spherical terrain rings. Every
-ring is a 33 x 33 regular grid, sample spacing doubles from 64 m through
-16,384 m, and the outer half-extent grows from 1.024 km to 262.144 km.
-The canonical mountain viewpoint is now only 3-7 km from its selected summit,
-so 256 m sampling still covers the visible target range without paying the
-4x per-ring vertex/sampling cost of the rejected 65 x 65 pass. Heights come
-from the same reconstructed terrain adapter used by walking collision. The
-regional baseline remains authoritative geology; the adapter retains the
-deterministic presentation-only 60/28/16 km ridge and summit orography in
-convergent dry-land belts. Summit amplitude is slightly stronger than the broad ridge term. A single
-3.2 km, single-octave sphere-native value-noise lookup is transformed into a
-narrow positive ridged term inside the existing mountain gate. This restores
-local ribs and saddles without restoring the rejected multi-FBM crag/gully/spur
-stack; the number of added detail-noise lookups is one per terrain sample. The visual/collision relief remains bounded,
-sphere-native and never mutates simulation fields, conserved stores or
-snapshots. The adapter converts the sampled sphere directions to a
-player-local tangent frame in double precision before returning float scene
-coordinates, so the stock single-precision Godot scene tree never stores
-planet-radius coordinates.
-
-Coarse-to-fine updates morph the final two fine-grid rows onto bilinear samples
-of the next coarser ring. Exact shared outer/inner boundaries therefore meet
-without a T-junction crack while local detail is retained away from the
-transition. Lod0 is intentionally rendered as a full safety underlay beneath
-the streamed near chunks instead of cutting a central hole. While walking,
-the distant center is snapped to the same 256 m chunk center used by near
-streaming. Lod0 is lowered by up to 48 m near the center and smoothly rejoins
-the exact sampled surface at its outer edge. This prevents a temporarily
-missing near chunk from exposing sky/ocean and prevents the coarser Lod0
-surface from cutting through loaded 8 m near terrain. Distant rings have no
-collision.
-
-Terrain albedo receives a presentation-only rock cue from rendered slope
-gradient and elevation. The gradient is derived from the mesh normal as
-horizontal-normal magnitude divided by vertical-normal magnitude, so ordinary
-10-30 degree mountain faces no longer collapse into near-zero values as they did
-with the previous `1 - normal.y` proxy. Near chunks use the 35 x 35 ghost border
-for those normals instead of clamping the derivative at every 256 m chunk edge.
-The rejected per-vertex procedural tint pass was removed from the runtime path;
-slope/elevation color and the deterministic hillshade remain presentation-only
-and do not feed back into ecology or geography.
-
-The walking camera uses a 65-degree field of view, and the environment keeps
-lower ambient energy with a warm directional light. Nested distant rings do not
-cast shadow maps: rendered CI frames exposed a dark clipmap-boundary seam when
-overlapping LODs were allowed to shadow one another. Terrain materials therefore
-render unshaded vertex colors and the shared surface presentation applies the
-directional hillshade explicitly. Coarse-to-fine rebuilds persist each ring's
-terrain normals; the final two rows of a fine ring morph those normals onto the
-same coarser grid used by the existing positional transition. Slope rock cues and
-hillshade are then derived from the morphed normal, so adjacent rings agree at
-their shared boundary instead of hiding the discontinuity with a neutral color
-band.
-
-A separate visual-only sea-level surface uses the exact same spherical sample
-directions at elevation 0 m. It is opaque in this first slice to stay on the
-fast opaque rendering path; terrain above sea level naturally occludes it while
-negative-elevation terrain becomes ocean floor.
-
-Meshes are regular indexed `ArrayMesh` surfaces. Collision uses `HeightMapShape3D`, which Godot documents as the terrain-specialized alternative to a concave triangle collision shape:
-
-- https://docs.godotengine.org/en/4.7/classes/class_arraymesh.html
-- https://docs.godotengine.org/en/4.7/classes/class_heightmapshape3d.html
-
-Mesh/physics-resource creation remains on the main thread. Godot does not make the active scene tree thread-safe, and its documentation warns that GPU-facing resource work on background threads can stall. The bounded one-chunk-per-frame policy is the simpler first slice:
-
-- https://docs.godotengine.org/en/4.7/tutorials/performance/thread_safe_apis.html
-
-If profiling later shows that walking-speed terrain cannot meet frame-time targets, generation can be split into CPU sampling and main-thread resource upload. That change is not justified before measurement.
-
-## Distant spherical rendering
-
-The distant renderer follows the geometry-clipmap principle of nested regular
-grids centered around the viewer, while retaining CPU-generated ArrayMesh data
-for this first implementation. GPU Gems describes the established clipmap
-structure as nested regular grids with progressively coarser samples and
-transition regions between levels:
+The reconstruction resolves the actual active cover before combining values, so a coarse ancestor or active descendants are handled through the existing adaptive-world semantics. The procedural residual is presentation-only; stored field values, erosion routing, mass budgets and snapshots remain unchanged.
 
-- https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry-clipmaps
+Terrain/collision updates use the same sampled height array whenever authoritative terrain changes.
 
-WorldSim deliberately does not move authoritative height generation into a GPU
-height texture. The simulation remains authoritative and the Godot adapter
-continues to reconstruct presentation heights from active simulation state.
-Only the rendering LOD changed.
+## Local walking terrain
 
-The Camera3D far plane is 400 km. Non-volumetric environment fog uses Godot
-4.7's depth mode from 35 km to 300 km with aerial perspective, so distant
-terrain fades into the procedural sky instead of terminating at a local flat
-chunk boundary:
+The current near terrain uses streamed regular heightfield chunks:
 
-- https://docs.godotengine.org/en/4.7/classes/class_camera3d.html
-- https://docs.godotengine.org/en/4.7/classes/class_environment.html
+- 256 m chunk size;
+- 33 x 33 mesh/collision samples per chunk;
+- 8 m central vertex spacing;
+- `ArrayMesh` for rendering;
+- `HeightMapShape3D` for walking collision;
+- a bounded visible/retained chunk neighborhood around the player;
+- missing/dirty chunks generated incrementally on the main thread.
 
-Sampling cost and frame time on target player hardware remain **NOT VERIFIED**.
-The rejected 65 x 65 pass raised each ring from 1,089 to 4,225 vertices and
-produced severe runtime slowdown in manual testing, so the runtime contract is
-back to 33 x 33. The implementation still limits work to one distant LOD rebuild
-per rendered frame, recenters on 256 m near-chunk transitions while walking,
-uses a much larger threshold during survey flight, and throttles
-simulation-driven distant refreshes. Surface-only revisions use cached terrain geometry instead of re-running
-reconstructed-height sampling, preventing hourly ecology/climate changes from
-repeatedly entering the expensive terrain/collision path. The rendered CI gate
-also records a fixed 60-frame llvmpipe proxy plus forced near-terrain and
-surface-only refresh timings. The accepted pass must remain at or above 12 proxy
-FPS, at or below 20 ms for a forced near rebuild and at or below 8 ms for a
-surface-only refresh; these are regression bounds, not target-hardware FPS
-claims.
+The player chunk is available synchronously when required for safe movement. Scene-tree/GPU resource creation remains on the Godot main thread; there is no speculative background scene mutation path.
 
-## Global map inspection
+## Distant terrain
 
-The Godot host also provides `world_map.tscn`, a separate macro-scale inspection scene. It does not own or regenerate geography. The scene requests an equirectangular elevation array from `WorldSimulationNode`; the adapter converts latitude/longitude pixel centers into directions, resolves their active cube-sphere leaves, and reads `geography.elevation_m`. Each leaf is displayed with its stored value; no smoothing or invented subcell geological detail is applied.
+Distant presentation uses nested regular terrain rings centered on the logical player position. Sample spacing increases with distance. Distant rings have no gameplay collision.
 
-The first viewer uses a fixed 1024 x 512 sampling grid and builds an RGB `Image` / `ImageTexture` at runtime. Elevation-to-color mapping stays in GDScript because it is presentation state, while all terrain heights remain authoritative C++ values. Godot 4.7 documents `Image.create_from_data()`, `ImageTexture.create_from_image()`, and `TextureRect` for this runtime texture path:
+Near and distant surfaces sample the same terrain adapter. Coarse/fine ring boundaries morph toward the coarser grid so presentation LOD changes do not create visible cracks.
 
-- https://docs.godotengine.org/en/4.7/classes/class_image.html
-- https://docs.godotengine.org/en/4.7/classes/class_imagetexture.html
-- https://docs.godotengine.org/en/4.7/classes/class_texturerect.html
+Distant rendering is a presentation optimization only. It does not alter simulation focus, active-cover authority or persistence.
 
-A separate map artifact is also established world-generation practice: WorldEngine keeps generated world data independent from the elevation, precipitation, temperature, biome, and ocean images it emits for inspection. The WorldSim viewer follows that separation without importing WorldEngine's rectangular world model:
+## Large-world coordinates
 
-- https://github.com/Mindwerks/worldengine
+The stock single-precision Godot build does not store planet-radius scene coordinates directly.
 
-Launch the macro viewer with:
+WorldSim keeps logical projected coordinates separately and periodically rebases scene-tree positions near the origin. Terrain transforms, player movement and map conversions use the logical position as the stable reference.
 
-```bash
-make map
-```
+Simulation coordinates remain sphere-native; the local walking projection is an engine/client concern.
 
-The map deliberately exposes terrain-source defects rather than hiding them. The first global-map pass revealed a radial discontinuity at the antipode of the local azimuthal walking projection. The terrain source is now sphere-native, so that projection is used only to map local walker coordinates to a unit direction and cannot introduce a global terrain singularity. The map remains the visual regression tool for later tectonics and erosion work.
+## Living-surface projection
 
-## Tectonic model and debug layers
+Terrain geometry and living-surface appearance have separate revision paths.
 
-The kernel contains a deterministic query-only `TectonicModel` that partitions the unit sphere into 16 seeded spherical Voronoi plates. `TerrainGenerator` consumes its continuous macro response, while plate ids, forcing, crust affinity, and raw macro relief remain separately inspectable through debug layers. A plate stores only a seed direction and a normalized relative angular-velocity vector; continental/oceanic crust is **not** a per-plate boolean.
+Authoritative ecology/climate state such as vegetation, snow, flooding and fire may change terrain color/decorative vegetation without forcing height/collision regeneration. Near decorative trees/shrubs are visual projections of authoritative biomass and never own ecological stocks.
 
-For any unit direction the model selects the owning Voronoi seed, compares its spherical bisectors against every competing seed, and uses the geometrically nearest boundary for the local diagnostic response. It derives:
+See `LIVING_SURFACE.md` for the surface-presentation contract.
 
-- owning and neighboring plate ids;
-- angular distance to that boundary;
-- relative convergence/divergence across the boundary;
-- relative shear along the boundary;
-- a signed boundary forcing that smoothly decays to zero eight degrees away from the boundary.
+## Godot boundary
 
-Positive forcing represents convergence and negative forcing represents divergence. Angular speeds, convergence, shear, and forcing are normalized relative values, not calibrated SI velocities or geological rates.
+The renderer consumes authoritative terrain/surface data through the existing GDExtension/native adapter boundary. Godot may cache meshes, colors and reconstruction samples, but those caches are disposable presentation state.
 
-The same model also exposes a continuous `continental_affinity` field in `[0,1]`. It is now a low-frequency deterministic 3D value-noise FBM evaluated directly at the normalized unit direction and shaped with a smooth threshold. The field is independent of plate ownership, so one plate may contain both oceanic and continental crust; sampling coherent 3D noise on the sphere keeps it continuous across plate boundaries and the longitude seam without encoding continent silhouettes as unions of radial spherical caps.
+A future resource-interaction system must not infer authoritative gatherable material from decorative meshes. `Resource Acquisition v1` must query/command the simulation-owned resource state defined by `DIRECTION.md`.
 
-Because the lowest-frequency octave spans only a few lattice cells over the whole sphere, its raw spherical mean can drift noticeably between seeds. The model therefore estimates that seed-wide DC component once in the constructor from 128 deterministic equal-area Fibonacci-sphere directions and subtracts it before the affinity threshold. This is a constant bias per world seed: it does not alter local continuity or feature geometry, but prevents otherwise valid seeds from collapsing toward almost entirely oceanic or continental crust.
+## Validation
 
-A core regression samples seeds 0 through 63 on a separate 512-point equal-area sphere. Each seed must retain non-degenerate continental affinity, a transitional crust belt, both uplift and divergence coverage, positive macro terrain plus deep ocean, and plate-boundary continuity. These are broad distribution invariants rather than golden maps.
+Terrain changes should preserve the executable behaviors already covered by the Godot integration tests, including:
 
-This follows established sphere-noise practice rather than adding a second flat crust map: libnoise's spherical model samples a 3D noise module on a unit sphere specifically for seamless spherical textures and planetary terrain. WorldSim keeps its own deterministic value-noise implementation and only uses the same sphere-native sampling principle:
+- authoritative elevation changes affect reconstructed walking height;
+- adjacent terrain patches share compatible boundaries;
+- render mesh and collision use matching height samples;
+- adaptive-cover changes invalidate/rebuild the required terrain presentation;
+- survey/fast-travel maintains large logical coordinates and safely restores walking;
+- the world map reads the authoritative macro terrain source rather than a separate presentation generator;
+- the walking scene renders successfully in CI visual capture.
 
-- https://libnoise.sourceforge.net/docs/classnoise_1_1model_1_1Sphere.html
-- https://libnoise.sourceforge.net/tutorials/tutorial8.html
+Performance on final target hardware is not implied by CI. Optimize chunk generation or GPU upload only after profiling identifies a concrete frame-time/streaming bottleneck.
 
-The tectonic macro height is derived from:
+## Non-goals
 
-- crust affinity -> broad buoyancy from deep oceanic crust to elevated continental crust;
-- convergent boundary response -> positive uplift, stronger on continental crust;
-- divergent response -> oceanic ridge uplift or continental rift subsidence;
-- transform/shear motion -> no direct vertical term in this slice.
-
-Pair participation still uses the compact smooth competition weight based on how closely both plates approach local ownership; the weight reaches zero with zero slope before the pair is skipped, so the polygon/ghost fix remains intact. Divergence keeps the broad 12-degree macro belt. Convergent uplift is now shaped separately: a continuous sphere-native width field varies its support between roughly 6 and 11.8 degrees, and a second deterministic ridged coherent-noise field modulates the response with a non-zero floor. Both modifiers are multiplied by the actual positive convergence and competition weights, so they can narrow, segment, and branch an orogen but cannot create isolated tectonic mountains away from a convergent boundary. The nearest-boundary forcing diagnostic remains unchanged.
-
-The ridged modulation follows the established procedural-terrain use of absolute-valued coherent noise to create ridge-like mountainous structure, while the geological constraint remains that strong deformation is concentrated near plate boundaries and convergent margins create mountain systems:
-
-- https://libnoise.sourceforge.net/docs/classnoise_1_1module_1_1RidgedMulti.html
-- https://libnoise.sourceforge.net/tutorials/tutorial5.html
-- https://pubs.usgs.gov/gip/dynamic/understanding.html
-- https://volcanoes.usgs.gov/about/edu/dynamicplanet/nutshell.php
-
-The resulting `macro_elevation_m` remains the authoritative low-frequency basis consumed by `TerrainGenerator`; the `Macro relief` map layer continues to show that raw basis without meso/local terrain detail. A seed-42 128 x 64 visual-regression sentinel constrains the convergent uplift footprint so it cannot regress to the previous wide smooth ribbon while the 64-seed robustness sweep still requires non-trivial uplift coverage and boundary continuity.
-
-The global map exposes five inspection layers: authoritative `Elevation`, plus `Plates`, `Tectonic forcing`, `Crust`, and raw `Macro relief`. The latter four remain debug presentations. The `Tectonic forcing` view now renders the terrain-driving response rather than the legacy nearest-pair diagnostic: `uplift_forcing - divergence_forcing` is mapped with a zero-centered red/neutral/blue diverging palette, with a visible neutral gray for inactive interiors. The legacy signed `forcing` array remains exported by the adapter for compatibility and low-level boundary debugging. The `Plates` view adds a presentation-only one-pixel dark topology outline; no outline is overlaid on continuous field layers, so it cannot be mistaken for a terrain discontinuity.
-
-Godot 4.7 documents the existing runtime `Image.create_from_data()` / RGB8 texture path and `Color.lerp()` used by these presentation maps. The signed-response palette follows standard visualization practice for values centered on a meaningful zero:
-
-- https://docs.godotengine.org/en/4.7/classes/class_image.html
-- https://docs.godotengine.org/en/4.7/classes/class_color.html
-- https://matplotlib.org/stable/users/explain/colors/colormapnorms.html
-- https://matplotlib.org/stable/tutorials/colors/colormaps.html
-
-The architectural comparison remains Demiurge's explicit separation between tectonic query state, tectonic debug visualization, and later terrain/erosion consumers. WorldSim uses a much smaller analytical model here rather than copying its baked implementation:
-
-- https://github.com/owenyuwono/demiurge
-
-A spatial bake is intentionally deferred. Plate ownership, crust affinity, and this first macro-relief preview are cheap point queries; erosion and drainage require neighborhood-dependent iterative state and remain the first stage that justifies a persistent cube-sphere bake/cache lifecycle.
-
-## Known boundaries
-
-- Walking terrain follows reconstructed stateful geology. Convergent dry-land belts additionally receive bounded deterministic sub-cell orographic peaks for traversable/rendered mountain relief; this does not change authoritative geography fields or snapshots. Surface color and near decorative vegetation project authoritative climate/hydrology/ecology state through the separate [living-surface contract](LIVING_SURFACE.md).
-- The walker has a visual sea-level surface but no river/lake surface geometry, wave simulation, shoreline foam, refraction, or water collision.
-- Distant terrain is spherical and extends to roughly 262 km from its center; it is visual-only and uses progressively coarser samples. Long-range depth fog hides the finite visual-ring boundary before it becomes a local flat cutoff.
-- Terrain revision and synchronized local mesh/collision refresh remain immediate; distant terrain revision refresh is intentionally throttled and continuous fastest-tier survey-flight quality is not verified.
-- Frame-time and GPU performance on target player hardware are NOT VERIFIED by CI; CI can verify build, parsing, headless runtime, terrain API, collision scene resources, and core invariants only.
+This contract does not make terrain rendering authoritative, does not require simulation LOD to match render LOD, does not claim production graphics quality, and does not define gameplay resources, mining, buildings or settlements.
