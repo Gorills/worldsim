@@ -90,23 +90,63 @@ std::pair<Vec3d,Vec3d> east_north_basis(Vec3d position) {
     return {east,north};
 }
 
+constexpr double planetary_wave_amplitude_m_s=0.45;
+
+double zonal_wind_m_s(double latitude) {
+    const double degrees=std::abs(latitude)*180.0/kPi;
+    const double westerly_belt=
+        14.0*std::exp(-std::pow((degrees-45.0)/18.0,2.0));
+    const double polar_easterly=
+        3.0*std::exp(-std::pow((degrees-78.0)/10.0,2.0));
+    return -5.0+westerly_belt-polar_easterly;
+}
+
+double gaussian_integral_degrees(
+    double upper_degrees,
+    double center_degrees,
+    double width_degrees
+) {
+    return 0.5*width_degrees*std::sqrt(kPi)*(
+        std::erf((upper_degrees-center_degrees)/width_degrees)-
+        std::erf(-center_degrees/width_degrees)
+    );
+}
+
+double prescribed_streamfunction_m2_s(Vec3d position, double day) {
+    const double latitude=std::asin(std::clamp(position.z,-1.0,1.0));
+    const double longitude=std::atan2(position.y,position.x);
+    const double degrees=std::abs(latitude)*180.0/kPi;
+    const double zonal_integral_degrees=
+        -5.0*degrees+
+        14.0*gaussian_integral_degrees(degrees,45.0,18.0)-
+        3.0*gaussian_integral_degrees(degrees,78.0,10.0);
+    const double zonal_integral_rad=
+        std::copysign(1.0,latitude)*
+        zonal_integral_degrees*kPi/180.0;
+    const double seasonal=2.0*kPi*day/orbital_days;
+    const double cosine=std::cos(latitude);
+    return
+        -kEarthRadiusM*zonal_integral_rad+
+        kEarthRadiusM*planetary_wave_amplitude_m_s*cosine*cosine*
+            std::sin(2.0*longitude-seasonal);
+}
+
 std::pair<double,double> prescribed_wind(
     Vec3d position,
     double day
 ) {
     const double latitude=std::asin(std::clamp(position.z,-1.0,1.0));
     const double longitude=std::atan2(position.y,position.x);
-    const double degrees=std::abs(latitude)*180.0/kPi;
-    const double westerly_belt=
-        14.0*std::exp(-std::pow((degrees-45.0)/18.0,2.0));
-    const double polar_easterly=
-        3.0*std::exp(-std::pow((degrees-78.0)/10.0,2.0));
     const double seasonal=2.0*kPi*day/orbital_days;
-    const double east=-5.0+westerly_belt-polar_easterly+
-        1.5*std::sin(3.0*longitude+seasonal)*std::cos(latitude);
+    const double base_east=zonal_wind_m_s(latitude);
+    const double phase=2.0*longitude-seasonal;
+    const double cosine=std::cos(latitude);
+    const double sine=std::sin(latitude);
+    const double east=
+        base_east+
+        2.0*planetary_wave_amplitude_m_s*cosine*sine*std::sin(phase);
     const double north=
-        0.9*std::sin(2.0*latitude)*std::cos(seasonal)+
-        0.7*std::sin(2.0*longitude-seasonal)*std::cos(latitude);
+        2.0*planetary_wave_amplitude_m_s*cosine*std::cos(phase);
     return {east,north};
 }
 
@@ -137,10 +177,18 @@ double capacity_weighted_temperature(const ClimateNode& node) {
     )/capacity;
 }
 
-double shared_edge_length(
+struct SharedEdgeGeometry {
+    double length_m{};
+    Vec3d start;
+    Vec3d end;
+};
+
+SharedEdgeGeometry shared_edge_geometry(
     const CubeSphereTopology& topology,
     CellId a,
-    CellId b
+    CellId b,
+    Vec3d center_a,
+    Vec3d center_b
 ) {
     const auto ac=topology.corners_unit(a);
     const auto bc=topology.corners_unit(b);
@@ -155,17 +203,32 @@ double shared_edge_length(
             }
         }
     }
-    if (count==2U) {
-        return kEarthRadiusM*std::acos(std::clamp(
-            dot(shared[0],shared[1]),-1.0,1.0
-        ));
-    }
-    // The fallback remains an explicit uniform-grid geometry approximation;
-    // it is never an adaptive-cover area weight interpreted as a face length.
-    return 0.5*(
-        std::sqrt(topology.area_m2(a))+
-        std::sqrt(topology.area_m2(b))
+    if (count!=2U)
+        throw std::runtime_error(
+            "uniform climate neighbors do not share exactly one edge"
+        );
+
+    Vec3d start=shared[0];
+    Vec3d end=shared[1];
+    const double endpoint_cosine=
+        std::clamp(dot(start,end),-1.0,1.0);
+    const Vec3d midpoint=normalized(start+end);
+    const Vec3d edge_plane_normal=normalized(cross(start,end));
+    const Vec3d edge_tangent=
+        normalized(cross(edge_plane_normal,midpoint));
+    const Vec3d positive_normal=normalized(cross(midpoint,edge_tangent));
+    const Vec3d center_delta=center_b-center_a;
+    const Vec3d toward_b=normalized(
+        center_delta-midpoint*dot(center_delta,midpoint)
     );
+    if (dot(positive_normal,toward_b)<0.0)
+        std::swap(start,end);
+
+    return {
+        kEarthRadiusM*std::acos(endpoint_cosine),
+        start,
+        end
+    };
 }
 
 class ClimateSystem final : public ISimSystem {
@@ -376,15 +439,20 @@ void ClimateStore::rebuild_graph() {
             const Vec3d b=topology.center_unit(neighbor);
             const double cosine=std::clamp(dot(a,b),-1.0,1.0);
             const double distance=kEarthRadiusM*std::acos(cosine);
-            const Vec3d tangent_a=normalized(b-a*cosine);
-            const Vec3d tangent_b=normalized(a-b*cosine);
+            const SharedEdgeGeometry edge=shared_edge_geometry(
+                topology,
+                nodes_[i].cell,
+                neighbor,
+                a,
+                b
+            );
             links_.push_back({
                 i,
                 j,
                 distance,
-                shared_edge_length(topology,nodes_[i].cell,neighbor),
-                tangent_a,
-                tangent_b
+                edge.length_m,
+                edge.start,
+                edge.end
             });
         }
     }
@@ -607,32 +675,27 @@ void ClimateStore::advance_energy(double dt_days) {
     }
 }
 
-void ClimateStore::advance_moisture(double dt_days) {
-    CubeSphereTopology topology;
-    std::vector<Vec3d> winds(nodes_.size());
-    for (std::size_t i=0;i<nodes_.size();++i) {
-        const Vec3d position=topology.center_unit(nodes_[i].cell);
-        const auto [east,north]=east_north_basis(position);
-        winds[i]=east*nodes_[i].east_wind_m_s+
-            north*nodes_[i].north_wind_m_s;
-    }
-
+void ClimateStore::advance_moisture(double dt_days, double day) {
     std::vector<double> requested(links_.size());
     std::vector<double> outgoing(nodes_.size());
     const double seconds=dt_days*seconds_per_day;
     for (std::size_t k=0;k<links_.size();++k) {
         const Link& link=links_[k];
-        const double velocity=0.5*(
-            dot(winds[link.a],link.tangent_a_to_b)-
-            dot(winds[link.b],link.tangent_b_to_a)
-        );
+        // For a non-divergent horizontal flow v = r x grad(psi), the
+        // signed volume flux across a shared edge is exactly the streamfunction
+        // difference between its oriented endpoints. Using the same edge flux
+        // for both adjacent finite volumes makes constant-density advection
+        // discretely divergence-free at every uniform climate reference level.
+        const double volume_flux_m2_s=
+            prescribed_streamfunction_m2_s(link.edge_end,day)-
+            prescribed_streamfunction_m2_s(link.edge_start,day);
         const double density_a=
             nodes_[link.a].atmospheric_water_m3/nodes_[link.a].area_m2;
         const double density_b=
             nodes_[link.b].atmospheric_water_m3/nodes_[link.b].area_m2;
-        const double advective=velocity>=0.0
-            ? velocity*link.interface_m*seconds*density_a
-            : velocity*link.interface_m*seconds*density_b;
+        const double advective=volume_flux_m2_s>=0.0
+            ? volume_flux_m2_s*seconds*density_a
+            : volume_flux_m2_s*seconds*density_b;
         const double diffusive=
             moisture_diffusivity_m2_s*
             (density_a-density_b)/link.distance_m*
@@ -730,7 +793,7 @@ void ClimateStore::advance(
         const double day=static_cast<double>(world.tick())*dt_days+elapsed;
         update_diagnostics(day);
         advance_energy(substep);
-        advance_moisture(substep);
+        advance_moisture(substep,day);
         remaining-=substep;
         elapsed+=substep;
     }
