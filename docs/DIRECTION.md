@@ -62,54 +62,55 @@ A scripted end-to-end survival scenario must exercise the same commands/state us
 
 1. **Resource Acquisition v1 — COMPLETE (#60).** The walking player queries and gathers authoritative fresh water, food, wood, stone and metal ore into persistent inventory. See `RESOURCE_ACQUISITION.md`.
 2. **Crafting and Tool Use v1 — COMPLETE (#62).** World-gathered wood and stone craft one persistent stone axe; the axe changes authoritative wood gathering from 1 kg to 3 kg per action.
-3. **Shelter and Fire v1 — NEXT (#63).** Consume gathered materials to create a persistent campsite with a basic shelter and controlled fueled heat source.
-4. **Survival Needs v1.** Thirst, hunger and exposure consume the resources/capabilities above; add the smallest renewable food loop needed to sustain one player.
-5. **Solo-survival gate.** Run the complete player-visible loop, close remaining gameplay-blocking gaps, and freeze the survival substrate.
-6. **People and society.** Only then begin population, settlements, production specialization, trade, institutions and related systems.
+3. **Shelter and Fire v1 — COMPLETE (#64).** World-gathered materials create a persistent campsite with a basic shelter and controlled fueled heat source.
+4. **Resource Locality & World Interaction v2 — NEXT (#65).** Replace base-level regional gathering semantics with walking-scale authoritative interaction and make persistent campsites recognizable in the playable world.
+5. **Survival Needs v1.** Thirst, hunger and exposure consume the resources/capabilities above; add the smallest renewable food loop needed to sustain one player.
+6. **Solo-survival gate.** Run the complete player-visible loop, close remaining gameplay-blocking gaps, and freeze the survival substrate.
+7. **People and society.** Only then begin population, settlements, production specialization, trade, institutions and related systems.
 
 This order is a dependency chain, not a commitment to speculative systems beyond the next slice.
 
-## Next major slice: Shelter and Fire v1
+## Next major slice: Resource Locality & World Interaction v2 (#65)
 
 ### Question it must answer
 
-Can the player turn world-gathered materials into a persistent place in the world, and can a controlled heat source consume carried fuel through simulation time without becoming a second wildfire model?
+Can the player walk to a spatially meaningful source or campsite, interact through the authoritative simulation boundary, leave, return and observe the same depleted resource or built structure independent of adaptive simulation LOD?
+
+### Why this slice is required now
+
+Resource Acquisition v1 intentionally proved authority and persistence using a base-level interaction region. That contract is no longer sufficient for a playable survival loop: `interaction_region()` currently resolves resource actions at `SimulationConfig::base_level` (level 4 in the playable composition), while rendered vegetation is decorative and has no resource identity. A raycast against those meshes would therefore only disguise the same regional extraction semantics.
+
+Campsites already use fixed level-16 gameplay identity and authoritative persistent state, but the playable client only exposes the site under the player's current position. A built shelter or campfire needs a non-authoritative visual representation tied back to that persistent identity so the place can be recognized and revisited.
 
 ### Scope
 
-Implement one campsite vertical path rather than a generic construction framework.
+Implement one walking-scale interaction path rather than a generic object or item framework.
 
 The slice must provide:
 
-- fixed gameplay-resolution campsite identity independent of adaptive simulation LOD;
-- one basic shelter built from `6 kg` wood + `2 kg` stone and requiring the existing stone axe;
-- one controlled campfire built from `2 kg` stone;
-- exact carried-wood transfer into campfire fuel;
-- a fixed v1 burn rate of `0.25 kg wood` per simulated hour while lit;
-- automatic extinguishing at zero fuel and no negative fuel state;
-- rejection of duplicate, invalid, underfunded and clearly unsuitable placement requests before mutation;
-- persistent campsite/fuel/lit state through refine/coarsen and snapshot save/load;
-- deterministic continuation for the same seed and commands;
-- Godot interaction and HUD state using the same authoritative C++ path as automated tests.
-
-The natural `ecology.fire_*` fields remain wildfire authority. A controlled campfire must not directly write wildfire active/burned/emission state in this slice.
+- fixed gameplay-resolution resource interaction identity independent of adaptive simulation LOD;
+- local resource availability that represents the gameplay interaction location rather than the complete level-4 source region;
+- exact source debit and inventory credit for every successful gather, preserving the existing no-duplication invariant;
+- persistent local depletion through movement, refine/coarsen and snapshot save/load;
+- deterministic continuation for the same seed and command sequence;
+- coherent renewal semantics for renewable food/wood and permanent depletion semantics for finite stone/ore;
+- visual gatherable proxies only when they deterministically map to authoritative local source state and submit the same C++ gather command used by tests;
+- a persistent Godot representation for built shelter/campfire anchored to authoritative campsite identity, without making scene nodes authoritative;
+- the single `survival_interact` gameplay action as the entry point for contextual actions; do not return to one hotkey per resource/tool/building operation.
 
 ### Explicitly out of scope
 
-Do not add a generic blueprint/building registry, free-placement gizmos, construction stages, durability, repair, storage containers, doors, architectural variants, cooking, smoke/particle simulation, wildfire ignition coupling, survival needs, NPCs, settlements or economy.
+Do not add a generic item database, inventory grid, free-placement construction system, procedural loot, durability, combat, NPCs, settlements, economy, broad natural-world recalibration or a presentation-owned resource system.
 
 ### Definition of Done
 
-Shelter and Fire v1 is done when automated tests and the playable client demonstrate all of the following:
+1. two distinct walking-scale resource locations inside one former level-4 interaction region can be queried independently;
+2. gathering at location A changes A and carried inventory without silently consuming location B's local state;
+3. resource depletion and revisiting survive LOD transitions and snapshot round trips;
+4. water and material transfer accounting still closes exactly at the authoritative boundary;
+5. any visible gatherable maps to the exact authoritative local source it depletes; decorative geometry alone cannot mint material;
+6. a built campsite remains visually identifiable after the player walks away and returns while C++ remains the owner of shelter, fire and fuel state;
+7. Godot exercises the same commands/state as automated tests through `survival_interact`;
+8. existing natural-world, Resource Acquisition, Crafting, Shelter/Fire and determinism tests remain green.
 
-1. starting from empty player state, world resources are gathered, the stone axe is crafted, and one shelter plus one campfire are built without test-only material injection;
-2. construction consumes exactly declared inventory inputs and invalid/duplicate requests leave authoritative state unchanged;
-3. fuel transfer debits carried wood exactly once and credits campfire fuel exactly once, with over-large requests rejected atomically;
-4. a lit campfire consumes `0.25 kg` fuel per simulated hour, extinguishes at zero and never creates negative fuel;
-5. controlled campfire state remains separate from natural wildfire state;
-6. campsite identity/state survives refine/coarsen and snapshot round trips;
-7. same seed plus the same gather/craft/build/fuel/light commands produces the same authoritative continuation;
-8. Godot exercises the same authoritative path and displays shelter/campfire state;
-9. existing Resource Acquisition/Crafting tests, natural-world tests and normal CI stability smoke remain green.
-
-When these conditions pass, stop this slice and move to Survival Needs v1. Do not expand it into later systems.
+When these conditions pass, stop this slice and move to Survival Needs v1. Do not pull needs or society-scale systems into it.
