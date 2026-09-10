@@ -88,18 +88,18 @@ public:
 
 protected:
     static void _bind_methods();
+    void report_error(const char* message) const;
+    std::unique_ptr<worldsim::Simulation> sim_;
+    mutable std::string last_error_;
 
 private:
     void ensure_sim() const;
-    void report_error(const char* message) const;
     [[nodiscard]] std::uint64_t terrain_surface_fingerprint() const;
     [[nodiscard]] std::uint64_t surface_visual_fingerprint() const;
-    std::unique_ptr<worldsim::Simulation> sim_;
     std::unique_ptr<worldsim::TerrainGenerator> terrain_preview_;
     std::int64_t terrain_revision_{1};
     std::int64_t surface_revision_{1};
     mutable std::unordered_map<std::uint64_t,double> terrain_preview_anchor_cache_;
-    mutable std::string last_error_;
 };
 
 } // namespace worldsim::godot_adapter
