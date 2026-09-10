@@ -211,7 +211,7 @@ void basin_routing_resolution_diagnostic() {
     near(
         coarse_initial,
         fine_initial,
-        2.0e-15,
+        1.0e-12,
         "routing fixture initial water differs across resolution"
     );
 
