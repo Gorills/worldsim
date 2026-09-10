@@ -29,6 +29,19 @@ Vec3d find_resource_direction(const Simulation& simulation,ResourceKind kind,dou
     throw std::runtime_error("fixture has no requested resource");
 }
 
+Vec3d find_crafting_direction(const Simulation& simulation,double minimum=10.0) {
+    for (CellId cell:simulation.world().active_cells()) {
+        const Vec3d direction=simulation.world().topology().center_unit(cell);
+        if (
+            resource_availability(simulation,direction,ResourceKind::Wood)>=minimum &&
+            resource_availability(simulation,direction,ResourceKind::Stone)>=minimum
+        ) {
+            return direction;
+        }
+    }
+    throw std::runtime_error("fixture has no wood-and-stone crafting region");
+}
+
 void resource_registration_and_exact_transfer() {
     auto simulation=make_survival_simulation(
         42,SimulationConfig{2,3,3600.0}
@@ -199,17 +212,120 @@ void renewable_resources_recover() {
     check(recovered>depleted,"renewable plant food did not recover through world time");
 }
 
+void crafting_and_tool_use() {
+    auto insufficient=make_survival_simulation(
+        42,SimulationConfig{2,3,3600.0}
+    );
+    bool rejected=false;
+    try {
+        craft_stone_axe(*insufficient);
+    } catch (const std::exception&) {
+        rejected=true;
+    }
+    check(rejected,"crafting without inputs was not rejected");
+    check(!player_has_stone_axe(*insufficient),"failed crafting created a stone axe");
+    near(player_inventory_amount(*insufficient,ResourceKind::Wood),0.0,0.0,"failed crafting mutated wood inventory");
+    near(player_inventory_amount(*insufficient,ResourceKind::Stone),0.0,0.0,"failed crafting mutated stone inventory");
+
+    auto simulation=make_survival_simulation(
+        42,SimulationConfig{2,3,3600.0}
+    );
+    const Vec3d direction=find_crafting_direction(*simulation);
+    const double wood_before=resource_availability(
+        *simulation,direction,ResourceKind::Wood
+    );
+
+    near(
+        gather_resource(*simulation,direction,ResourceKind::Wood),
+        kBareHandWoodGatherKg,0.0,
+        "bare-hand wood gather action has wrong yield"
+    );
+    near(
+        gather_resource(*simulation,direction,ResourceKind::Stone),
+        1.0,0.0,
+        "bare-hand stone gather action has wrong yield"
+    );
+    near(
+        player_inventory_amount(*simulation,ResourceKind::Wood),
+        kStoneAxeWoodCostKg,1e-12,
+        "gathered wood input missing"
+    );
+    near(
+        player_inventory_amount(*simulation,ResourceKind::Stone),
+        kStoneAxeStoneCostKg,1e-12,
+        "gathered stone input missing"
+    );
+
+    craft_stone_axe(*simulation);
+    check(player_has_stone_axe(*simulation),"stone axe was not created");
+    near(player_inventory_amount(*simulation,ResourceKind::Wood),0.0,1e-12,"stone axe did not consume exact wood cost");
+    near(player_inventory_amount(*simulation,ResourceKind::Stone),0.0,1e-12,"stone axe did not consume exact stone cost");
+
+    const double source_after_craft=resource_availability(
+        *simulation,direction,ResourceKind::Wood
+    );
+    near(source_after_craft,wood_before-kBareHandWoodGatherKg,1e-12,"crafting unexpectedly changed world wood source");
+
+    const auto crafted_snapshot=simulation->save_snapshot();
+    near(
+        gather_resource(*simulation,direction,ResourceKind::Wood),
+        kStoneAxeWoodGatherKg,0.0,
+        "stone axe did not change authoritative wood gather yield"
+    );
+    near(
+        resource_availability(*simulation,direction,ResourceKind::Wood),
+        source_after_craft-kStoneAxeWoodGatherKg,1e-12,
+        "stone axe gather did not debit exact world wood"
+    );
+    near(
+        player_inventory_amount(*simulation,ResourceKind::Wood),
+        kStoneAxeWoodGatherKg,1e-12,
+        "stone axe gather did not credit exact wood inventory"
+    );
+
+    simulation->load_snapshot(crafted_snapshot);
+    check(player_has_stone_axe(*simulation),"snapshot did not restore stone axe state");
+    near(resource_availability(*simulation,direction,ResourceKind::Wood),source_after_craft,1e-12,"snapshot did not restore pre-gather wood source");
+    near(player_inventory_amount(*simulation,ResourceKind::Wood),0.0,1e-12,"snapshot did not restore crafted inventory state");
+
+    const double wood_inventory_before_duplicate=player_inventory_amount(
+        *simulation,ResourceKind::Wood
+    );
+    const double stone_inventory_before_duplicate=player_inventory_amount(
+        *simulation,ResourceKind::Stone
+    );
+    rejected=false;
+    try {
+        craft_stone_axe(*simulation);
+    } catch (const std::exception&) {
+        rejected=true;
+    }
+    check(rejected,"duplicate stone axe craft was not rejected");
+    check(player_has_stone_axe(*simulation),"duplicate craft removed existing stone axe");
+    near(player_inventory_amount(*simulation,ResourceKind::Wood),wood_inventory_before_duplicate,1e-12,"duplicate craft mutated wood inventory");
+    near(player_inventory_amount(*simulation,ResourceKind::Stone),stone_inventory_before_duplicate,1e-12,"duplicate craft mutated stone inventory");
+
+    simulation->set_focus(direction);
+    simulation->step(1);
+    check(player_has_stone_axe(*simulation),"refinement changed non-spatial tool state");
+    simulation->clear_focus();
+    simulation->step(1);
+    check(player_has_stone_axe(*simulation),"coarsening changed non-spatial tool state");
+}
+
 void deterministic_player_commands() {
     auto a=make_survival_simulation(123,SimulationConfig{2,3,3600.0});
     auto b=make_survival_simulation(123,SimulationConfig{2,3,3600.0});
-    const Vec3d direction=find_resource_direction(*a,ResourceKind::Stone,5.0);
-    (void)collect_resource(*a,direction,ResourceKind::Stone,2.0);
-    (void)collect_resource(*b,direction,ResourceKind::Stone,2.0);
-    a->set_focus(direction);
-    b->set_focus(direction);
-    a->step(25);
-    b->step(25);
-    check(a->save_snapshot()==b->save_snapshot(),"same resource commands did not continue deterministically");
+    const Vec3d direction=find_crafting_direction(*a);
+    for (Simulation* simulation:{a.get(),b.get()}) {
+        (void)gather_resource(*simulation,direction,ResourceKind::Wood);
+        (void)gather_resource(*simulation,direction,ResourceKind::Stone);
+        craft_stone_axe(*simulation);
+        (void)gather_resource(*simulation,direction,ResourceKind::Wood);
+        simulation->set_focus(direction);
+        simulation->step(25);
+    }
+    check(a->save_snapshot()==b->save_snapshot(),"same gather/craft commands did not continue deterministically");
 }
 
 } // namespace
@@ -220,11 +336,12 @@ int main() {
         water_transfer_uses_hydrology();
         resource_lod_and_snapshot_semantics();
         renewable_resources_recover();
+        crafting_and_tool_use();
         deterministic_player_commands();
-        std::cout << "resource acquisition tests passed\n";
+        std::cout << "resource acquisition and crafting tests passed\n";
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "resource acquisition test failure: " << error.what() << '\n';
+        std::cerr << "resource acquisition/crafting test failure: " << error.what() << '\n';
         return 1;
     }
 }
