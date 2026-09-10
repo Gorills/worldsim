@@ -51,6 +51,7 @@ endif()
 add_library(worldsim_godot SHARED
   src/register_types.cpp
   src/world_simulation_node.cpp
+  src/survival_simulation_node.cpp
 )
 target_link_libraries(worldsim_godot PRIVATE worldsim godot-cpp)
 target_include_directories(worldsim_godot PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

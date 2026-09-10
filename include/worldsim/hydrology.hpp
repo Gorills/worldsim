@@ -22,6 +22,8 @@ struct WaterBudget {
     double ocean_export_m3{};
 };
 
+class ResourceAccess;
+
 // Persistent reference-grid reservoirs. Active-cover fields are projections of
 // this graph; focus refinement never destroys a lake sill or changes its links.
 class HydrologyStore final : public IStateStore {
@@ -67,6 +69,7 @@ public:
 
 private:
     friend class HydrologySystem;
+    friend class ResourceAccess;
     struct Link { std::size_t a{},b{}; double travel_days{}; };
     void rebuild_graph();
     void rebuild_drainage();

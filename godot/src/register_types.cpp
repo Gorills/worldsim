@@ -1,4 +1,5 @@
 #include "world_simulation_node.hpp"
+#include "survival_simulation_node.hpp"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/class_db.hpp>
@@ -10,6 +11,7 @@ using namespace godot;
 static void initialize_worldsim(ModuleInitializationLevel level) {
     if (level!=MODULE_INITIALIZATION_LEVEL_SCENE) return;
     GDREGISTER_CLASS(worldsim::godot_adapter::WorldSimulationNode);
+    GDREGISTER_CLASS(worldsim::godot_adapter::SurvivalSimulationNode);
 }
 
 static void uninitialize_worldsim(ModuleInitializationLevel level) {

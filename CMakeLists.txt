@@ -24,6 +24,7 @@ add_library(worldsim
     src/state.cpp
     src/simulation.cpp
     src/modules.cpp
+    src/resources.cpp
 )
 add_library(worldsim::worldsim ALIAS worldsim)
 target_include_directories(worldsim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -114,6 +115,11 @@ if(WORLDSIM_BUILD_TESTS)
   target_link_libraries(worldsim_nitrogen_tests PRIVATE worldsim)
   worldsim_enable_warnings(worldsim_nitrogen_tests)
   add_test(NAME worldsim_nitrogen_tests COMMAND worldsim_nitrogen_tests)
+
+  add_executable(worldsim_resources_tests tests/resources_tests.cpp)
+  target_link_libraries(worldsim_resources_tests PRIVATE worldsim)
+  worldsim_enable_warnings(worldsim_resources_tests)
+  add_test(NAME worldsim_resources_tests COMMAND worldsim_resources_tests)
 
   add_executable(worldsim_sanitizer_smoke tests/sanitizer_smoke.cpp)
   target_link_libraries(worldsim_sanitizer_smoke PRIVATE worldsim)

@@ -136,6 +136,7 @@ jobs:
           # is the runtime smoke script below.
           timeout 30 "$GODOT" --headless --path godot/project --import >/dev/null 2>&1 || true
           timeout 60 "$GODOT" --headless --path godot/project --script res://ci_smoke.gd
+          timeout 60 "$GODOT" --headless --path godot/project --script res://ci_resource_acquisition.gd
           # Parse and run the actual viewer scene as well. This covers GDScript,
           # Theme resources, InputMap-backed startup and gettext catalog loading.
           timeout 60 "$GODOT" --headless --path godot/project --language ru --scene res://main.tscn --quit-after 2
