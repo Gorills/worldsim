@@ -2484,6 +2484,80 @@ void test_geography_land_area_is_resolution_consistent() {
     );
 }
 
+double maximum_land_fraction_restriction_error(
+    std::uint64_t seed,
+    std::uint8_t coarse_level
+) {
+    SimulationConfig coarse_cfg;
+    coarse_cfg.base_level=coarse_level;
+    coarse_cfg.max_level=coarse_level;
+    coarse_cfg.tick_seconds=3600.0;
+    auto coarse=make_terrain_simulation(seed,coarse_cfg);
+
+    SimulationConfig reference_cfg;
+    reference_cfg.base_level=4;
+    reference_cfg.max_level=4;
+    reference_cfg.tick_seconds=3600.0;
+    auto reference=make_terrain_simulation(seed,reference_cfg);
+
+    const auto coarse_land=*coarse->fields().find("geography.land_fraction");
+    const auto reference_land=
+        *reference->fields().find("geography.land_fraction");
+    const auto& coarse_fields=
+        coarse->world().stores().get<FieldStore>();
+    const auto& reference_fields=
+        reference->world().stores().get<FieldStore>();
+
+    struct Aggregate {
+        double land_area_m2{};
+        double area_m2{};
+    };
+    std::map<CellId,Aggregate> aggregates;
+    for (CellId sample:reference->world().active_cells()) {
+        CellId region=sample;
+        while (region.level()>coarse_level)
+            region=region.parent();
+        const double area=
+            reference->world().topology().area_m2(sample);
+        Aggregate& aggregate=aggregates[region];
+        aggregate.area_m2+=area;
+        aggregate.land_area_m2+=
+            area*reference_fields.get(sample,reference_land);
+    }
+
+    double maximum_error=0.0;
+    for (CellId cell:coarse->world().active_cells()) {
+        const Aggregate& aggregate=aggregates.at(cell);
+        const double expected=
+            aggregate.land_area_m2/std::max(1.0,aggregate.area_m2);
+        maximum_error=std::max(
+            maximum_error,
+            std::abs(coarse_fields.get(cell,coarse_land)-expected)
+        );
+    }
+    return maximum_error;
+}
+
+void test_geography_coastal_reference_restricts_level4_land_fraction() {
+    double maximum_error=0.0;
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        for (std::uint8_t level:{std::uint8_t{2},std::uint8_t{3}}) {
+            const double error=
+                maximum_land_fraction_restriction_error(seed,level);
+            maximum_error=std::max(maximum_error,error);
+            std::cerr
+                <<"coastal reference restriction diagnostic: seed="<<seed
+                <<" level="<<static_cast<unsigned>(level)
+                <<" max_land_fraction_error="<<error
+                <<'\n';
+        }
+    }
+    check(
+        maximum_error<1.0e-10,
+        "coarse coastal land fraction is not the level-4 area restriction"
+    );
+}
+
 void test_geography_coastal_area_survives_focus_refinement() {
     SimulationConfig cfg;
     cfg.base_level=2;
@@ -2637,6 +2711,7 @@ int main() {
         test_geology_mixed_margin_uses_both_crust_sides();
         test_geology_drainage_accumulation();
         test_geography_land_area_is_resolution_consistent();
+        test_geography_coastal_reference_restricts_level4_land_fraction();
         test_geography_coastal_area_survives_focus_refinement();
         test_geography_refinement_preserves_geology_state();
         test_c_api();
