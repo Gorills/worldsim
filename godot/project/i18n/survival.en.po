@@ -1,0 +1,175 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: WorldSim\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "SURVIVAL_CONTROLS"
+msgstr "WASD: move    Mouse: look    Space: jump/up    E: actions    F: walk/survey flight\nFlight: Q down    Wheel: speed    Shift: 4x boost    Esc: release/capture mouse"
+
+msgid "SURVIVAL_RESOURCE_FRESH_WATER"
+msgstr "Fresh water"
+
+msgid "SURVIVAL_RESOURCE_PLANT_FOOD"
+msgstr "Plant food"
+
+msgid "SURVIVAL_RESOURCE_WOOD"
+msgstr "Wood"
+
+msgid "SURVIVAL_RESOURCE_STONE"
+msgstr "Stone"
+
+msgid "SURVIVAL_RESOURCE_METAL_ORE"
+msgstr "Metal ore"
+
+msgid "SURVIVAL_HUD_REGIONAL"
+msgstr "Regional stock (prototype): %s"
+
+msgid "SURVIVAL_HUD_CARRIED"
+msgstr "Carried: %s"
+
+msgid "SURVIVAL_HUD_TOOL"
+msgstr "Tool: stone axe — %s"
+
+msgid "SURVIVAL_HUD_SITE"
+msgstr "Current campsite spot: suitable %s    shelter %s    campfire %s    fuel %.2f kg"
+
+msgid "SURVIVAL_HUD_INTERACT"
+msgstr "[E] Actions — gather, craft, campsite"
+
+msgid "SURVIVAL_HUD_REGIONAL_NOTE"
+msgstr "Prototype limitation: gathering uses the regional authoritative stock shown above; visible trees and rocks are not interaction targets yet."
+
+msgid "SURVIVAL_STATE_YES"
+msgstr "yes"
+
+msgid "SURVIVAL_STATE_NO"
+msgstr "no"
+
+msgid "SURVIVAL_STATE_OWNED"
+msgstr "owned"
+
+msgid "SURVIVAL_STATE_NOT_CRAFTED"
+msgstr "not crafted"
+
+msgid "SURVIVAL_STATE_BUILT"
+msgstr "built"
+
+msgid "SURVIVAL_STATE_MISSING"
+msgstr "missing"
+
+msgid "SURVIVAL_STATE_LIT"
+msgstr "lit"
+
+msgid "SURVIVAL_STATE_UNLIT"
+msgstr "unlit"
+
+msgid "SURVIVAL_MENU_TITLE"
+msgstr "Survival actions"
+
+msgid "SURVIVAL_MENU_GATHER"
+msgstr "Gather from current region"
+
+msgid "SURVIVAL_MENU_CRAFT"
+msgstr "Craft"
+
+msgid "SURVIVAL_MENU_CAMPSITE"
+msgstr "Campsite"
+
+msgid "SURVIVAL_ACTION_GATHER"
+msgstr "Gather %s — stock %.2f %s"
+
+msgid "SURVIVAL_ACTION_CRAFT_AXE"
+msgstr "Craft stone axe — 1 kg wood + 1 kg stone"
+
+msgid "SURVIVAL_ACTION_AXE_OWNED"
+msgstr "Stone axe — already crafted"
+
+msgid "SURVIVAL_ACTION_BUILD_SHELTER"
+msgstr "Build basic shelter — 6 kg wood + 2 kg stone, stone axe required"
+
+msgid "SURVIVAL_ACTION_SHELTER_BUILT"
+msgstr "Basic shelter — built"
+
+msgid "SURVIVAL_ACTION_BUILD_CAMPFIRE"
+msgstr "Build campfire — 2 kg stone"
+
+msgid "SURVIVAL_ACTION_CAMPFIRE_BUILT"
+msgstr "Campfire — built"
+
+msgid "SURVIVAL_ACTION_ADD_FUEL"
+msgstr "Add 1 kg wood to campfire"
+
+msgid "SURVIVAL_ACTION_LIGHT_FIRE"
+msgstr "Light campfire"
+
+msgid "SURVIVAL_ACTION_EXTINGUISH_FIRE"
+msgstr "Extinguish campfire"
+
+msgid "SURVIVAL_RESULT_GATHERED"
+msgstr "Gathered %.2f %s %s"
+
+msgid "SURVIVAL_RESULT_AXE"
+msgstr "Crafted stone axe"
+
+msgid "SURVIVAL_RESULT_SHELTER"
+msgstr "Built basic shelter"
+
+msgid "SURVIVAL_RESULT_CAMPFIRE"
+msgstr "Built campfire"
+
+msgid "SURVIVAL_RESULT_FUEL"
+msgstr "Added 1 kg wood to campfire"
+
+msgid "SURVIVAL_RESULT_FIRE_LIT"
+msgstr "Campfire lit"
+
+msgid "SURVIVAL_RESULT_FIRE_OUT"
+msgstr "Campfire extinguished"
+
+msgid "SURVIVAL_ERROR_SIM_UNAVAILABLE"
+msgstr "Survival simulation unavailable"
+
+msgid "SURVIVAL_ERROR_RESOURCE_UNAVAILABLE"
+msgstr "This resource is unavailable in the current region"
+
+msgid "SURVIVAL_ERROR_AXE_MATERIALS"
+msgstr "Not enough materials for a stone axe"
+
+msgid "SURVIVAL_ERROR_AXE_DUP"
+msgstr "Stone axe is already crafted"
+
+msgid "SURVIVAL_ERROR_SITE"
+msgstr "A campsite requires non-flooded land"
+
+msgid "SURVIVAL_ERROR_SHELTER_DUP"
+msgstr "A basic shelter already exists at this campsite"
+
+msgid "SURVIVAL_ERROR_SHELTER_AXE"
+msgstr "A basic shelter requires a stone axe"
+
+msgid "SURVIVAL_ERROR_SHELTER_MATERIALS"
+msgstr "Not enough materials for a basic shelter"
+
+msgid "SURVIVAL_ERROR_FIRE_DUP"
+msgstr "A campfire already exists at this campsite"
+
+msgid "SURVIVAL_ERROR_FIRE_STONE"
+msgstr "Not enough stone for a campfire"
+
+msgid "SURVIVAL_ERROR_FIRE_MISSING"
+msgstr "There is no campfire at this campsite"
+
+msgid "SURVIVAL_ERROR_FIRE_WOOD"
+msgstr "Not enough carried wood for campfire fuel"
+
+msgid "SURVIVAL_ERROR_FIRE_NO_FUEL"
+msgstr "The campfire has no fuel"
+
+msgid "SURVIVAL_ERROR_STATE"
+msgstr "Survival state unavailable: %s"
+
+msgid "SURVIVAL_ERROR_GENERIC"
+msgstr "Action failed: %s"
