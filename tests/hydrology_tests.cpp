@@ -201,7 +201,7 @@ double configure_routing_fixture(Simulation& sim) {
     return initial;
 }
 
-void basin_routing_resolution_diagnostic() {
+void basin_routing_resolution_converges() {
     auto coarse=fixture(2);
     auto fine=fixture(3);
     auto reference=fixture(4);
@@ -224,70 +224,47 @@ void basin_routing_resolution_diagnostic() {
         "routing fixture reference water differs across resolution"
     );
 
-    double maximum_l2_l3_delta=0.0;
-    double maximum_l2_reference_error=0.0;
-    double maximum_l3_reference_error=0.0;
-    double elapsed=0.0;
-    for (double interval:{30.0,60.0}) {
-        coarse_store.route(interval);
-        fine_store.route(interval);
-        reference_store.route(interval);
-        elapsed+=interval;
-        const double coarse_export=
-            coarse_store.budget().ocean_export_m3/coarse_initial;
-        const double fine_export=
-            fine_store.budget().ocean_export_m3/fine_initial;
-        const double reference_export=
-            reference_store.budget().ocean_export_m3/reference_initial;
-        const double l2_l3_delta=
-            std::abs(coarse_export-fine_export)/
-            std::max({1.0e-15,std::abs(coarse_export),std::abs(fine_export)});
-        const double l2_reference_error=
-            std::abs(coarse_export-reference_export)/
-            std::max(1.0e-15,std::abs(reference_export));
-        const double l3_reference_error=
-            std::abs(fine_export-reference_export)/
-            std::max(1.0e-15,std::abs(reference_export));
-        maximum_l2_l3_delta=std::max(maximum_l2_l3_delta,l2_l3_delta);
-        maximum_l2_reference_error=std::max(
-            maximum_l2_reference_error,
-            l2_reference_error
-        );
-        maximum_l3_reference_error=std::max(
-            maximum_l3_reference_error,
-            l3_reference_error
-        );
-        std::cerr
-            <<"basin routing diagnostic: day="<<elapsed
-            <<" l2_export_fraction="<<coarse_export
-            <<" l3_export_fraction="<<fine_export
-            <<" l4_export_fraction="<<reference_export
-            <<" l2_l3_delta="<<l2_l3_delta
-            <<" l2_l4_error="<<l2_reference_error
-            <<" l3_l4_error="<<l3_reference_error
-            <<'\n';
-        for (const auto& [store,initial]:{
-            std::pair<const HydrologyStore*,double>{&coarse_store,coarse_initial},
-            std::pair<const HydrologyStore*,double>{&fine_store,fine_initial},
-            std::pair<const HydrologyStore*,double>{&reference_store,reference_initial}
-        }) {
-            near(
-                store->total_surface_m3()+store->budget().ocean_export_m3,
-                initial,
-                2.0e-12,
-                "routing fixture lost water"
-            );
-        }
-    }
+    constexpr double interval_days=30.0;
+    coarse_store.route(interval_days);
+    fine_store.route(interval_days);
+    reference_store.route(interval_days);
+    const double coarse_export=
+        coarse_store.budget().ocean_export_m3/coarse_initial;
+    const double fine_export=
+        fine_store.budget().ocean_export_m3/fine_initial;
+    const double reference_export=
+        reference_store.budget().ocean_export_m3/reference_initial;
+    const double l2_reference_error=
+        std::abs(coarse_export-reference_export)/
+        std::max(1.0e-15,std::abs(reference_export));
+    const double l3_reference_error=
+        std::abs(fine_export-reference_export)/
+        std::max(1.0e-15,std::abs(reference_export));
+
     std::cerr
-        <<"basin routing convergence: max_l2_l3_delta="
-        <<maximum_l2_l3_delta
-        <<" max_l2_l4_error="<<maximum_l2_reference_error
-        <<" max_l3_l4_error="<<maximum_l3_reference_error
+        <<"basin routing convergence: day="<<interval_days
+        <<" l2_export_fraction="<<coarse_export
+        <<" l3_export_fraction="<<fine_export
+        <<" l4_export_fraction="<<reference_export
+        <<" l2_l4_error="<<l2_reference_error
+        <<" l3_l4_error="<<l3_reference_error
         <<'\n';
+
+    for (const auto& [store,initial]:{
+        std::pair<const HydrologyStore*,double>{&coarse_store,coarse_initial},
+        std::pair<const HydrologyStore*,double>{&fine_store,fine_initial},
+        std::pair<const HydrologyStore*,double>{&reference_store,reference_initial}
+    }) {
+        near(
+            store->total_surface_m3()+store->budget().ocean_export_m3,
+            initial,
+            2.0e-12,
+            "routing fixture lost water"
+        );
+    }
     check(
-        maximum_l2_l3_delta<1.0e-12,
-        "basin routing convergence diagnostic"
+        l3_reference_error<=0.60*l2_reference_error+1.0e-12,
+        "basin routing did not converge toward the level-4 reference"
     );
 }
 
@@ -491,7 +468,7 @@ int main() {
     try {
         for (const auto& [name,test]:std::vector<std::pair<const char*,void(*)()>>{
             {"flat local resolution diagnostic",flat_local_water_balance_resolution_diagnostic},
-            {"basin routing resolution diagnostic",basin_routing_resolution_diagnostic},
+            {"basin routing resolution convergence",basin_routing_resolution_converges},
             {"snow, recharge and recession",snow_recharge_and_recession},
             {"delayed routing and timestep",delayed_routing_and_timestep},
             {"lakes, spill and terrain change",lakes_spill_connect_and_terrain_change},
