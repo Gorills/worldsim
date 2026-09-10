@@ -295,6 +295,51 @@ the combined snapshot epoch advances from 36 to 37 despite unchanged binary
 field/store layouts. A fresh 100-year multi-seed matrix is still not claimed by
 this slice.
 
+### Spatial-ecology face-geometry correction — 2026-09-10
+
+After the climate, hydrology, coastline and stochastic-ignition corrections,
+three remaining cross-cell ecology processes still interpreted an adaptive
+neighboring hierarchy region as a cell hop rather than as a physical
+interface. A controlled regression represented the same pair of level-2
+physical regions directly at level 2 and by their level-3 children. Before any
+production change, the one-step aggregates diverged by nearly the same factor:
+
+- grass recruitment: L2 110,986,269.77 kg versus L3 59,902,690.55 kg,
+  **46.03%**;
+- herbivore arrival: L2 17.898112 versus L3 9.660160 individuals,
+  **46.03%**;
+- source-driven active fire area: L2 44,375,746,173.55 m2 versus
+  L3 24,002,740,987.74 m2, **45.91%**.
+
+The common failure was spatial semantics, not three independent ecological
+parameters. `active_neighbors4()` intentionally resolves a hierarchy region
+with area-allocation weights; those weights do not describe the length of the
+shared face. Flora establishment, fire spread and fauna movement now use a
+separate `active_face_neighbors4()` contract that returns only physically
+touching active leaves plus their spherical interface lengths.
+
+Each process retains its former uniform level-4 calibration by converting
+interface length through a fixed level-4 reference face depth. Coarser or
+refined covers integrate that same physical support instead of changing the
+process merely because cell size changed. The retained controlled regressions
+require the level-2/level-3 aggregate discrepancy to remain below 5%. Mixed-LOD
+tests additionally cover cube-face seams, unbalanced refinement deeper than one
+level and cache invalidation after cover changes.
+
+The new face-neighborhood geometry is derived state, not snapshot state. It is
+cached only for the current active cover and discarded on refine/coarsen,
+matching the separation between adaptive topology and derived mesh-neighborhood
+data used by AMR systems such as p4est:
+https://p4est.github.io/p4est-howto.pdf. Fauna keeps the existing
+habitat-selection model; the movement-geometry factor only separates movement
+capacity from destination quality, consistent with the movement/resource
+selection separation described by Avgar et al. (2016):
+https://doi.org/10.1111/2041-210X.12528.
+
+Because identical saved state now resumes under different deterministic spatial
+process semantics, the combined snapshot compatibility epoch advances from 38
+to 39. A fresh 100-year multi-seed matrix is not claimed by this bounded slice.
+
 ## Failures found and model changes
 
 The original initialization assigned up to a 4 kgC/m2 biomass scale before the
