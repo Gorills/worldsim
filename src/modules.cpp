@@ -34,18 +34,49 @@ double reference_face_depth_m(
     CellId cell,
     std::size_t side
 ) {
-    const CellId reference=topology.from_direction(
-        topology.center_unit(cell),
-        spatial_process_reference_level
-    );
-    const CellId neighbor=topology.neighbors4(reference).at(side);
-    const double interface_length=
-        topology.shared_boundary_length_m(reference,neighbor);
-    if (!(interface_length>0.0))
-        throw std::runtime_error(
-            "spatial reference face has zero interface length"
+    if (cell.level()>spatial_process_reference_level) {
+        const CellId reference=topology.from_direction(
+            topology.center_unit(cell),
+            spatial_process_reference_level
         );
-    return topology.area_m2(reference)/interface_length;
+        const CellId neighbor=topology.neighbors4(reference).at(side);
+        const double interface_length=
+            topology.shared_boundary_length_m(reference,neighbor);
+        if (!(interface_length>0.0))
+            throw std::runtime_error(
+                "spatial reference face has zero interface length"
+            );
+        return topology.area_m2(reference)/interface_length;
+    }
+
+    const CellId boundary_region=topology.neighbors4(cell).at(side);
+    std::vector<CellId> pending{cell};
+    double reference_support_area=0.0;
+    double reference_interface_length=0.0;
+    while (!pending.empty()) {
+        const CellId candidate=pending.back();
+        pending.pop_back();
+        const double interface_length=
+            topology.shared_boundary_length_m(
+                candidate,
+                boundary_region
+            );
+        if (!(interface_length>1.0e-6)) continue;
+        if (candidate.level()==spatial_process_reference_level) {
+            reference_support_area+=topology.area_m2(candidate);
+            reference_interface_length+=interface_length;
+            continue;
+        }
+        const auto children=candidate.children();
+        pending.insert(
+            pending.end(),children.begin(),children.end()
+        );
+    }
+    if (!(reference_interface_length>0.0))
+        throw std::runtime_error(
+            "spatial reference face has zero integrated interface length"
+        );
+    return reference_support_area/reference_interface_length;
 }
 
 struct GeologyFieldIds {
