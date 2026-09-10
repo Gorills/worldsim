@@ -1,6 +1,6 @@
 #pragma once
 
-#include "worldsim/simulation.hpp"
+#include "worldsim/climate.hpp"
 
 #include <array>
 #include <cstdint>
@@ -87,5 +87,17 @@ double collect_resource(
     const Simulation& simulation,
     ResourceKind kind
 );
+
+// Natural diagnostics deliberately exclude gameplay inventory. Survival-level
+// water accounting includes carried fresh water as a physical stock.
+[[nodiscard]] inline double total_survival_planet_water_m3(
+    const Simulation& simulation
+) {
+    return total_planet_water_m3(
+        simulation.world(),simulation.fields()
+    )+player_inventory_amount(
+        simulation,ResourceKind::FreshWater
+    )/1000.0;
+}
 
 } // namespace worldsim
