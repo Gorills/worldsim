@@ -74,6 +74,19 @@ std::unique_ptr<Simulation> climate_fixture(
     return simulation;
 }
 
+class StaticGeographyFixtureModule final : public ISimModule {
+public:
+    std::string_view id() const override {
+        return "fixture.static_geography";
+    }
+    void register_fields(FieldRegistry& r) override {
+        GeographyModule().register_fields(r);
+    }
+    void initialize(WorldState& world, const FieldRegistry& r) override {
+        GeographyModule().initialize(world,r);
+    }
+};
+
 std::unique_ptr<Simulation> geography_climate_fixture(
     std::uint64_t seed,
     std::uint8_t level
@@ -81,7 +94,13 @@ std::unique_ptr<Simulation> geography_climate_fixture(
     auto simulation=std::make_unique<Simulation>(
         seed,SimulationConfig{level,level,86'400.0}
     );
-    simulation->add_module(std::make_unique<GeographyModule>());
+    // Use the production geography initializer but intentionally omit the
+    // geology evolution system. This fixture measures climate discretization
+    // over the same heterogeneous terrain rather than a coupled
+    // climate-geology feedback loop.
+    simulation->add_module(
+        std::make_unique<StaticGeographyFixtureModule>()
+    );
     simulation->add_module(std::make_unique<ClimateModule>());
     simulation->build();
     return simulation;
