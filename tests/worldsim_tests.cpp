@@ -156,7 +156,23 @@ void test_cube_sphere() {
     for (CellId c:cells) {
         check(c.valid(),"invalid uniform cell");
         area+=topo.area_m2(c);
-        for (CellId n:topo.neighbors4(c)) check(n.valid() && n.level()==c.level(),"invalid neighbor");
+        for (CellId n:topo.neighbors4(c)) {
+            check(
+                n.valid() && n.level()==c.level(),
+                "invalid neighbor"
+            );
+            const double shared=topo.shared_boundary_length_m(c,n);
+            check(
+                std::isfinite(shared) && shared>0.0,
+                "topological neighbor has no physical shared boundary"
+            );
+            near(
+                shared,
+                topo.shared_boundary_length_m(n,c),
+                1.0e-12,
+                "shared boundary length is not symmetric"
+            );
+        }
     }
     near(area,4.0*kPi*kEarthRadiusM*kEarthRadiusM,1e-12,"cube-sphere area does not close");
 }
@@ -230,6 +246,32 @@ void test_adaptive_cover_resolution() {
         );
     }
 
+    const auto fine_face_sides=
+        fine_neighbor_world.active_face_neighbors4(source);
+    check(
+        fine_face_sides[1].size()==2U,
+        "face-neighbor query included refined cells away from interface"
+    );
+    const double coarse_interface_length=
+        fine_neighbor_world.topology().shared_boundary_length_m(
+            source,right
+        );
+    double refined_interface_length=0.0;
+    for (const ActiveFacePart& part:fine_face_sides[1]) {
+        check(
+            part.cell.parent()==right &&
+            part.interface_length_m>0.0,
+            "face-neighbor query returned invalid refined interface part"
+        );
+        refined_interface_length+=part.interface_length_m;
+    }
+    near(
+        refined_interface_length,
+        coarse_interface_length,
+        1.0e-12,
+        "refined face parts do not reconstruct coarse interface length"
+    );
+
     WorldState coarse_neighbor_world(8);
     coarse_neighbor_world.initialize_cover(1);
     coarse_neighbor_world.refine(source);
@@ -250,6 +292,14 @@ void test_adaptive_cover_resolution() {
         1.0,
         1.0e-15,
         "coarse ancestor did not represent full neighboring region"
+    );
+    const auto coarse_face_sides=
+        coarse_neighbor_world.active_face_neighbors4(fine_source);
+    check(
+        coarse_face_sides[1].size()==1U &&
+        coarse_face_sides[1][0].cell==right &&
+        coarse_face_sides[1][0].interface_length_m>0.0,
+        "fine source did not resolve physical face to coarse ancestor"
     );
 }
 
