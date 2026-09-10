@@ -84,6 +84,7 @@ void water_transfer_uses_hydrology() {
     );
     check(before>=2000.0,"controlled surface-water source not visible to resource query");
     const double hydrology_before=hydrology.total_surface_m3();
+    const double survival_water_before=total_survival_planet_water_m3(*simulation);
     near(
         collect_resource(
             *simulation,direction,ResourceKind::FreshWater,1.0
@@ -102,6 +103,12 @@ void water_transfer_uses_hydrology() {
         1.0,
         1e-12,
         "fresh-water inventory did not receive one liter"
+    );
+    near(
+        total_survival_planet_water_m3(*simulation),
+        survival_water_before,
+        1e-13,
+        "fresh-water collection changed player-plus-world water inventory"
     );
 }
 
