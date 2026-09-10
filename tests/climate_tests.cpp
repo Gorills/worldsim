@@ -531,6 +531,85 @@ void flat_moisture_transport_resolution_diagnostic() {
     );
 }
 
+struct GeographyClimatePrecipitation {
+    double total_precipitation_m3{};
+    double land_precipitation_m3{};
+    double land_area_m2{};
+};
+
+GeographyClimatePrecipitation geography_climate_precipitation(
+    std::uint64_t seed,
+    std::uint8_t level
+) {
+    auto simulation=geography_climate_fixture(seed,level);
+    const auto& initial_store=
+        simulation->world().stores().get<ClimateStore>();
+    double land_area=0.0;
+    for (const ClimateNode& node:initial_store.nodes())
+        land_area+=node.land_area_m2;
+    simulation->step(365);
+    const ClimateBudget& budget=
+        simulation->world().stores().get<ClimateStore>().budget();
+    return {
+        budget.land_precipitation_m3+budget.ocean_precipitation_m3,
+        budget.land_precipitation_m3,
+        land_area
+    };
+}
+
+void real_geography_precipitation_resolution_diagnostic() {
+    double maximum_total_delta=0.0;
+    double maximum_land_delta=0.0;
+    double maximum_land_area_delta=0.0;
+    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
+        const GeographyClimatePrecipitation coarse=
+            geography_climate_precipitation(seed,2);
+        const GeographyClimatePrecipitation fine=
+            geography_climate_precipitation(seed,3);
+        const auto relative_delta=[](double a,double b) {
+            return std::abs(a-b)/std::max({1.0,std::abs(a),std::abs(b)});
+        };
+        const double total_delta=relative_delta(
+            coarse.total_precipitation_m3,
+            fine.total_precipitation_m3
+        );
+        const double land_delta=relative_delta(
+            coarse.land_precipitation_m3,
+            fine.land_precipitation_m3
+        );
+        const double land_area_delta=relative_delta(
+            coarse.land_area_m2,
+            fine.land_area_m2
+        );
+        maximum_total_delta=std::max(maximum_total_delta,total_delta);
+        maximum_land_delta=std::max(maximum_land_delta,land_delta);
+        maximum_land_area_delta=std::max(
+            maximum_land_area_delta,
+            land_area_delta
+        );
+        std::cerr
+            <<"real geography climate diagnostic: seed="<<seed
+            <<" total_precip_delta="<<total_delta
+            <<" land_precip_delta="<<land_delta
+            <<" land_area_delta="<<land_area_delta
+            <<" l2_total_precip_m3="<<coarse.total_precipitation_m3
+            <<" l3_total_precip_m3="<<fine.total_precipitation_m3
+            <<" l2_land_precip_m3="<<coarse.land_precipitation_m3
+            <<" l3_land_precip_m3="<<fine.land_precipitation_m3
+            <<'\n';
+    }
+    std::cerr
+        <<"real geography climate maxima: total_precip_delta="
+        <<maximum_total_delta
+        <<" land_precip_delta="<<maximum_land_delta
+        <<" land_area_delta="<<maximum_land_area_delta
+        <<'\n';
+    check(
+        maximum_total_delta<1.0e-12 && maximum_land_delta<1.0e-12,
+        "real-geography climate precipitation resolution diagnostic"
+    );
+}
+
 void horizontal_heat_transport_is_resolution_consistent() {
     const double error=flat_surface_l2_l3_temperature_mae_k();
     check(
@@ -862,6 +941,7 @@ int main() {
         snow_burial_suppresses_short_vegetation();
         horizontal_heat_transport_is_resolution_consistent();
         flat_moisture_transport_resolution_diagnostic();
+        real_geography_precipitation_resolution_diagnostic();
         orographic_precipitation();
         orographic_reference_elevation_is_resolution_consistent();
         stochastic_weather_forcing_is_resolution_consistent();
