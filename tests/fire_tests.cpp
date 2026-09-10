@@ -621,6 +621,80 @@ NaturalIgnition first_natural_ignition(
     );
 }
 
+
+double controlled_spread_into_region(
+    std::uint8_t level,
+    bool ignite_source
+) {
+    check(
+        level==2 || level==3,
+        "fire spread resolution fixture supports only levels 2 and 3"
+    );
+    auto simulation=make_default_simulation(
+        7003,SimulationConfig{level,level,3'600.0}
+    );
+    clear_and_dry(*simulation);
+    for (CellId cell:simulation->world().active_cells())
+        set_fuel(*simulation,cell);
+
+    const CellId source_region=CellId::make(0,2,1,1);
+    const CellId target_region=
+        simulation->world().topology().neighbors4(source_region)[1];
+    check(
+        target_region==CellId::make(0,2,2,1),
+        "fire spread resolution fixture crossed a cube face"
+    );
+
+    std::vector<CellId> source_cells;
+    std::vector<CellId> target_cells;
+    if (level==2) {
+        source_cells.push_back(source_region);
+        target_cells.push_back(target_region);
+    } else {
+        const auto source_children=source_region.children();
+        const auto target_children=target_region.children();
+        source_cells.assign(source_children.begin(),source_children.end());
+        target_cells.assign(target_children.begin(),target_children.end());
+    }
+
+    if (ignite_source) {
+        for (CellId cell:source_cells)
+            ignite(*simulation,cell,0.10);
+    }
+    run_fire(*simulation);
+
+    const auto& fields=simulation->world().stores().get<FieldStore>();
+    double active_area=0.0;
+    for (CellId cell:target_cells) {
+        active_area+=fields.get(
+            cell,field(*simulation,"ecology.fire_active_area_m2")
+        );
+    }
+    return active_area;
+}
+
+void spread_is_resolution_consistent() {
+    const double level2=
+        controlled_spread_into_region(2,true)-
+        controlled_spread_into_region(2,false);
+    const double level3=
+        controlled_spread_into_region(3,true)-
+        controlled_spread_into_region(3,false);
+    check(
+        level2>0.0 && level3>0.0,
+        "fire spread resolution fixture produced no source-driven spread"
+    );
+    const double relative_delta=
+        std::abs(level2-level3)/std::max(level2,level3);
+    if (relative_delta>=0.05) {
+        throw std::runtime_error(
+            "fire spread depends on simulation resolution: L2="+
+            std::to_string(level2)+", L3="+std::to_string(level3)+
+            ", relative_delta="+std::to_string(relative_delta)
+        );
+    }
+}
+
 void natural_ignition_is_resolution_consistent() {
     const auto same_ignition=[](
         const NaturalIgnition& a,
@@ -731,6 +805,7 @@ int main() {
         wet_weather_suppresses_fire();
         snow_cover_suppresses_fire();
         spread_resolves_refined_neighbor_region();
+        spread_is_resolution_consistent();
         natural_ignition_is_resolution_consistent();
         natural_ignition_is_stateless_and_deterministic();
         snapshot_continuation_includes_fire_state();
