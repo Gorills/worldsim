@@ -191,9 +191,17 @@ double configure_routing_fixture(Simulation& sim) {
     }
     store.apply_bed_changes(sim.world(),bed_changes);
 
+    // Keep the physical source support identical across reference levels:
+    // one level-2 hierarchy region, represented by 1/4/16 storage nodes at
+    // levels 2/3/4. This also avoids rebuilding lake connectivity for every
+    // node on the planet merely to construct the regression fixture.
+    const CellId source_region=CellId::make(0,2,3,2);
     double initial=0.0;
     for (const HydrologyNode& node:store.nodes()) {
-        if (node.bed_m<0.0) continue;
+        CellId ancestor=node.cell;
+        while (ancestor.level()>source_region.level())
+            ancestor=ancestor.parent();
+        if (ancestor!=source_region) continue;
         const double volume=0.25*node.land_area_m2;
         store.add_surface_water(node.cell,volume);
         initial+=volume;
