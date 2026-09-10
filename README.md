@@ -82,9 +82,9 @@ make lab         # interactive full-world field laboratory
 
 ## Engine boundary
 
-`worldsim_c` is a shared C ABI over the same simulation kernel used by the native C++ tools. The existing boundary exposes active cells, field discovery/value arrays, focus/LOD control, simulation commands/events and snapshot save/load. The Godot GDExtension is a client of this boundary and related native adapter APIs; UI state must not become a second source of truth.
+`worldsim_c` is a shared C ABI over the same simulation kernel used by the native C++ tools. The existing boundary exposes active cells, field discovery/value arrays, focus/LOD control, scheduled field impulses, pending simulation events and snapshot save/load. The Godot GDExtension is a client of this boundary and related native adapter APIs; UI state must not become a second source of truth.
 
-Player-facing resource acquisition will extend this boundary with the smallest authoritative command/query surface required by `Resource Acquisition v1`, rather than introducing a parallel Godot-only inventory or resource model.
+Player-facing resource acquisition will add the smallest authoritative query/command surface required by `Resource Acquisition v1`, rather than introducing a parallel Godot-only inventory or resource model.
 
 ## Documentation
 
