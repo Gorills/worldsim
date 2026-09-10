@@ -121,7 +121,8 @@ double prescribed_streamfunction_m2_s(Vec3d position, double day) {
         14.0*gaussian_integral_degrees(degrees,45.0,18.0)-
         3.0*gaussian_integral_degrees(degrees,78.0,10.0);
     const double zonal_integral_rad=
-        std::copysign(zonal_integral_degrees*kPi/180.0,latitude);
+        std::copysign(1.0,latitude)*
+        zonal_integral_degrees*kPi/180.0;
     const double seasonal=2.0*kPi*day/orbital_days;
     const double cosine=std::cos(latitude);
     return
