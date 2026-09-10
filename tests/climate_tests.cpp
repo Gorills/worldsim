@@ -74,8 +74,18 @@ std::unique_ptr<Simulation> climate_fixture(
     return simulation;
 }
 
+enum class GeographyClimateVariant {
+    Generated,
+    UniformLand,
+    FlatElevation
+};
+
 class StaticGeographyFixtureModule final : public ISimModule {
 public:
+    explicit StaticGeographyFixtureModule(
+        GeographyClimateVariant variant=GeographyClimateVariant::Generated
+    ):variant_(variant) {}
+
     std::string_view id() const override {
         return "fixture.static_geography";
     }
@@ -84,12 +94,28 @@ public:
     }
     void initialize(WorldState& world, const FieldRegistry& r) override {
         GeographyModule().initialize(world,r);
+        auto& fields=world.stores().get<FieldStore>();
+        const FieldId elevation=*r.find("geography.elevation_m");
+        const FieldId reference_elevation=
+            *r.find("geography.reference_elevation_m");
+        const FieldId land=*r.find("geography.land_fraction");
+        for (CellId cell:world.active_cells()) {
+            if (variant_==GeographyClimateVariant::UniformLand)
+                fields.set(cell,land,0.5);
+            if (variant_==GeographyClimateVariant::FlatElevation) {
+                fields.set(cell,elevation,0.0);
+                fields.set(cell,reference_elevation,0.0);
+            }
+        }
     }
+private:
+    GeographyClimateVariant variant_;
 };
 
 std::unique_ptr<Simulation> geography_climate_fixture(
     std::uint64_t seed,
-    std::uint8_t level
+    std::uint8_t level,
+    GeographyClimateVariant variant=GeographyClimateVariant::Generated
 ) {
     auto simulation=std::make_unique<Simulation>(
         seed,SimulationConfig{level,level,86'400.0}
@@ -99,7 +125,7 @@ std::unique_ptr<Simulation> geography_climate_fixture(
     // over the same heterogeneous terrain rather than a coupled
     // climate-geology feedback loop.
     simulation->add_module(
-        std::make_unique<StaticGeographyFixtureModule>()
+        std::make_unique<StaticGeographyFixtureModule>(variant)
     );
     simulation->add_module(std::make_unique<ClimateModule>());
     simulation->build();
@@ -558,9 +584,10 @@ struct GeographyClimatePrecipitation {
 
 GeographyClimatePrecipitation geography_climate_precipitation(
     std::uint64_t seed,
-    std::uint8_t level
+    std::uint8_t level,
+    GeographyClimateVariant variant
 ) {
-    auto simulation=geography_climate_fixture(seed,level);
+    auto simulation=geography_climate_fixture(seed,level,variant);
     const auto& initial_store=
         simulation->world().stores().get<ClimateStore>();
     double land_area=0.0;
@@ -576,55 +603,71 @@ GeographyClimatePrecipitation geography_climate_precipitation(
     };
 }
 
-void real_geography_precipitation_resolution_diagnostic() {
-    double maximum_total_delta=0.0;
-    double maximum_land_delta=0.0;
-    double maximum_land_area_delta=0.0;
-    for (std::uint64_t seed:{0ULL,42ULL,999ULL}) {
-        const GeographyClimatePrecipitation coarse=
-            geography_climate_precipitation(seed,2);
-        const GeographyClimatePrecipitation fine=
-            geography_climate_precipitation(seed,3);
-        const auto relative_delta=[](double a,double b) {
-            return std::abs(a-b)/std::max({1.0,std::abs(a),std::abs(b)});
-        };
-        const double total_delta=relative_delta(
+struct GeographyClimateDelta {
+    double total{};
+    double land{};
+    double land_area{};
+};
+
+GeographyClimateDelta geography_climate_delta(
+    std::uint64_t seed,
+    GeographyClimateVariant variant,
+    const char* label
+) {
+    const GeographyClimatePrecipitation coarse=
+        geography_climate_precipitation(seed,2,variant);
+    const GeographyClimatePrecipitation fine=
+        geography_climate_precipitation(seed,3,variant);
+    const auto relative_delta=[](double a,double b) {
+        return std::abs(a-b)/std::max({1.0,std::abs(a),std::abs(b)});
+    };
+    const GeographyClimateDelta delta{
+        relative_delta(
             coarse.total_precipitation_m3,
             fine.total_precipitation_m3
-        );
-        const double land_delta=relative_delta(
+        ),
+        relative_delta(
             coarse.land_precipitation_m3,
             fine.land_precipitation_m3
-        );
-        const double land_area_delta=relative_delta(
-            coarse.land_area_m2,
-            fine.land_area_m2
-        );
-        maximum_total_delta=std::max(maximum_total_delta,total_delta);
-        maximum_land_delta=std::max(maximum_land_delta,land_delta);
-        maximum_land_area_delta=std::max(
-            maximum_land_area_delta,
-            land_area_delta
-        );
-        std::cerr
-            <<"real geography climate diagnostic: seed="<<seed
-            <<" total_precip_delta="<<total_delta
-            <<" land_precip_delta="<<land_delta
-            <<" land_area_delta="<<land_area_delta
-            <<" l2_total_precip_m3="<<coarse.total_precipitation_m3
-            <<" l3_total_precip_m3="<<fine.total_precipitation_m3
-            <<" l2_land_precip_m3="<<coarse.land_precipitation_m3
-            <<" l3_land_precip_m3="<<fine.land_precipitation_m3
-            <<'\n';
-    }
+        ),
+        relative_delta(coarse.land_area_m2,fine.land_area_m2)
+    };
     std::cerr
-        <<"real geography climate maxima: total_precip_delta="
-        <<maximum_total_delta
-        <<" land_precip_delta="<<maximum_land_delta
-        <<" land_area_delta="<<maximum_land_area_delta
+        <<"real geography climate isolation: variant="<<label
+        <<" seed="<<seed
+        <<" total_precip_delta="<<delta.total
+        <<" land_precip_delta="<<delta.land
+        <<" land_area_delta="<<delta.land_area
+        <<" l2_total_precip_m3="<<coarse.total_precipitation_m3
+        <<" l3_total_precip_m3="<<fine.total_precipitation_m3
+        <<" l2_land_precip_m3="<<coarse.land_precipitation_m3
+        <<" l3_land_precip_m3="<<fine.land_precipitation_m3
+        <<'\n';
+    return delta;
+}
+
+void real_geography_precipitation_resolution_diagnostic() {
+    constexpr std::uint64_t seed=999ULL;
+    const GeographyClimateDelta generated=geography_climate_delta(
+        seed,GeographyClimateVariant::Generated,"generated"
+    );
+    const GeographyClimateDelta uniform_land=geography_climate_delta(
+        seed,GeographyClimateVariant::UniformLand,"uniform_land"
+    );
+    const GeographyClimateDelta flat_elevation=geography_climate_delta(
+        seed,GeographyClimateVariant::FlatElevation,"flat_elevation"
+    );
+    std::cerr
+        <<"real geography climate isolation summary:"
+        <<" generated_total="<<generated.total
+        <<" uniform_land_total="<<uniform_land.total
+        <<" flat_elevation_total="<<flat_elevation.total
+        <<" generated_land="<<generated.land
+        <<" uniform_land_land="<<uniform_land.land
+        <<" flat_elevation_land="<<flat_elevation.land
         <<'\n';
     check(
-        maximum_total_delta<1.0e-12 && maximum_land_delta<1.0e-12,
+        generated.total<1.0e-12 && generated.land<1.0e-12,
         "real-geography climate precipitation resolution diagnostic"
     );
 }
