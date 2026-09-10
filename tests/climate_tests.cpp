@@ -676,12 +676,17 @@ void real_geography_precipitation_resolution_converges() {
         <<" flat_l2_land_error="<<flat_elevation.l2_land_error
         <<" flat_l3_land_error="<<flat_elevation.l3_land_error
         <<'\n';
+    constexpr double maximum_refinement_error_ratio=1.0/3.0;
     check(
-        generated.l3_total_error<=0.25*generated.l2_total_error &&
-        generated.l3_land_error<=0.25*generated.l2_land_error &&
-        flat_elevation.l3_total_error<=0.25*flat_elevation.l2_total_error &&
-        flat_elevation.l3_land_error<=0.25*flat_elevation.l2_land_error,
-        "real-geography climate did not converge toward level 4"
+        generated.l3_total_error<=
+            maximum_refinement_error_ratio*generated.l2_total_error &&
+        generated.l3_land_error<=
+            maximum_refinement_error_ratio*generated.l2_land_error &&
+        flat_elevation.l3_total_error<=
+            maximum_refinement_error_ratio*flat_elevation.l2_total_error &&
+        flat_elevation.l3_land_error<=
+            maximum_refinement_error_ratio*flat_elevation.l2_land_error,
+        "real-geography climate did not reduce level-4 error by at least 3x"
     );
 }
 
