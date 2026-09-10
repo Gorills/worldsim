@@ -27,6 +27,71 @@ FieldId require_field(const FieldRegistry& r, std::string_view key) {
 
 constexpr double fauna_nitrogen_to_mineral_fraction=0.35;
 constexpr double fire_nitrogen_volatilization_fraction=0.75;
+constexpr std::uint8_t spatial_process_reference_level=4;
+
+double reference_face_depth_m(
+    const CubeSphereTopology& topology,
+    CellId cell,
+    std::size_t side
+) {
+    if (side>=4U)
+        throw std::invalid_argument("invalid spatial reference face");
+
+    if (cell.level()>spatial_process_reference_level) {
+        CellId reference=cell;
+        while (reference.level()>spatial_process_reference_level)
+            reference=reference.parent();
+        return topology.area_m2(reference)/
+            topology.edge_length_m(reference,side);
+    }
+
+    std::vector<CellId> boundary_cells{cell};
+    while (
+        !boundary_cells.empty() &&
+        boundary_cells.front().level()<spatial_process_reference_level
+    ) {
+        std::vector<CellId> next;
+        next.reserve(boundary_cells.size()*2U);
+        for (CellId current:boundary_cells) {
+            const auto children=current.children();
+            switch (side) {
+                case 0:
+                    next.push_back(children[0]);
+                    next.push_back(children[2]);
+                    break;
+                case 1:
+                    next.push_back(children[1]);
+                    next.push_back(children[3]);
+                    break;
+                case 2:
+                    next.push_back(children[0]);
+                    next.push_back(children[1]);
+                    break;
+                case 3:
+                    next.push_back(children[2]);
+                    next.push_back(children[3]);
+                    break;
+                default:
+                    throw std::invalid_argument(
+                        "invalid spatial reference face"
+                    );
+            }
+        }
+        boundary_cells=std::move(next);
+    }
+
+    double support_area=0.0;
+    double interface_length=0.0;
+    for (CellId reference:boundary_cells) {
+        support_area+=topology.area_m2(reference);
+        interface_length+=topology.edge_length_m(reference,side);
+    }
+    if (!(interface_length>0.0))
+        throw std::runtime_error(
+            "spatial reference face has zero integrated interface length"
+        );
+    return support_area/interface_length;
+}
 
 struct GeologyFieldIds {
     FieldId elevation{};
@@ -1170,21 +1235,35 @@ public:
                     before.at(cell)[i]/effective_area;
 
             std::array<double,3> neighbor_density{};
-            for (const auto& side:ctx.world.active_neighbors4(cell)) {
-                std::array<double,3> side_density{};
-                for (const ActiveCoverPart& part:side) {
+            const auto face_sides=
+                ctx.world.active_face_neighbors4(cell);
+            for (
+                std::size_t side_index=0;
+                side_index<face_sides.size();
+                ++side_index
+            ) {
+                const double dispersal_depth_m=
+                    0.25*reference_face_depth_m(
+                        ctx.world.topology(),
+                        cell,
+                        side_index
+                    );
+                for (const ActiveFacePart& part:face_sides[side_index]) {
                     const double neighbor_area=
                         ctx.world.topology().area_m2(part.cell)*
                         fs.get(part.cell,land_);
                     if (!(neighbor_area>1.0)) continue;
-                    for (std::size_t i=0;i<pft_.size();++i)
-                        side_density[i]+=
+                    const double target_fraction=
+                        part.interface_length_m*
+                        dispersal_depth_m/
+                        area;
+                    for (std::size_t i=0;i<pft_.size();++i) {
+                        neighbor_density[i]+=
                             before.at(part.cell)[i]/
                             neighbor_area*
-                            part.weight;
+                            target_fraction;
+                    }
                 }
-                for (std::size_t i=0;i<pft_.size();++i)
-                    neighbor_density[i]+=0.25*side_density[i];
             }
 
             const double temp=fs.get(cell,temp_);
@@ -1951,10 +2030,10 @@ public:
             );
         }
 
-        // Spread a bounded ignition area rather than copying a source-cell
-        // fraction into differently sized neighbors. This keeps the coarse /
-        // fine transfer scale explicit while the active-cover weights select
-        // the actual leaves representing each neighboring region.
+        // Spread crosses the physical shared face. The fixed level-4
+        // reference depth preserves the former level-4 calibration while
+        // preventing a coarse cell from treating an entire refined neighbor
+        // region as one face.
         std::map<CellId,double> incoming_active_area_m2;
         for (CellId source:ctx.world.active_cells()) {
             const FireState& local=state.at(source);
@@ -1969,11 +2048,27 @@ public:
                 east*local.east_wind_m_s+
                 north*local.north_wind_m_s;
             const double wind_speed=norm(wind);
-            const double burned_area=
-                local.land_area_m2*local.burned_fraction;
+            const double source_area=
+                ctx.world.topology().area_m2(source);
+            const double source_land_fraction=
+                source_area>0.0
+                    ? local.land_area_m2/source_area
+                    : 0.0;
 
-            for (const auto& side:ctx.world.active_neighbors4(source)) {
-                for (const ActiveCoverPart& part:side) {
+            const auto face_sides=
+                ctx.world.active_face_neighbors4(source);
+            for (
+                std::size_t side_index=0;
+                side_index<face_sides.size();
+                ++side_index
+            ) {
+                const double spread_depth_m=
+                    0.0125*reference_face_depth_m(
+                        ctx.world.topology(),
+                        source,
+                        side_index
+                    );
+                for (const ActiveFacePart& part:face_sides[side_index]) {
                     const FireState& target=state.at(part.cell);
                     if (!(target.danger>0.15)) continue;
 
@@ -1992,12 +2087,13 @@ public:
                         1.75
                     );
                     const double spread_area=
-                        burned_area*
-                        0.0125*
+                        local.burned_fraction*
+                        source_land_fraction*
+                        part.interface_length_m*
+                        spread_depth_m*
                         local.danger*
                         target.danger*
                         directional*
-                        part.weight*
                         std::min(2.0,ctx.dt_days);
                     incoming_active_area_m2[part.cell]+=spread_area;
                 }
@@ -2603,17 +2699,27 @@ public:
             };
             const double source_quality=quality_of(cohort.cell);
 
-            const auto sides=ctx.world.active_neighbors4(cohort.cell);
-            const std::vector<ActiveCoverPart>* best_side=nullptr;
+            const auto sides=
+                ctx.world.active_face_neighbors4(cohort.cell);
+            const std::vector<ActiveFacePart>* best_side=nullptr;
+            std::size_t best_side_index=0;
             double best_quality=source_quality;
-            for (const auto& side:sides) {
-                double side_quality=0.0;
-                for (const ActiveCoverPart& part:side)
-                    side_quality+=
-                        quality_of(part.cell)*part.weight;
+            for (std::size_t side_index=0;side_index<sides.size();++side_index) {
+                const auto& side=sides[side_index];
+                double interface_sum=0.0;
+                double quality_sum=0.0;
+                for (const ActiveFacePart& part:side) {
+                    interface_sum+=part.interface_length_m;
+                    quality_sum+=
+                        quality_of(part.cell)*
+                        part.interface_length_m;
+                }
+                if (!(interface_sum>0.0)) continue;
+                const double side_quality=quality_sum/interface_sum;
                 if (side_quality>best_quality) {
                     best_quality=side_quality;
                     best_side=&side;
+                    best_side_index=side_index;
                 }
             }
 
@@ -2631,6 +2737,19 @@ public:
                 0.0,
                 1.0
             );
+            double interface_sum=0.0;
+            for (const ActiveFacePart& part:*best_side)
+                interface_sum+=part.interface_length_m;
+            const double source_area=
+                ctx.world.topology().area_m2(cohort.cell);
+            const double movement_geometry=
+                interface_sum*
+                reference_face_depth_m(
+                    ctx.world.topology(),
+                    cohort.cell,
+                    best_side_index
+                )/
+                source_area;
             const double maximum_daily_fraction=
                 herbivore ? 0.20 : 0.12;
             const double moved_fraction=
@@ -2638,6 +2757,7 @@ public:
                 std::exp(
                     -maximum_daily_fraction*
                     gradient*
+                    movement_geometry*
                     ctx.dt_days
                 );
             const double moved_count=
@@ -2646,17 +2766,18 @@ public:
             if (!(moved_count>0.0)) continue;
 
             double destination_weight_sum=0.0;
-            for (const ActiveCoverPart& part:*best_side)
+            for (const ActiveFacePart& part:*best_side) {
                 destination_weight_sum+=
-                    part.weight*
+                    part.interface_length_m*
                     std::max(0.0,quality_of(part.cell));
+            }
             if (!(destination_weight_sum>0.0)) continue;
 
             double planned_sum=0.0;
             for (std::size_t i=0;i<best_side->size();++i) {
-                const ActiveCoverPart& part=(*best_side)[i];
+                const ActiveFacePart& part=(*best_side)[i];
                 const double destination_weight=
-                    part.weight*
+                    part.interface_length_m*
                     std::max(0.0,quality_of(part.cell));
                 if (!(destination_weight>0.0)) continue;
                 const double share=

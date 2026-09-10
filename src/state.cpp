@@ -331,14 +331,90 @@ WorldState::active_neighbors4(CellId cell) const {
     return out;
 }
 
+std::array<std::vector<ActiveFacePart>,4>
+WorldState::active_face_neighbors4(CellId cell) const {
+    if (!active_cells_.contains(cell))
+        throw std::invalid_argument(
+            "active_face_neighbors4 requires an active source cell"
+        );
+    if (const auto cached=active_face_neighbor_cache_.find(cell);
+        cached!=active_face_neighbor_cache_.end()) {
+        return cached->second;
+    }
+
+    constexpr double minimum_interface_length_m=1.0e-6;
+    std::array<std::vector<ActiveFacePart>,4> out;
+    const auto same_level=topology_.neighbors4(cell);
+    for (std::size_t side=0;side<same_level.size();++side) {
+        const CellId region=same_level[side];
+
+        CellId ancestor=region;
+        bool found_coarse=false;
+        while (true) {
+            if (active_cells_.contains(ancestor)) {
+                const double interface_length=
+                    topology_.shared_boundary_length_m(cell,ancestor);
+                if (!(interface_length>minimum_interface_length_m))
+                    throw std::runtime_error(
+                        "active face neighbor has no shared boundary"
+                    );
+                out[side].push_back({ancestor,interface_length});
+                found_coarse=true;
+                break;
+            }
+            if (ancestor.level()==0) break;
+            ancestor=ancestor.parent();
+        }
+        if (found_coarse) continue;
+
+        std::vector<CellId> pending{region};
+        while (!pending.empty()) {
+            const CellId candidate=pending.back();
+            pending.pop_back();
+            const double interface_length=
+                topology_.shared_boundary_length_m(cell,candidate);
+            if (!(interface_length>minimum_interface_length_m))
+                continue;
+            if (active_cells_.contains(candidate)) {
+                out[side].push_back({candidate,interface_length});
+                continue;
+            }
+            if (candidate.level()>=CellId::kMaxLevel)
+                throw std::runtime_error(
+                    "adaptive face neighborhood has a spatial hole"
+                );
+            const auto children=candidate.children();
+            pending.insert(
+                pending.end(),children.begin(),children.end()
+            );
+        }
+
+        if (out[side].empty())
+            throw std::runtime_error(
+                "adaptive face neighborhood has a spatial hole"
+            );
+        std::sort(
+            out[side].begin(),
+            out[side].end(),
+            [](const ActiveFacePart& a, const ActiveFacePart& b) {
+                return a.cell.raw()<b.cell.raw();
+            }
+        );
+    }
+    active_face_neighbor_cache_[cell]=out;
+    return out;
+}
+
 void WorldState::initialize_cover(std::uint8_t level) {
     if (!active_cells_.empty()) throw std::runtime_error("world cover already initialized");
+    active_face_neighbor_cache_.clear();
     active_cells_=uniform_cover(level);
     for (CellId c: active_cells_) stores_.add_cell(c);
 }
 
 void WorldState::refine(CellId cell) {
     if (!active_cells_.contains(cell)) throw std::runtime_error("cannot refine inactive cell");
+    active_face_neighbor_cache_.clear();
     const auto children=cell.children();
     stores_.refine(cell,children,topology_);
     active_cells_.erase(cell);
@@ -348,6 +424,7 @@ void WorldState::refine(CellId cell) {
 bool WorldState::coarsen(CellId parent) {
     const auto children=parent.children();
     for (CellId c: children) if (!active_cells_.contains(c)) return false;
+    active_face_neighbor_cache_.clear();
     stores_.coarsen(children,parent,topology_);
     for (CellId c: children) active_cells_.erase(c);
     active_cells_.insert(parent);

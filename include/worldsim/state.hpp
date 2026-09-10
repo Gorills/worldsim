@@ -193,6 +193,11 @@ struct ActiveCoverPart {
     double weight{};
 };
 
+struct ActiveFacePart {
+    CellId cell;
+    double interface_length_m{};
+};
+
 class WorldState {
 public:
     explicit WorldState(std::uint64_t seed);
@@ -207,6 +212,8 @@ public:
     ) const;
     [[nodiscard]] std::array<std::vector<ActiveCoverPart>,4>
     active_neighbors4(CellId cell) const;
+    [[nodiscard]] std::array<std::vector<ActiveFacePart>,4>
+    active_face_neighbors4(CellId cell) const;
     [[nodiscard]] StateStoreRegistry& stores() { return stores_; }
     [[nodiscard]] const StateStoreRegistry& stores() const { return stores_; }
     void initialize_cover(std::uint8_t level);
@@ -223,6 +230,10 @@ private:
     std::set<CellId> active_cells_;
     StateStoreRegistry stores_;
     std::vector<SimulationEvent> events_;
+    mutable std::map<
+        CellId,
+        std::array<std::vector<ActiveFacePart>,4>
+    > active_face_neighbor_cache_;
 };
 
 } // namespace worldsim

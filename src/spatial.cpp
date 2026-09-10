@@ -12,6 +12,70 @@ constexpr std::uint64_t kFaceShift=61U;
 constexpr std::uint64_t kLevelShift=56U;
 constexpr std::uint64_t kCoordMask=(1ULL<<28U)-1ULL;
 constexpr std::uint64_t kXShift=28U;
+constexpr double kBoundaryPlaneTolerance=1.0e-10;
+
+double unwrap_near(double angle, double reference) {
+    while (angle-reference>kPi) angle-=2.0*kPi;
+    while (angle-reference<-kPi) angle+=2.0*kPi;
+    return angle;
+}
+
+double overlapping_arc_radians(
+    Vec3d source_a,
+    Vec3d source_b,
+    Vec3d candidate_a,
+    Vec3d candidate_b
+) {
+    const Vec3d source_normal_raw=cross(source_a,source_b);
+    const double source_normal_length=norm(source_normal_raw);
+    if (!(source_normal_length>0.0)) return 0.0;
+    const Vec3d source_normal=
+        source_normal_raw*(1.0/source_normal_length);
+    if (
+        std::abs(dot(source_normal,candidate_a))>
+            kBoundaryPlaneTolerance ||
+        std::abs(dot(source_normal,candidate_b))>
+            kBoundaryPlaneTolerance
+    ) {
+        return 0.0;
+    }
+
+    const Vec3d tangent=normalized(cross(source_normal,source_a));
+    double source_length=std::atan2(
+        dot(source_b,tangent),
+        dot(source_b,source_a)
+    );
+    if (source_length<0.0) source_length+=2.0*kPi;
+    if (!(source_length>0.0) || source_length>=kPi)
+        return 0.0;
+
+    const double midpoint=0.5*source_length;
+    auto coordinate=[&](Vec3d point) {
+        return unwrap_near(
+            std::atan2(
+                dot(point,tangent),
+                dot(point,source_a)
+            ),
+            midpoint
+        );
+    };
+    double candidate_start=coordinate(candidate_a);
+    double candidate_end=coordinate(candidate_b);
+    while (candidate_end-candidate_start>kPi)
+        candidate_end-=2.0*kPi;
+    while (candidate_start-candidate_end>kPi)
+        candidate_end+=2.0*kPi;
+
+    const double candidate_low=
+        std::min(candidate_start,candidate_end);
+    const double candidate_high=
+        std::max(candidate_start,candidate_end);
+    return std::max(
+        0.0,
+        std::min(source_length,candidate_high)-
+            std::max(0.0,candidate_low)
+    );
+}
 }
 
 CellId CellId::make(std::uint8_t face, std::uint8_t level, std::uint32_t x, std::uint32_t y) {
@@ -110,6 +174,54 @@ double CubeSphereTopology::area_m2(CellId id) const {
     const auto c=corners_unit(id);
     const double steradians=spherical_triangle_area(c[0],c[1],c[2])+spherical_triangle_area(c[0],c[2],c[3]);
     return steradians*kEarthRadiusM*kEarthRadiusM;
+}
+
+double CubeSphereTopology::edge_length_m(
+    CellId id,
+    std::size_t side
+) const {
+    if (!id.valid() || side>=4U)
+        throw std::invalid_argument("invalid cell edge");
+    constexpr std::array<std::array<std::size_t,2>,4> edges{{
+        {{0U,3U}},
+        {{1U,2U}},
+        {{0U,1U}},
+        {{3U,2U}}
+    }};
+    const auto corners=corners_unit(id);
+    const Vec3d a=corners[edges[side][0]];
+    const Vec3d b=corners[edges[side][1]];
+    return std::atan2(norm(cross(a,b)),dot(a,b))*kEarthRadiusM;
+}
+
+double CubeSphereTopology::shared_boundary_length_m(
+    CellId a,
+    CellId b
+) const {
+    if (!a.valid() || !b.valid())
+        throw std::invalid_argument("invalid cell");
+    if (a==b) return 0.0;
+
+    constexpr std::array<std::array<std::size_t,2>,4> edges{{
+        {{0U,3U}},
+        {{1U,2U}},
+        {{0U,1U}},
+        {{3U,2U}}
+    }};
+    const auto a_corners=corners_unit(a);
+    const auto b_corners=corners_unit(b);
+    double overlap_radians=0.0;
+    for (const auto& a_edge:edges) {
+        for (const auto& b_edge:edges) {
+            overlap_radians+=overlapping_arc_radians(
+                a_corners[a_edge[0]],
+                a_corners[a_edge[1]],
+                b_corners[b_edge[0]],
+                b_corners[b_edge[1]]
+            );
+        }
+    }
+    return overlap_radians*kEarthRadiusM;
 }
 
 CellId CubeSphereTopology::from_direction(Vec3d direction, std::uint8_t level) const {

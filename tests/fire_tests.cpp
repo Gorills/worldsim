@@ -494,6 +494,20 @@ void spread_resolves_refined_neighbor_region() {
         "spread source did not close its fire carbon transfers"
     );
 
+    const auto physical_sides=
+        simulation->world().active_face_neighbors4(source);
+    std::size_t expected_interface_children=0;
+    for (const auto& side:physical_sides) {
+        for (const ActiveFacePart& part:side) {
+            if (part.cell.parent()==target_region)
+                ++expected_interface_children;
+        }
+    }
+    check(
+        expected_interface_children==2U,
+        "fire fixture did not resolve two physical target subfaces"
+    );
+
     double target_active_area=0.0;
     std::size_t active_children=0;
     for (CellId child:target_region.children()) {
@@ -509,8 +523,9 @@ void spread_resolves_refined_neighbor_region() {
             active*simulation->world().topology().area_m2(child);
     }
     check(
-        active_children==4U && target_active_area>0.0,
-        "fire did not spread across the refined active neighbor region"
+        active_children==expected_interface_children &&
+        target_active_area>0.0,
+        "fire spread did not stay on the physical refined interface"
     );
 
     const double active_area_before= [&] {
@@ -621,6 +636,80 @@ NaturalIgnition first_natural_ignition(
     );
 }
 
+
+double controlled_spread_into_region(
+    std::uint8_t level,
+    bool ignite_source
+) {
+    check(
+        level==2 || level==3,
+        "fire spread resolution fixture supports only levels 2 and 3"
+    );
+    auto simulation=make_default_simulation(
+        7003,SimulationConfig{level,level,3'600.0}
+    );
+    clear_and_dry(*simulation);
+    for (CellId cell:simulation->world().active_cells())
+        set_fuel(*simulation,cell);
+
+    const CellId source_region=CellId::make(0,2,1,1);
+    const CellId target_region=
+        simulation->world().topology().neighbors4(source_region)[1];
+    check(
+        target_region==CellId::make(0,2,2,1),
+        "fire spread resolution fixture crossed a cube face"
+    );
+
+    std::vector<CellId> source_cells;
+    std::vector<CellId> target_cells;
+    if (level==2) {
+        source_cells.push_back(source_region);
+        target_cells.push_back(target_region);
+    } else {
+        const auto source_children=source_region.children();
+        const auto target_children=target_region.children();
+        source_cells.assign(source_children.begin(),source_children.end());
+        target_cells.assign(target_children.begin(),target_children.end());
+    }
+
+    if (ignite_source) {
+        for (CellId cell:source_cells)
+            ignite(*simulation,cell,0.10);
+    }
+    run_fire(*simulation);
+
+    const auto& fields=simulation->world().stores().get<FieldStore>();
+    double active_area=0.0;
+    for (CellId cell:target_cells) {
+        active_area+=fields.get(
+            cell,field(*simulation,"ecology.fire_active_area_m2")
+        );
+    }
+    return active_area;
+}
+
+void spread_is_resolution_consistent() {
+    const double level2=
+        controlled_spread_into_region(2,true)-
+        controlled_spread_into_region(2,false);
+    const double level3=
+        controlled_spread_into_region(3,true)-
+        controlled_spread_into_region(3,false);
+    check(
+        level2>0.0 && level3>0.0,
+        "fire spread resolution fixture produced no source-driven spread"
+    );
+    const double relative_delta=
+        std::abs(level2-level3)/std::max(level2,level3);
+    if (relative_delta>=0.05) {
+        throw std::runtime_error(
+            "fire spread depends on simulation resolution: L2="+
+            std::to_string(level2)+", L3="+std::to_string(level3)+
+            ", relative_delta="+std::to_string(relative_delta)
+        );
+    }
+}
+
 void natural_ignition_is_resolution_consistent() {
     const auto same_ignition=[](
         const NaturalIgnition& a,
@@ -709,7 +798,7 @@ void snapshot_continuation_includes_fire_state() {
 
     const auto snapshot=simulation->save_snapshot();
     check(snapshot.size()>11U,"fire snapshot header is unexpectedly short");
-    check(snapshot[8]==std::byte{38},"unexpected current snapshot epoch");
+    check(snapshot[8]==std::byte{39},"unexpected current snapshot epoch");
     auto restored=make_default_simulation(
         7004,SimulationConfig{1,2,3'600.0}
     );
@@ -731,6 +820,7 @@ int main() {
         wet_weather_suppresses_fire();
         snow_cover_suppresses_fire();
         spread_resolves_refined_neighbor_region();
+        spread_is_resolution_consistent();
         natural_ignition_is_resolution_consistent();
         natural_ignition_is_stateless_and_deterministic();
         snapshot_continuation_includes_fire_state();

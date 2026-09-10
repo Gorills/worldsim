@@ -1,6 +1,8 @@
 #include "worldsim/c_api.h"
 #include "worldsim/geology.hpp"
+#include "worldsim/hydrology.hpp"
 #include "worldsim/modules.hpp"
+#include "worldsim/soil_nitrogen.hpp"
 #include "worldsim/simulation.hpp"
 #include "worldsim/terrain.hpp"
 #include "worldsim/tectonics.hpp"
@@ -21,6 +23,31 @@ void check(bool condition,const char* msg) { if (!condition) throw std::runtime_
 void near(double a,double b,double rel,const char* msg) {
     const double scale=std::max({1.0,std::abs(a),std::abs(b)});
     if (std::abs(a-b)>rel*scale) throw std::runtime_error(msg);
+}
+
+void run_named_system(
+    Simulation& simulation,
+    std::string_view id,
+    double dt_days
+) {
+    Scheduler scheduler;
+    GeographyModule().register_systems(scheduler,simulation.fields());
+    MagicModule().register_systems(scheduler,simulation.fields());
+    ClimateModule().register_systems(scheduler,simulation.fields());
+    HydrologyModule().register_systems(scheduler,simulation.fields());
+    EcologyModule().register_systems(scheduler,simulation.fields());
+    scheduler.finalize();
+
+    SystemContext context{
+        simulation.world(),simulation.fields(),dt_days
+    };
+    for (ISimSystem* system:scheduler.order()) {
+        if (system->id()==id) {
+            system->step(context);
+            return;
+        }
+    }
+    throw std::runtime_error("named test system not found");
 }
 
 class TestExtensionSystem final : public ISimSystem {
@@ -129,7 +156,23 @@ void test_cube_sphere() {
     for (CellId c:cells) {
         check(c.valid(),"invalid uniform cell");
         area+=topo.area_m2(c);
-        for (CellId n:topo.neighbors4(c)) check(n.valid() && n.level()==c.level(),"invalid neighbor");
+        for (CellId n:topo.neighbors4(c)) {
+            check(
+                n.valid() && n.level()==c.level(),
+                "invalid neighbor"
+            );
+            const double shared=topo.shared_boundary_length_m(c,n);
+            check(
+                std::isfinite(shared) && shared>0.0,
+                "topological neighbor has no physical shared boundary"
+            );
+            near(
+                shared,
+                topo.shared_boundary_length_m(n,c),
+                1.0e-12,
+                "shared boundary length is not symmetric"
+            );
+        }
     }
     near(area,4.0*kPi*kEarthRadiusM*kEarthRadiusM,1e-12,"cube-sphere area does not close");
 }
@@ -203,6 +246,43 @@ void test_adaptive_cover_resolution() {
         );
     }
 
+    const auto fine_face_sides=
+        fine_neighbor_world.active_face_neighbors4(source);
+    check(
+        fine_face_sides[1].size()==2U,
+        "face-neighbor query included refined cells away from interface"
+    );
+    const double coarse_interface_length=
+        fine_neighbor_world.topology().shared_boundary_length_m(
+            source,right
+        );
+    double refined_interface_length=0.0;
+    for (const ActiveFacePart& part:fine_face_sides[1]) {
+        check(
+            part.cell.parent()==right &&
+            part.interface_length_m>0.0,
+            "face-neighbor query returned invalid refined interface part"
+        );
+        refined_interface_length+=part.interface_length_m;
+    }
+    near(
+        refined_interface_length,
+        coarse_interface_length,
+        1.0e-12,
+        "refined face parts do not reconstruct coarse interface length"
+    );
+    check(
+        fine_neighbor_world.coarsen(right),
+        "face-neighbor cache fixture could not coarsen neighbor"
+    );
+    const auto coarsened_face_sides=
+        fine_neighbor_world.active_face_neighbors4(source);
+    check(
+        coarsened_face_sides[1].size()==1U &&
+        coarsened_face_sides[1][0].cell==right,
+        "face-neighbor cache survived an active-cover change"
+    );
+
     WorldState coarse_neighbor_world(8);
     coarse_neighbor_world.initialize_cover(1);
     coarse_neighbor_world.refine(source);
@@ -223,6 +303,92 @@ void test_adaptive_cover_resolution() {
         1.0,
         1.0e-15,
         "coarse ancestor did not represent full neighboring region"
+    );
+    const auto coarse_face_sides=
+        coarse_neighbor_world.active_face_neighbors4(fine_source);
+    check(
+        coarse_face_sides[1].size()==1U &&
+        coarse_face_sides[1][0].cell==right &&
+        coarse_face_sides[1][0].interface_length_m>0.0,
+        "fine source did not resolve physical face to coarse ancestor"
+    );
+}
+
+
+void test_active_face_neighbors_cross_seam_and_multilevel() {
+    WorldState multilevel_world(9);
+    multilevel_world.initialize_cover(1);
+    const CellId source=CellId::make(0,1,0,0);
+    const CellId right=
+        multilevel_world.topology().neighbors4(source)[1];
+    multilevel_world.refine(right);
+    const auto level2_children=right.children();
+    for (CellId child:level2_children)
+        multilevel_world.refine(child);
+
+    const auto multilevel_sides=
+        multilevel_world.active_face_neighbors4(source);
+    check(
+        multilevel_sides[1].size()==4U,
+        "unbalanced face query did not resolve four level-3 subfaces"
+    );
+    double multilevel_length=0.0;
+    for (const ActiveFacePart& part:multilevel_sides[1]) {
+        check(
+            part.cell.level()==3U,
+            "unbalanced face query returned the wrong active level"
+        );
+        CellId ancestor=part.cell;
+        while (ancestor.level()>right.level())
+            ancestor=ancestor.parent();
+        check(
+            ancestor==right,
+            "unbalanced face query escaped the neighboring region"
+        );
+        multilevel_length+=part.interface_length_m;
+    }
+    near(
+        multilevel_length,
+        multilevel_world.topology().shared_boundary_length_m(source,right),
+        1.0e-12,
+        "unbalanced subfaces do not reconstruct the coarse interface"
+    );
+
+    WorldState seam_world(10);
+    seam_world.initialize_cover(1);
+    const CellId seam_source=CellId::make(0,1,0,0);
+    const CellId seam_neighbor=
+        seam_world.topology().neighbors4(seam_source)[0];
+    check(
+        seam_neighbor.face()!=seam_source.face(),
+        "seam fixture did not cross a cube face"
+    );
+    seam_world.refine(seam_neighbor);
+
+    const auto seam_sides=
+        seam_world.active_face_neighbors4(seam_source);
+    check(
+        seam_sides[0].size()==2U,
+        "cube-seam face query did not resolve two refined subfaces"
+    );
+    double seam_length=0.0;
+    for (const ActiveFacePart& part:seam_sides[0]) {
+        CellId ancestor=part.cell;
+        while (ancestor.level()>seam_neighbor.level())
+            ancestor=ancestor.parent();
+        check(
+            ancestor==seam_neighbor,
+            "cube-seam face query escaped the neighboring region"
+        );
+        seam_length+=part.interface_length_m;
+    }
+    near(
+        seam_length,
+        seam_world.topology().shared_boundary_length_m(
+            seam_source,seam_neighbor
+        ),
+        1.0e-12,
+        "cube-seam refined subfaces do not reconstruct interface length"
     );
 }
 
@@ -330,7 +496,7 @@ void test_determinism_and_snapshot() {
         std::uint8_t{28},std::uint8_t{29},std::uint8_t{30},
         std::uint8_t{31},std::uint8_t{32},std::uint8_t{33},
         std::uint8_t{34},std::uint8_t{35},std::uint8_t{36},
-        std::uint8_t{37}
+        std::uint8_t{37},std::uint8_t{38}
     }) {
         auto legacy_snapshot=snap;
         legacy_snapshot[8]=static_cast<std::byte>(legacy_version);
@@ -548,6 +714,145 @@ void test_flora_pft_contracts() {
         1.0e-12,
         "fauna/vegetation pipeline broke PFT total after competition"
     );
+}
+
+
+double controlled_flora_recruitment(std::uint8_t level) {
+    check(
+        level==2 || level==3,
+        "flora resolution fixture supports only levels 2 and 3"
+    );
+    SimulationConfig config;
+    config.base_level=level;
+    config.max_level=level;
+    config.tick_seconds=3'600.0;
+    auto simulation=make_default_simulation(4242,config);
+    auto& fields=simulation->world().stores().get<FieldStore>();
+
+    const auto land=*simulation->fields().find("geography.land_fraction");
+    const auto regolith=*simulation->fields().find(
+        "geology.regolith_thickness_m"
+    );
+    const auto water=*simulation->fields().find("hydrology.soil_water_m3");
+    const auto flooded=*simulation->fields().find(
+        "hydrology.flooded_fraction"
+    );
+    const auto inundation=*simulation->fields().find(
+        "hydrology.inundation_days"
+    );
+    const auto temperature=*simulation->fields().find(
+        "climate.surface_temperature_k"
+    );
+    const auto solar=*simulation->fields().find(
+        "climate.solar_flux_w_m2"
+    );
+    const auto snow=*simulation->fields().find(
+        "climate.snow_cover_fraction"
+    );
+    const auto fertility=*simulation->fields().find(
+        "ecology.soil_fertility"
+    );
+    const auto mineral_n=*simulation->fields().find(
+        "ecology.mineral_nitrogen_kg"
+    );
+    const auto grass=*simulation->fields().find(
+        "ecology.grass_carbon_kg"
+    );
+    const auto shrub=*simulation->fields().find(
+        "ecology.shrub_carbon_kg"
+    );
+    const auto tree=*simulation->fields().find(
+        "ecology.tree_carbon_kg"
+    );
+    const auto total=*simulation->fields().find(
+        "ecology.vegetation_carbon_kg"
+    );
+    const auto grass_n=*simulation->fields().find(
+        "ecology.grass_nitrogen_kg"
+    );
+    const auto shrub_n=*simulation->fields().find(
+        "ecology.shrub_nitrogen_kg"
+    );
+    const auto tree_n=*simulation->fields().find(
+        "ecology.tree_nitrogen_kg"
+    );
+    const auto total_n=*simulation->fields().find(
+        "ecology.vegetation_nitrogen_kg"
+    );
+
+    auto& cohorts=simulation->world().stores().get<CohortStore>();
+    for (CellId cell:simulation->world().active_cells()) {
+        for (auto& ref:cohorts.in_cell(cell))
+            ref.get().count=0.0;
+        const double area=simulation->world().topology().area_m2(cell);
+        fields.set(cell,land,1.0);
+        fields.set(cell,regolith,1.0);
+        fields.set(cell,water,0.20*area);
+        fields.set(cell,flooded,0.0);
+        fields.set(cell,inundation,0.0);
+        fields.set(cell,temperature,286.0);
+        fields.set(cell,solar,340.0);
+        fields.set(cell,snow,0.0);
+        fields.set(cell,fertility,1.0);
+        fields.set(cell,mineral_n,0.05*area);
+        for (FieldId field:{grass,shrub,tree,total,grass_n,shrub_n,tree_n,total_n})
+            fields.set(cell,field,0.0);
+    }
+
+    const CellId source_region=CellId::make(0,2,1,1);
+    const CellId target_region=
+        simulation->world().topology().neighbors4(source_region)[1];
+    check(
+        target_region==CellId::make(0,2,2,1),
+        "flora resolution fixture crossed a cube face"
+    );
+
+    std::vector<CellId> source_cells;
+    std::vector<CellId> target_cells;
+    if (level==2) {
+        source_cells.push_back(source_region);
+        target_cells.push_back(target_region);
+    } else {
+        const auto source_children=source_region.children();
+        const auto target_children=target_region.children();
+        source_cells.assign(source_children.begin(),source_children.end());
+        target_cells.assign(target_children.begin(),target_children.end());
+    }
+
+    constexpr double source_density_kg_m2=0.005;
+    for (CellId cell:source_cells) {
+        const double area=simulation->world().topology().area_m2(cell);
+        const double carbon=source_density_kg_m2*area;
+        fields.set(cell,grass,carbon);
+        fields.set(cell,total,carbon);
+        fields.set(cell,grass_n,carbon/kPlantCarbonNitrogenRatio[0]);
+        fields.set(cell,total_n,carbon/kPlantCarbonNitrogenRatio[0]);
+    }
+
+    run_named_system(*simulation,"ecology.vegetation",1.0);
+
+    double recruited=0.0;
+    for (CellId cell:target_cells)
+        recruited+=fields.get(cell,grass);
+    return recruited;
+}
+
+void test_flora_dispersal_is_resolution_consistent() {
+    const double level2=controlled_flora_recruitment(2);
+    const double level3=controlled_flora_recruitment(3);
+    check(
+        level2>0.0 && level3>0.0,
+        "flora resolution fixture produced no recruitment"
+    );
+    const double relative_delta=
+        std::abs(level2-level3)/std::max(level2,level3);
+    if (relative_delta>=0.05) {
+        throw std::runtime_error(
+            "flora dispersal depends on simulation resolution: L2="+
+            std::to_string(level2)+", L3="+std::to_string(level3)+
+            ", relative_delta="+std::to_string(relative_delta)
+        );
+    }
 }
 
 void test_living_soil_ecology_contracts() {
@@ -2695,6 +3000,7 @@ int main() {
         test_focus_validation();
         test_cube_sphere();
         test_adaptive_cover_resolution();
+        test_active_face_neighbors_cross_seam_and_multilevel();
         test_lod_conservation();
         test_lod_hysteresis();
         test_determinism_and_snapshot();
@@ -2703,6 +3009,7 @@ int main() {
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
         test_flora_pft_contracts();
+        test_flora_dispersal_is_resolution_consistent();
         test_living_soil_ecology_contracts();
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();

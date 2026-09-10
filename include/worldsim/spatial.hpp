@@ -35,6 +35,8 @@ public:
     [[nodiscard]] Vec3d center_unit(CellId id) const;
     [[nodiscard]] std::array<Vec3d,4> corners_unit(CellId id) const;
     [[nodiscard]] double area_m2(CellId id) const;
+    [[nodiscard]] double edge_length_m(CellId id, std::size_t side) const;
+    [[nodiscard]] double shared_boundary_length_m(CellId a, CellId b) const;
     [[nodiscard]] std::array<CellId,4> neighbors4(CellId id) const;
     [[nodiscard]] CellId from_direction(Vec3d direction, std::uint8_t level) const;
     [[nodiscard]] std::pair<double,double> lat_lon_rad(CellId id) const;
