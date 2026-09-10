@@ -230,6 +230,10 @@ private:
     std::set<CellId> active_cells_;
     StateStoreRegistry stores_;
     std::vector<SimulationEvent> events_;
+    mutable std::map<
+        CellId,
+        std::array<std::vector<ActiveFacePart>,4>
+    > active_face_neighbor_cache_;
 };
 
 } // namespace worldsim
