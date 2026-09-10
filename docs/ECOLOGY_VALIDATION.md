@@ -89,9 +89,9 @@ Terrestrial vegetation is split into three persistent extensive carbon pools:
 
 Each functional type has a different reduced temperature/moisture/fertility niche, productivity scale, turnover rate, maximum biomass density and local-establishment strength. Grass establishes and turns over fastest, shrubs are intermediate, and trees establish more slowly but persist longer. Woody biomass suppresses lower strata through reduced light/space access, so differential growth plus turnover produces a reduced succession process rather than three independent carbon buckets.
 
-Recruitment is propagule-limited. A cell with no local biomass can establish a functional type only if an active neighboring region already contains that type. Neighbor source density is sampled from the start-of-step vegetation state through `WorldState::active_neighbors4()`; coarse/fine interfaces therefore use the same normalized adaptive-cover weights as geology. This also prevents iteration-order artifacts in which a new recruit would seed another cell again during the same daily step.
+Recruitment is propagule-limited. A cell with no local biomass can establish a functional type only if vegetation is present across one of its physical shared faces. Neighbor source density is sampled from the start-of-step vegetation state through `WorldState::active_face_neighbors4()`. Shared-interface length is combined with a fixed level-4 reference face depth, so coarse and refined covers integrate the same physical local-dispersal support while the former uniform level-4 establishment coefficients remain the calibration point. This also prevents iteration-order artifacts in which a new recruit would seed another cell again during the same daily step.
 
-This is local grid-neighbor dispersal, not an explicit seed-bank or distance kernel. There is no spontaneous plant generation when all three plant pools are zero.
+This remains a reduced local dispersal closure, not an explicit seed-bank, species-specific distance kernel or long-range dispersal model. There is no spontaneous plant generation when all three plant pools are zero.
 
 The representation follows the large-scale simplification used by dynamic global vegetation models: broad plant functional types compete for resources/space while establishment, mortality/turnover and changing relative cover approximate vegetation dynamics. Reviews of DGVM design describe PFT-based competition/establishment as a standard tractability tradeoff, while LPJ couples PFT competition with daily water/carbon processes and slower vegetation dynamics.
 
@@ -107,9 +107,9 @@ The reduced herbivore cohorts preferentially consume grass, then shrubs, with a 
 
 ### Fauna v4: carbon/nitrogen accounting, trophic bounds and local migration
 
-After the daily local feeding/predation update, the fauna system computes a reduced habitat-quality field for each trophic group. Herbivore quality rises with preference-weighted plant forage per effective land area; carnivore quality rises with herbivore biomass density. Each cohort compares its current cell with the four adjacent spatial regions and redistributes only toward a side whose area-weighted quality is materially better.
+After the daily local feeding/predation update, the fauna system computes a reduced habitat-quality field for each trophic group. Herbivore quality rises with preference-weighted plant forage per effective land area; carnivore quality rises with herbivore biomass density. Each cohort compares its current cell with the four physical adjacent faces and redistributes only toward a side whose interface-length-weighted quality is materially better.
 
-Movement uses the same `WorldState::active_neighbors4()` mixed-LOD contract as geology and plant dispersal. If the preferred neighboring region is represented by multiple fine cells, movers are distributed across those active cells according to adaptive-cover weight multiplied by local habitat quality.
+Movement uses `WorldState::active_face_neighbors4()`. A fixed level-4 reference face depth converts the selected shared interface into a dimensionless movement geometry factor, preserving the existing level-4 herbivore/carnivore daily movement calibration while preventing one coarse cell hop from representing a different physical process than its refined subfaces. If a preferred neighboring region is refined, movers are distributed only among leaves touching the shared face, weighted by interface length and local habitat quality.
 
 Migration is applied from a frozen post-feeding cohort snapshot. Arriving animals therefore cannot immediately move again in the same fauna tick, making results independent of cohort-map iteration order. `CohortStore::transfer_count()` performs the actual redistribution so `Cohort::cell` and the store's spatial index cannot diverge. A destination cohort of the same lineage/species/functional group is merged rather than duplicated. Because fauna N is derived from the same cohort carbon, count splitting/merging/migration conserves both elements without a parallel spatial nutrient field.
 
@@ -123,8 +123,8 @@ This is a reduced population redistribution model, not a trajectory-level moveme
 Wildfire is evaluated after vegetation and before fauna. Its fire-danger state
 combines dynamic fuel density, root-zone wetness, relative humidity, daily
 precipitation, temperature and inundation. Natural ignition uses stateless
-seed/tick/cell randomness, and wind biases a frozen one-hop spread plan through
-the adaptive active-cover resolver. Fire removes PFT-specific live biomass and
+fixed-support randomness, and wind biases a frozen spread plan across physical
+shared faces using the same fixed level-4 spatial reference scale. Fire removes PFT-specific live biomass and
 litter, returns uncombusted mortality to litter, and transfers combusted carbon
 to explicit emission and pyrogenic-carbon ledgers.
 
@@ -145,6 +145,8 @@ The core `worldsim_tests` suite continues to check living-soil, adaptive-cover a
 - vegetation turnover creates litter and returns its associated nitrogen;
 - soil organic-N turnover mineralizes N and drainage moves finite mineral N into an explicit leaching ledger;
 - mixed-LOD active-cover weights close to one and resolve both fine-neighbor composites and coarse ancestors;
+- physical face neighborhoods include only touching subfaces, close to the coarse shared-interface length across one- and multi-level refinement, survive cube-face seams and invalidate cached adjacency after cover changes;
+- controlled level-2/level-3 grass recruitment over the same physical hierarchy regions must agree within 5%;
 - grass/shrub/tree carbon remains non-negative and sums to total vegetation after vegetation/fauna updates;
 - a globally sterile plant cover remains sterile without propagules;
 - neighboring grass establishes into an empty suitable cell;
@@ -181,7 +183,8 @@ carbon contracts:
 - herbivores partially redistribute from low-forage habitat toward a neighboring high-forage cell;
 - carnivores partially redistribute toward neighboring prey biomass using a prey-density fixture scaled by effective cell area;
 - migrants do not take a second spatial step during the same fauna tick;
-- coarse-to-fine migration resolves the neighboring region to active refined children and distributes arrivals without storing cohorts on an inactive coarse cell;
+- coarse-to-fine migration resolves only the physical refined subfaces and never stores cohorts on an inactive coarse cell;
+- controlled level-2/level-3 herbivore redistribution over the same physical hierarchy regions must agree within 5%;
 - the integrated daily ecology carbon budget closes against reported NPP, while controlled grazing/predation retain N in fauna biomass, recycle only unretained N and close planetary nitrogen;
 - the forage-limited herbivore grazing ceiling scales with elapsed fauna-step
   time, so a controlled half-day pass removes half the forage of a one-day pass;
@@ -201,7 +204,8 @@ The dedicated `worldsim_fire_tests` suite checks:
 - natural ignition is reproducible from equal seed/tick/cell state;
 - biomass, litter, emission and pyrogenic-carbon transfers close for a controlled fire, while vegetation/litter/mineral/boundary nitrogen closes independently;
 - the aggregate vegetation field remains the exact sum of the PFT pools;
-- spread from a coarse source resolves all active children in a refined neighboring region without same-pass multi-hop movement;
+- spread from a coarse source reaches only refined leaves on the physical shared face without same-pass multi-hop movement;
+- controlled level-2/level-3 source-driven spread over the same physical hierarchy regions must agree within 5%;
 - extensive fire ledgers survive coarsening; and
 - snapshot epoch 33 round-trips authoritative fire, soil-carbon, planetary
   nitrogen, fauna carbon/N and snow-coupled climate state.
