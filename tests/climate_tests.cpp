@@ -74,14 +74,55 @@ std::unique_ptr<Simulation> climate_fixture(
     return simulation;
 }
 
+enum class GeographyClimateVariant {
+    Generated,
+    FlatElevation
+};
+
+class StaticGeographyFixtureModule final : public ISimModule {
+public:
+    explicit StaticGeographyFixtureModule(
+        GeographyClimateVariant variant=GeographyClimateVariant::Generated
+    ):variant_(variant) {}
+
+    std::string_view id() const override {
+        return "fixture.static_geography";
+    }
+    void register_fields(FieldRegistry& r) override {
+        GeographyModule().register_fields(r);
+    }
+    void initialize(WorldState& world, const FieldRegistry& r) override {
+        GeographyModule().initialize(world,r);
+        auto& fields=world.stores().get<FieldStore>();
+        const FieldId elevation=*r.find("geography.elevation_m");
+        const FieldId reference_elevation=
+            *r.find("geography.reference_elevation_m");
+        for (CellId cell:world.active_cells()) {
+            if (variant_==GeographyClimateVariant::FlatElevation) {
+                fields.set(cell,elevation,0.0);
+                fields.set(cell,reference_elevation,0.0);
+            }
+        }
+    }
+private:
+    GeographyClimateVariant variant_;
+};
+
 std::unique_ptr<Simulation> geography_climate_fixture(
     std::uint64_t seed,
-    std::uint8_t level
+    std::uint8_t level,
+    GeographyClimateVariant variant=GeographyClimateVariant::Generated
 ) {
     auto simulation=std::make_unique<Simulation>(
         seed,SimulationConfig{level,level,86'400.0}
     );
-    simulation->add_module(std::make_unique<GeographyModule>());
+    // Use the production geography initializer but intentionally omit the
+    // geology evolution system. This fixture measures climate discretization
+    // over the same heterogeneous terrain rather than a coupled
+    // climate-geology feedback loop.
+    simulation->add_module(
+        std::make_unique<StaticGeographyFixtureModule>(variant)
+    );
     simulation->add_module(std::make_unique<ClimateModule>());
     simulation->build();
     return simulation;
@@ -531,6 +572,119 @@ void flat_moisture_transport_resolution_diagnostic() {
     );
 }
 
+struct GeographyClimatePrecipitation {
+    double total_precipitation_m3{};
+    double land_precipitation_m3{};
+    double land_area_m2{};
+};
+
+GeographyClimatePrecipitation geography_climate_precipitation(
+    std::uint64_t seed,
+    std::uint8_t level,
+    GeographyClimateVariant variant
+) {
+    auto simulation=geography_climate_fixture(seed,level,variant);
+    const auto& initial_store=
+        simulation->world().stores().get<ClimateStore>();
+    double land_area=0.0;
+    for (const ClimateNode& node:initial_store.nodes())
+        land_area+=node.land_area_m2;
+    simulation->step(365);
+    const ClimateBudget& budget=
+        simulation->world().stores().get<ClimateStore>().budget();
+    return {
+        budget.land_precipitation_m3+budget.ocean_precipitation_m3,
+        budget.land_precipitation_m3,
+        land_area
+    };
+}
+
+struct GeographyClimateConvergence {
+    double l2_total_error{};
+    double l3_total_error{};
+    double l2_land_error{};
+    double l3_land_error{};
+};
+
+GeographyClimateConvergence geography_climate_convergence(
+    std::uint64_t seed,
+    GeographyClimateVariant variant,
+    const char* label
+) {
+    const GeographyClimatePrecipitation coarse=
+        geography_climate_precipitation(seed,2,variant);
+    const GeographyClimatePrecipitation fine=
+        geography_climate_precipitation(seed,3,variant);
+    const GeographyClimatePrecipitation reference=
+        geography_climate_precipitation(seed,4,variant);
+    const auto reference_error=[](double value,double target) {
+        return std::abs(value-target)/std::max(1.0,std::abs(target));
+    };
+    const GeographyClimateConvergence result{
+        reference_error(
+            coarse.total_precipitation_m3,
+            reference.total_precipitation_m3
+        ),
+        reference_error(
+            fine.total_precipitation_m3,
+            reference.total_precipitation_m3
+        ),
+        reference_error(
+            coarse.land_precipitation_m3,
+            reference.land_precipitation_m3
+        ),
+        reference_error(
+            fine.land_precipitation_m3,
+            reference.land_precipitation_m3
+        )
+    };
+    std::cerr
+        <<"real geography climate convergence: variant="<<label
+        <<" seed="<<seed
+        <<" l2_total="<<coarse.total_precipitation_m3
+        <<" l3_total="<<fine.total_precipitation_m3
+        <<" l4_total="<<reference.total_precipitation_m3
+        <<" l2_total_error="<<result.l2_total_error
+        <<" l3_total_error="<<result.l3_total_error
+        <<" l2_land="<<coarse.land_precipitation_m3
+        <<" l3_land="<<fine.land_precipitation_m3
+        <<" l4_land="<<reference.land_precipitation_m3
+        <<" l2_land_error="<<result.l2_land_error
+        <<" l3_land_error="<<result.l3_land_error
+        <<'\n';
+    return result;
+}
+
+void real_geography_precipitation_resolution_converges() {
+    constexpr std::uint64_t seed=999ULL;
+    const GeographyClimateConvergence generated=
+        geography_climate_convergence(
+            seed,GeographyClimateVariant::Generated,"generated"
+        );
+    const GeographyClimateConvergence flat_elevation=
+        geography_climate_convergence(
+            seed,GeographyClimateVariant::FlatElevation,"flat_elevation"
+        );
+    std::cerr
+        <<"real geography convergence summary:"
+        <<" generated_l2_total_error="<<generated.l2_total_error
+        <<" generated_l3_total_error="<<generated.l3_total_error
+        <<" generated_l2_land_error="<<generated.l2_land_error
+        <<" generated_l3_land_error="<<generated.l3_land_error
+        <<" flat_l2_total_error="<<flat_elevation.l2_total_error
+        <<" flat_l3_total_error="<<flat_elevation.l3_total_error
+        <<" flat_l2_land_error="<<flat_elevation.l2_land_error
+        <<" flat_l3_land_error="<<flat_elevation.l3_land_error
+        <<'\n';
+    check(
+        generated.l3_total_error<=0.25*generated.l2_total_error &&
+        generated.l3_land_error<=0.25*generated.l2_land_error &&
+        flat_elevation.l3_total_error<=0.25*flat_elevation.l2_total_error &&
+        flat_elevation.l3_land_error<=0.25*flat_elevation.l2_land_error,
+        "real-geography climate did not converge toward level 4"
+    );
+}
+
 void horizontal_heat_transport_is_resolution_consistent() {
     const double error=flat_surface_l2_l3_temperature_mae_k();
     check(
@@ -862,6 +1016,7 @@ int main() {
         snow_burial_suppresses_short_vegetation();
         horizontal_heat_transport_is_resolution_consistent();
         flat_moisture_transport_resolution_diagnostic();
+        real_geography_precipitation_resolution_converges();
         orographic_precipitation();
         orographic_reference_elevation_is_resolution_consistent();
         stochastic_weather_forcing_is_resolution_consistent();
