@@ -566,7 +566,7 @@ void lod_and_snapshot_preserve_nitrogen() {
     simulation->step(48);
     const auto snapshot=simulation->save_snapshot();
     check(
-        snapshot.size()>11U && snapshot[8]==std::byte{37},
+        snapshot.size()>11U && snapshot[8]==std::byte{38},
         "unexpected nitrogen-cycle snapshot epoch"
     );
     auto restored=make_default_simulation(
