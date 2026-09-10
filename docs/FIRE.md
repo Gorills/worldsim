@@ -5,7 +5,7 @@
 > 21 and suppresses fire danger under projected snow cover. Fauna carbon
 > accounting introduced epoch 22; later timebase, LOD, climate, carbon,
 > nitrogen and geography corrections advanced the combined-world epoch through
-> 36. Fixed-support natural-fire ignition raises the current epoch to 37.
+> 36. Fixed-support natural-fire ignition raised that compatibility epoch to 37; later authoritative-domain changes advance it further.
 > The Wildfire-v1 execution record below is retained as historical evidence for
 > epoch 19.
 
