@@ -176,6 +176,24 @@ double CubeSphereTopology::area_m2(CellId id) const {
     return steradians*kEarthRadiusM*kEarthRadiusM;
 }
 
+double CubeSphereTopology::edge_length_m(
+    CellId id,
+    std::size_t side
+) const {
+    if (!id.valid() || side>=4U)
+        throw std::invalid_argument("invalid cell edge");
+    constexpr std::array<std::array<std::size_t,2>,4> edges{{
+        {{0U,3U}},
+        {{1U,2U}},
+        {{0U,1U}},
+        {{3U,2U}}
+    }};
+    const auto corners=corners_unit(id);
+    const Vec3d a=corners[edges[side][0]];
+    const Vec3d b=corners[edges[side][1]];
+    return std::atan2(norm(cross(a,b)),dot(a,b))*kEarthRadiusM;
+}
+
 double CubeSphereTopology::shared_boundary_length_m(
     CellId a,
     CellId b
