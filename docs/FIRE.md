@@ -61,13 +61,21 @@ field-store rules. Cumulative burned area can exceed current land area after
 repeated fires.
 
 Spread always starts from a frozen pre-transfer fire state. It queries
-`WorldState::active_neighbors4()` and converts source burned fraction to an
-explicit source burned area before distributing a small ignition area among
-the active leaves representing the adjacent region. This avoids both same-day
-multi-hop propagation and the invalid assumption that
-`CubeSphereTopology::neighbors4()` returns active leaves. The region weights
-are area-allocation weights, **not** inferred face lengths or a claim of
-front-resolved fire geometry.
+`WorldState::active_face_neighbors4()`, so only active leaves that physically
+touch the source face can receive spread. Each part carries the spherical
+shared-interface length in metres. The interface is multiplied by a fixed
+level-4 reference face depth and the source burned/land fractions to obtain a
+bounded spread area. On a uniform level-4 cover this reduces algebraically to
+the former `0.0125 * source burned area` calibration; coarse and refined
+representations instead integrate that same physical support across their
+subfaces. This avoids same-day multi-hop propagation and prevents interior
+children of a refined neighboring hierarchy region from being treated as if
+they touched the source.
+
+This remains a reduced grid-scale disturbance closure, not a front-resolved or
+calibrated fire-behaviour solver. SPITFIRE is used only as process precedent for
+representing spread through a physical rate/distance scale rather than an
+unscaled cell hop: https://doi.org/10.5194/bg-7-1991-2010.
 
 ## Reduced process
 
