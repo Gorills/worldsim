@@ -385,8 +385,7 @@ double collect_resource(
     }
 
     const double available=resource_availability(simulation,direction,kind);
-    const double tolerance=1.0e-12*std::max(1.0,available);
-    if (requested_amount>available+tolerance)
+    if (requested_amount>available)
         throw std::runtime_error("requested resource amount exceeds local availability");
 
     if (kind==ResourceKind::FreshWater) {
