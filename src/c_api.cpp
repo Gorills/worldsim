@@ -2,10 +2,15 @@
 #include "worldsim/simulation.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <cerrno>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace worldsim;
@@ -16,6 +21,52 @@ struct ws_handle {
 };
 
 namespace {
+// Reserve a sibling with exclusive creation: a stale file or another writer
+// must never be truncated, reused, or removed by this save operation.
+class SnapshotOutput {
+public:
+    explicit SnapshotOutput(const std::filesystem::path& destination) {
+        static std::atomic<std::uint64_t> sequence{0};
+        for (unsigned attempt=0;attempt<128U;++attempt) {
+            path_=destination;
+            path_+=".tmp-"+std::to_string(sequence.fetch_add(1));
+            const auto filename=path_.string();
+            stream_=std::fopen(filename.c_str(),"wbx");
+            if (stream_) return;
+            if (errno!=EEXIST)
+                throw std::runtime_error("cannot create temporary snapshot file");
+        }
+        throw std::runtime_error("cannot reserve temporary snapshot file");
+    }
+    SnapshotOutput(const SnapshotOutput&)=delete;
+    SnapshotOutput& operator=(const SnapshotOutput&)=delete;
+    ~SnapshotOutput() {
+        if (stream_) std::fclose(stream_);
+        if (!published_) {
+            std::error_code ignored;
+            std::filesystem::remove(path_,ignored);
+        }
+    }
+    void write_and_close(std::span<const std::byte> data) {
+        if (std::fwrite(data.data(),1,data.size(),stream_)!=data.size())
+            throw std::runtime_error("snapshot write failed");
+        // fclose also flushes buffered bytes; a late flush/close error must
+        // prevent publication rather than being hidden by a stream destructor.
+        if (std::fclose(std::exchange(stream_,nullptr))!=0)
+            throw std::runtime_error("snapshot close failed");
+    }
+    void publish(const std::filesystem::path& destination) {
+        std::filesystem::rename(path_,destination);
+        // The old temporary name can now belong to a different writer.
+        published_=true;
+    }
+    const std::filesystem::path& path() const { return path_; }
+private:
+    std::filesystem::path path_;
+    std::FILE* stream_{};
+    bool published_{};
+};
+
 template<class F>
 int guard(ws_handle* h,F&& f) {
     if (!h) return 0;
@@ -155,16 +206,23 @@ int ws_clear_events(ws_handle* handle) {
 }
 
 int ws_save_snapshot_file(const ws_handle* handle,const char* path) {
-    if (!handle || !path) return 0;
+    if (!handle) return 0;
     try {
-        auto data=handle->sim->save_snapshot();
-        std::ofstream f(path,std::ios::binary);
-        if (!f) throw std::runtime_error("cannot open snapshot for write");
-        f.write(reinterpret_cast<const char*>(data.data()),static_cast<std::streamsize>(data.size()));
-        if (!f) throw std::runtime_error("snapshot write failed");
+        if (!path || !*path) throw std::invalid_argument("snapshot path is empty or null");
+        const auto data=handle->sim->save_snapshot();
+        const std::filesystem::path destination(path);
+        const auto previous=std::filesystem::status(destination);
+        SnapshotOutput output(destination);
+        if (std::filesystem::is_regular_file(previous))
+            std::filesystem::permissions(output.path(),previous.permissions());
+        output.write_and_close(data);
+        // A same-directory rename publishes only a complete snapshot. Never
+        // delete the old slot first or fall back to a destructive direct write.
+        output.publish(destination);
         handle->last_error.clear();
         return 1;
     } catch (const std::exception& e) { handle->last_error=e.what(); return 0; }
+    catch (...) { handle->last_error="unknown C++ exception"; return 0; }
 }
 
 int ws_load_snapshot_file(ws_handle* handle,const char* path) {

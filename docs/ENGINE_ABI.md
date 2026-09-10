@@ -42,7 +42,36 @@ The included ABI command is a scheduled field impulse. It is deliberately small;
 
 ## Snapshot files
 
-`ws_save_snapshot_file()` and `ws_load_snapshot_file()` expose the authoritative snapshot. Save compatibility is strict by design: schema/config mismatches fail instead of corrupting state silently. The current epoch is 28. A rejected load leaves the simulation unchanged, including its cover, queued commands and events. Non-finite command deltas and null load paths fail at the API boundary.
+`ws_save_snapshot_file()` and `ws_load_snapshot_file()` expose the authoritative snapshot. Save compatibility is strict by design: schema/config mismatches fail instead of corrupting state silently. The current epoch is 39. A rejected load leaves the simulation unchanged, including its cover, queued commands and events. Non-finite command deltas and null load paths fail at the API boundary.
+
+Saving first writes an exclusively created temporary sibling, checks the write
+and close (including buffered output), then publishes it with a single
+`std::filesystem::rename`. A failed write/close or failed publication must not
+truncate the previous save slot or expose a partial new slot. Temporary files
+owned by the failed operation are removed on ordinary error paths; unrelated
+or stale files are never reused. There is no direct-write fallback. The caller
+must provide an existing, writable parent directory on a filesystem that
+supports same-directory replacement. Existing regular-file permissions are
+preserved; other file metadata is not part of the snapshot contract. Publication
+replaces the destination directory entry, including a symbolic link, rather
+than writing through that link.
+
+This is failure-safe file replacement, not a power-loss durability guarantee:
+there is no file/directory `fsync` protocol, and a terminated process may leave
+an unpublished temporary sibling. In-memory simulation state is not changed by
+saving. Snapshot epoch, schema and wire bytes are unaffected by the file-write
+protocol.
+
+Adaptive cover restoration indexes each required ancestor once and refines in
+level/CellId order through the normal store hooks. It still validates the exact
+leaf set in a staged world before publishing it, including unbalanced mixed-LOD
+covers. Loading must not do an all-pairs search over active and saved leaves.
+
+References: C++20 draft N4861 [`rename`](https://timsong-cpp.github.io/cppwp/n4861/fs.op.rename)
+and [`<cstdio>`](https://timsong-cpp.github.io/cppwp/n4861/c.files).
+The staging/publication pattern is also used by
+[Qt 6.8 `QSaveFile`](https://doc.qt.io/qt-6.8/qsavefile.html), without adopting Qt
+or its optional destructive direct-write fallback.
 
 Climate v2 fields are discovered through the same generic registry API. The
 authoritative atmospheric-water, land/ocean heat and ocean-water reservoirs
@@ -61,7 +90,7 @@ Snow-albedo diagnostics likewise use generic descriptors and aligned values.
 `climate.snow_cover_fraction` and `climate.surface_albedo` are intensive
 projections; `hydrology.snow_water_m3` remains the only authoritative snow
 stock. Snapshot epoch 21 introduced the climate reference-cover continuation;
-the current combined-world snapshot is epoch 28.
+the current combined-world snapshot is epoch 39.
 
 Hydrology fields are available through the existing registry/field-array API.
 `hydrology.surface_water_m3` is a projection of `HydrologyStore`, not an
