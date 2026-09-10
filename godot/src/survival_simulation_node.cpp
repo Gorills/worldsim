@@ -29,6 +29,10 @@ void SurvivalSimulationNode::_bind_methods() {
         &SurvivalSimulationNode::get_inventory
     );
     ClassDB::bind_method(
+        godot::D_METHOD("has_stone_axe"),
+        &SurvivalSimulationNode::has_stone_axe
+    );
+    ClassDB::bind_method(
         godot::D_METHOD(
             "collect_resource_at",
             "east_m",
@@ -37,6 +41,19 @@ void SurvivalSimulationNode::_bind_methods() {
             "amount"
         ),
         &SurvivalSimulationNode::collect_resource_at
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD(
+            "gather_resource_at",
+            "east_m",
+            "north_m",
+            "resource_key"
+        ),
+        &SurvivalSimulationNode::gather_resource_at
+    );
+    ClassDB::bind_method(
+        godot::D_METHOD("craft_stone_axe"),
+        &SurvivalSimulationNode::craft_stone_axe
     );
 }
 
@@ -113,6 +130,21 @@ Dictionary SurvivalSimulationNode::get_inventory() const {
     return result;
 }
 
+bool SurvivalSimulationNode::has_stone_axe() const {
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        const bool owned=worldsim::player_has_stone_axe(*sim_);
+        last_error_.clear();
+        return owned;
+    } catch (const std::exception& error) {
+        report_error(error.what());
+        return false;
+    } catch (...) {
+        report_error("unknown C++ exception in has_stone_axe");
+        return false;
+    }
+}
+
 bool SurvivalSimulationNode::collect_resource_at(
     double east_m,
     double north_m,
@@ -136,6 +168,52 @@ bool SurvivalSimulationNode::collect_resource_at(
         return false;
     } catch (...) {
         report_error("unknown C++ exception in collect_resource_at");
+        return false;
+    }
+}
+
+double SurvivalSimulationNode::gather_resource_at(
+    double east_m,
+    double north_m,
+    const String& resource_key
+) {
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        const std::string key=resource_key.utf8().get_data();
+        const auto kind=worldsim::resource_kind_from_key(key);
+        if (!kind) throw std::invalid_argument("unknown resource key");
+        const auto direction=worldsim::TerrainGenerator::projected_to_direction(
+            east_m,
+            north_m
+        );
+        const double realized=worldsim::gather_resource(
+            *sim_,direction,*kind
+        );
+        last_error_.clear();
+        return realized;
+    } catch (const std::exception& error) {
+        // Unavailable resources are normal player feedback, not engine faults.
+        last_error_=error.what();
+        return 0.0;
+    } catch (...) {
+        last_error_="unknown C++ exception in gather_resource_at";
+        return 0.0;
+    }
+}
+
+bool SurvivalSimulationNode::craft_stone_axe() {
+    try {
+        if (!sim_) throw std::runtime_error("survival simulation is not initialized");
+        worldsim::craft_stone_axe(*sim_);
+        last_error_.clear();
+        return true;
+    } catch (const std::exception& error) {
+        // Insufficient materials and duplicate craft attempts are expected
+        // gameplay rejections surfaced through get_last_error().
+        last_error_=error.what();
+        return false;
+    } catch (...) {
+        last_error_="unknown C++ exception in craft_stone_axe";
         return false;
     }
 }

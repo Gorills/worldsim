@@ -33,6 +33,11 @@ inline constexpr std::array<ResourceDescriptor,5> kResourceDescriptors{{
     {ResourceKind::MetalOre,"metal_ore","kg"},
 }};
 
+inline constexpr double kStoneAxeWoodCostKg=1.0;
+inline constexpr double kStoneAxeStoneCostKg=1.0;
+inline constexpr double kBareHandWoodGatherKg=1.0;
+inline constexpr double kStoneAxeWoodGatherKg=3.0;
+
 [[nodiscard]] const ResourceDescriptor& resource_descriptor(ResourceKind kind);
 [[nodiscard]] std::optional<ResourceKind> resource_kind_from_key(std::string_view key);
 
@@ -40,6 +45,7 @@ class PlayerInventoryStore final : public IStateStore {
 public:
     static constexpr std::string_view kKey="gameplay.player_inventory";
     [[nodiscard]] std::string_view key() const override { return kKey; }
+    [[nodiscard]] std::uint32_t snapshot_version() const override { return 2; }
 
     void on_add_cell(CellId) override {}
     void on_remove_cell(CellId) override {}
@@ -49,9 +55,12 @@ public:
     void load(BinaryReader& reader,std::uint32_t version) override;
 
     [[nodiscard]] double amount(ResourceKind kind) const;
+    [[nodiscard]] bool has_stone_axe() const { return stone_axe_; }
     void add(ResourceKind kind,double amount);
+    void craft_stone_axe();
 private:
     std::array<double,5> amounts_{};
+    bool stone_axe_{};
 };
 
 class ResourceModule final : public ISimModule {
@@ -74,8 +83,8 @@ public:
     ResourceKind kind
 );
 
-// Exact authoritative transfer. Invalid, unavailable and over-large requests
-// throw before mutation; successful calls return the requested amount.
+// Exact authoritative transfer primitive. Invalid, unavailable and over-large
+// requests throw before mutation; successful calls return the requested amount.
 double collect_resource(
     Simulation& simulation,
     Vec3d direction,
@@ -83,10 +92,23 @@ double collect_resource(
     double requested_amount
 );
 
+// Canonical player gather action. The simulation determines the realized amount
+// from authoritative tool state and local availability before applying the same
+// exact transfer primitive used by Resource Acquisition v1.
+double gather_resource(
+    Simulation& simulation,
+    Vec3d direction,
+    ResourceKind kind
+);
+
+void craft_stone_axe(Simulation& simulation);
+
 [[nodiscard]] double player_inventory_amount(
     const Simulation& simulation,
     ResourceKind kind
 );
+
+[[nodiscard]] bool player_has_stone_axe(const Simulation& simulation);
 
 // Natural diagnostics deliberately exclude gameplay inventory. Survival-level
 // water accounting includes carried fresh water as a physical stock.

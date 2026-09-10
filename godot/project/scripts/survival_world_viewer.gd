@@ -53,12 +53,16 @@ func _unhandled_input(event: InputEvent) -> void:
             get_viewport().set_input_as_handled()
             return
         if event.keycode == KEY_E and !survey_flight_enabled:
-            _collect_selected_resource()
+            _gather_selected_resource()
+            get_viewport().set_input_as_handled()
+            return
+        if event.keycode == KEY_C and !survey_flight_enabled:
+            _craft_stone_axe()
             get_viewport().set_input_as_handled()
             return
     super._unhandled_input(event)
 
-func _collect_selected_resource() -> void:
+func _gather_selected_resource() -> void:
     var survival_sim := sim as SurvivalSimulationNode
     if survival_sim == null:
         interaction_message = "Resource simulation unavailable"
@@ -66,11 +70,24 @@ func _collect_selected_resource() -> void:
     var east_m := origin_east_m + float(player.position.x)
     var north_m := origin_north_m - float(player.position.z)
     var key: String = RESOURCE_KEYS[selected_resource]
-    if survival_sim.collect_resource_at(east_m, north_m, key, 1.0):
-        interaction_message = "Collected 1 %s %s" % [
+    var realized := survival_sim.gather_resource_at(east_m, north_m, key)
+    if realized > 0.0:
+        interaction_message = "Gathered %.2f %s %s" % [
+            realized,
             RESOURCE_UNITS[selected_resource],
             RESOURCE_NAMES[selected_resource],
         ]
+    else:
+        interaction_message = survival_sim.get_last_error()
+    _update_resource_status()
+
+func _craft_stone_axe() -> void:
+    var survival_sim := sim as SurvivalSimulationNode
+    if survival_sim == null:
+        interaction_message = "Resource simulation unavailable"
+        return
+    if survival_sim.craft_stone_axe():
+        interaction_message = "Crafted stone axe"
     else:
         interaction_message = survival_sim.get_last_error()
     _update_resource_status()
@@ -89,13 +106,15 @@ func _update_resource_status() -> void:
 
     var key: String = RESOURCE_KEYS[selected_resource]
     var unit: String = RESOURCE_UNITS[selected_resource]
-    var line := "%s  local %.2f %s  carried %.2f %s  [Q] select  [E] collect 1" % [
+    var axe_text := "owned" if survival_sim.has_stone_axe() else "not crafted"
+    var line := "%s  local %.2f %s  carried %.2f %s  [Q] select  [E] gather" % [
         RESOURCE_NAMES[selected_resource],
         float(local.get(key, 0.0)),
         unit,
         float(inventory.get(key, 0.0)),
         unit,
     ]
+    line += "\nStone axe: %s  [C] craft (1 kg wood + 1 kg stone)" % axe_text
     if !interaction_message.is_empty():
-        line += "\n" + interaction_message
+        line += "  |  " + interaction_message
     resource_status.text = line

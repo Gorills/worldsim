@@ -60,8 +60,8 @@ A scripted end-to-end survival scenario must exercise the same commands/state us
 
 ## Development order
 
-1. **Resource Acquisition v1 — NEXT.** Connect the walking player to authoritative natural resources and persistent inventory.
-2. **Crafting and Tool Use v1.** Turn gathered materials into a small set of functional tools; tools affect real acquisition actions.
+1. **Resource Acquisition v1 — COMPLETE (#60).** The walking player now queries and gathers authoritative fresh water, food, wood, stone and metal ore into persistent inventory. See `RESOURCE_ACQUISITION.md`.
+2. **Crafting and Tool Use v1 — NEXT (#61).** Turn gathered materials into one functional persistent tool and make that tool change a real acquisition action.
 3. **Shelter and Fire v1.** Place persistent structures/heat sources that consume gathered materials and interact with local conditions.
 4. **Survival Needs v1.** Thirst, hunger and exposure consume the resources/capabilities above; add the smallest renewable food loop needed to sustain one player.
 5. **Solo-survival gate.** Run the complete player-visible loop, close remaining gameplay-blocking gaps, and freeze the survival substrate.
@@ -69,51 +69,46 @@ A scripted end-to-end survival scenario must exercise the same commands/state us
 
 This order is a dependency chain, not a commitment to speculative systems beyond the next slice.
 
-## Next major slice: Resource Acquisition v1
+## Next major slice: Crafting and Tool Use v1
 
 ### Question it must answer
 
-Can the walking player take useful material from the same world the simulation owns, and does that action remain true after time, LOD changes and save/load?
+Can the player turn materials gathered from the authoritative world into a persistent useful tool, and does that tool measurably change a real authoritative resource action?
 
 ### Scope
 
-Implement one end-to-end acquisition path rather than a generic future item framework.
+Implement one end-to-end tool path rather than a generic item, recipe or equipment framework.
 
 The slice must provide:
 
-- a player interaction action in the Godot walking scene;
-- authoritative persistent player inventory/state owned behind the simulation boundary, not by presentation-only UI;
-- queryable local resource availability at the player location;
-- extraction/collection commands validated and applied by authoritative code;
-- starter resource families sufficient to exercise different world semantics:
-  - fresh water from hydrology;
-  - one renewable plant-food source from ecology;
-  - wood/fiber from living vegetation;
-  - stone from geology/surface material;
-  - one finite metal-bearing mineral resource, without introducing a full geochemistry model;
-- depletion/removal from the corresponding authoritative source where material is actually taken;
-- no negative source stocks and no duplicate creation through repeated commands;
-- renewable sources recovering through their owning world process where applicable; finite mineral depletion remaining persistent;
-- correct behavior across simulation LOD transitions;
-- snapshot save/load and deterministic continuation including player inventory and depleted resource state;
-- a minimal Godot interaction prompt and inventory readout so the complete path is playable rather than headless-only.
+- one `stone_axe` crafted from already-carried world resources;
+- an atomic authoritative craft command that consumes exactly `1 kg` wood and `1 kg` stone;
+- persistent non-spatial tool ownership behind the simulation boundary;
+- rejection of insufficient or duplicate craft attempts without hidden mutation;
+- one canonical gather action whose realized amount is determined by simulation state;
+- bare-hand wood gathering of `1 kg` when available;
+- stone-axe wood gathering of `3 kg` for the same action when available;
+- exact debit of the authoritative wood source and exact credit of player inventory;
+- correct refine/coarsen, snapshot and deterministic continuation behavior;
+- Godot interaction using the same craft/gather boundary as the automated tests and showing tool state.
 
 ### Explicitly out of scope
 
-Do not add crafting recipes, tools, buildings, hunger/thirst, NPCs, settlements, economy, a broad item database, equipment slots, rarity systems or procedural loot.
+Do not add a generic recipe registry, broad item database, equipment slots, durability, tool quality, animations, combat, a second tool, workbench, buildings, fire, hunger/thirst, NPCs, settlements or economy.
 
-Do not modify natural-world equations merely to make acquisition numbers look convenient. If a gameplay source needs a new state variable, add the smallest domain-owned state with an explicit authority/LOD/snapshot contract.
+Do not retune resource/ecology/geology quantities to make crafting convenient. If the selected world location lacks inputs, the player must gather or travel rather than receive injected material.
 
 ### Definition of Done
 
-Resource Acquisition v1 is done when automated tests and the playable client demonstrate all of the following:
+Crafting and Tool Use v1 is done when automated tests and the playable client demonstrate all of the following:
 
-1. the player can inspect and collect each starter resource through normal commands;
-2. successful collection increases persistent inventory by exactly the amount removed from or granted by the authoritative source contract;
-3. invalid, unavailable or over-large collection requests are rejected without partial hidden mutation;
-4. resource/player state survives refine/coarsen and snapshot round trips under its declared semantics;
-5. same seed + same player commands produce the same resulting authoritative state within the existing determinism contract;
-6. the Godot client uses the same authoritative interaction path and displays the resulting inventory;
-7. existing natural-world tests and the normal CI stability smoke remain green.
+1. starting from empty player state, the player gathers the required wood and stone from the world and crafts one stone axe without test-only inventory injection;
+2. crafting consumes exactly the declared authoritative inputs and creates exactly one persistent tool;
+3. invalid, insufficient and duplicate craft requests leave authoritative state unchanged;
+4. a bare-hand wood gather realizes `1 kg`, while the same gather action with the axe realizes `3 kg`, with exact source debit and inventory credit;
+5. tool, inventory and resource state survives refine/coarsen and snapshot round trips;
+6. same seed plus the same gather/craft commands produces the same authoritative continuation under the existing determinism contract;
+7. Godot exercises the same craft/gather boundary and displays tool state;
+8. existing Resource Acquisition tests, natural-world tests and normal CI stability smoke remain green.
 
-When these conditions pass, stop this slice and move to Crafting and Tool Use v1. Do not expand it into the later survival systems.
+When these conditions pass, stop this slice and move to Shelter and Fire v1. Do not expand it into later survival systems.
