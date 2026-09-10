@@ -23,6 +23,31 @@ void near(double a,double b,double rel,const char* msg) {
     if (std::abs(a-b)>rel*scale) throw std::runtime_error(msg);
 }
 
+void run_named_system(
+    Simulation& simulation,
+    std::string_view id,
+    double dt_days
+) {
+    Scheduler scheduler;
+    GeographyModule().register_systems(scheduler,simulation.fields());
+    MagicModule().register_systems(scheduler,simulation.fields());
+    ClimateModule().register_systems(scheduler,simulation.fields());
+    HydrologyModule().register_systems(scheduler,simulation.fields());
+    EcologyModule().register_systems(scheduler,simulation.fields());
+    scheduler.finalize();
+
+    SystemContext context{
+        simulation.world(),simulation.fields(),dt_days
+    };
+    for (ISimSystem* system:scheduler.order()) {
+        if (system->id()==id) {
+            system->step(context);
+            return;
+        }
+    }
+    throw std::runtime_error("named test system not found");
+}
+
 class TestExtensionSystem final : public ISimSystem {
 public:
     explicit TestExtensionSystem(FieldId field): field_(field) {}
@@ -548,6 +573,145 @@ void test_flora_pft_contracts() {
         1.0e-12,
         "fauna/vegetation pipeline broke PFT total after competition"
     );
+}
+
+
+double controlled_flora_recruitment(std::uint8_t level) {
+    check(
+        level==2 || level==3,
+        "flora resolution fixture supports only levels 2 and 3"
+    );
+    SimulationConfig config;
+    config.base_level=level;
+    config.max_level=level;
+    config.tick_seconds=3'600.0;
+    auto simulation=make_default_simulation(4242,config);
+    auto& fields=simulation->world().stores().get<FieldStore>();
+
+    const auto land=*simulation->fields().find("geography.land_fraction");
+    const auto regolith=*simulation->fields().find(
+        "geology.regolith_thickness_m"
+    );
+    const auto water=*simulation->fields().find("hydrology.soil_water_m3");
+    const auto flooded=*simulation->fields().find(
+        "hydrology.flooded_fraction"
+    );
+    const auto inundation=*simulation->fields().find(
+        "hydrology.inundation_days"
+    );
+    const auto temperature=*simulation->fields().find(
+        "climate.surface_temperature_k"
+    );
+    const auto solar=*simulation->fields().find(
+        "climate.solar_flux_w_m2"
+    );
+    const auto snow=*simulation->fields().find(
+        "climate.snow_cover_fraction"
+    );
+    const auto fertility=*simulation->fields().find(
+        "ecology.soil_fertility"
+    );
+    const auto mineral_n=*simulation->fields().find(
+        "ecology.mineral_nitrogen_kg"
+    );
+    const auto grass=*simulation->fields().find(
+        "ecology.grass_carbon_kg"
+    );
+    const auto shrub=*simulation->fields().find(
+        "ecology.shrub_carbon_kg"
+    );
+    const auto tree=*simulation->fields().find(
+        "ecology.tree_carbon_kg"
+    );
+    const auto total=*simulation->fields().find(
+        "ecology.vegetation_carbon_kg"
+    );
+    const auto grass_n=*simulation->fields().find(
+        "ecology.grass_nitrogen_kg"
+    );
+    const auto shrub_n=*simulation->fields().find(
+        "ecology.shrub_nitrogen_kg"
+    );
+    const auto tree_n=*simulation->fields().find(
+        "ecology.tree_nitrogen_kg"
+    );
+    const auto total_n=*simulation->fields().find(
+        "ecology.vegetation_nitrogen_kg"
+    );
+
+    auto& cohorts=simulation->world().stores().get<CohortStore>();
+    for (CellId cell:simulation->world().active_cells()) {
+        for (auto& ref:cohorts.in_cell(cell))
+            ref.get().count=0.0;
+        const double area=simulation->world().topology().area_m2(cell);
+        fields.set(cell,land,1.0);
+        fields.set(cell,regolith,1.0);
+        fields.set(cell,water,0.20*area);
+        fields.set(cell,flooded,0.0);
+        fields.set(cell,inundation,0.0);
+        fields.set(cell,temperature,286.0);
+        fields.set(cell,solar,340.0);
+        fields.set(cell,snow,0.0);
+        fields.set(cell,fertility,1.0);
+        fields.set(cell,mineral_n,0.05*area);
+        for (FieldId field:{grass,shrub,tree,total,grass_n,shrub_n,tree_n,total_n})
+            fields.set(cell,field,0.0);
+    }
+
+    const CellId source_region=CellId::make(0,2,1,1);
+    const CellId target_region=
+        simulation->world().topology().neighbors4(source_region)[1];
+    check(
+        target_region==CellId::make(0,2,2,1),
+        "flora resolution fixture crossed a cube face"
+    );
+
+    std::vector<CellId> source_cells;
+    std::vector<CellId> target_cells;
+    if (level==2) {
+        source_cells.push_back(source_region);
+        target_cells.push_back(target_region);
+    } else {
+        const auto source_children=source_region.children();
+        const auto target_children=target_region.children();
+        source_cells.assign(source_children.begin(),source_children.end());
+        target_cells.assign(target_children.begin(),target_children.end());
+    }
+
+    constexpr double source_density_kg_m2=0.005;
+    for (CellId cell:source_cells) {
+        const double area=simulation->world().topology().area_m2(cell);
+        const double carbon=source_density_kg_m2*area;
+        fields.set(cell,grass,carbon);
+        fields.set(cell,total,carbon);
+        fields.set(cell,grass_n,carbon/kPlantCarbonNitrogenRatio[0]);
+        fields.set(cell,total_n,carbon/kPlantCarbonNitrogenRatio[0]);
+    }
+
+    run_named_system(*simulation,"ecology.vegetation",1.0);
+
+    double recruited=0.0;
+    for (CellId cell:target_cells)
+        recruited+=fields.get(cell,grass);
+    return recruited;
+}
+
+void test_flora_dispersal_is_resolution_consistent() {
+    const double level2=controlled_flora_recruitment(2);
+    const double level3=controlled_flora_recruitment(3);
+    check(
+        level2>0.0 && level3>0.0,
+        "flora resolution fixture produced no recruitment"
+    );
+    const double relative_delta=
+        std::abs(level2-level3)/std::max(level2,level3);
+    if (relative_delta>=0.05) {
+        throw std::runtime_error(
+            "flora dispersal depends on simulation resolution: L2="+
+            std::to_string(level2)+", L3="+std::to_string(level3)+
+            ", relative_delta="+std::to_string(relative_delta)
+        );
+    }
 }
 
 void test_living_soil_ecology_contracts() {
@@ -2703,6 +2867,7 @@ int main() {
         test_columnar_field_store_and_cohort_index();
         test_ecology_invariants();
         test_flora_pft_contracts();
+        test_flora_dispersal_is_resolution_consistent();
         test_living_soil_ecology_contracts();
         test_tectonic_model_partition_and_determinism();
         test_tectonic_model_multiseed_robustness();
