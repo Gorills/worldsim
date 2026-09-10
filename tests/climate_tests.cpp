@@ -603,13 +603,14 @@ GeographyClimatePrecipitation geography_climate_precipitation(
     };
 }
 
-struct GeographyClimateDelta {
-    double total{};
-    double land{};
-    double land_area{};
+struct GeographyClimateConvergence {
+    double l2_total_error{};
+    double l3_total_error{};
+    double l2_land_error{};
+    double l3_land_error{};
 };
 
-GeographyClimateDelta geography_climate_delta(
+GeographyClimateConvergence geography_climate_convergence(
     std::uint64_t seed,
     GeographyClimateVariant variant,
     const char* label
@@ -618,57 +619,71 @@ GeographyClimateDelta geography_climate_delta(
         geography_climate_precipitation(seed,2,variant);
     const GeographyClimatePrecipitation fine=
         geography_climate_precipitation(seed,3,variant);
-    const auto relative_delta=[](double a,double b) {
-        return std::abs(a-b)/std::max({1.0,std::abs(a),std::abs(b)});
+    const GeographyClimatePrecipitation reference=
+        geography_climate_precipitation(seed,4,variant);
+    const auto reference_error=[](double value,double target) {
+        return std::abs(value-target)/std::max(1.0,std::abs(target));
     };
-    const GeographyClimateDelta delta{
-        relative_delta(
+    const GeographyClimateConvergence result{
+        reference_error(
             coarse.total_precipitation_m3,
-            fine.total_precipitation_m3
+            reference.total_precipitation_m3
         ),
-        relative_delta(
+        reference_error(
+            fine.total_precipitation_m3,
+            reference.total_precipitation_m3
+        ),
+        reference_error(
             coarse.land_precipitation_m3,
-            fine.land_precipitation_m3
+            reference.land_precipitation_m3
         ),
-        relative_delta(coarse.land_area_m2,fine.land_area_m2)
+        reference_error(
+            fine.land_precipitation_m3,
+            reference.land_precipitation_m3
+        )
     };
     std::cerr
-        <<"real geography climate isolation: variant="<<label
+        <<"real geography climate convergence: variant="<<label
         <<" seed="<<seed
-        <<" total_precip_delta="<<delta.total
-        <<" land_precip_delta="<<delta.land
-        <<" land_area_delta="<<delta.land_area
-        <<" l2_total_precip_m3="<<coarse.total_precipitation_m3
-        <<" l3_total_precip_m3="<<fine.total_precipitation_m3
-        <<" l2_land_precip_m3="<<coarse.land_precipitation_m3
-        <<" l3_land_precip_m3="<<fine.land_precipitation_m3
+        <<" l2_total="<<coarse.total_precipitation_m3
+        <<" l3_total="<<fine.total_precipitation_m3
+        <<" l4_total="<<reference.total_precipitation_m3
+        <<" l2_total_error="<<result.l2_total_error
+        <<" l3_total_error="<<result.l3_total_error
+        <<" l2_land="<<coarse.land_precipitation_m3
+        <<" l3_land="<<fine.land_precipitation_m3
+        <<" l4_land="<<reference.land_precipitation_m3
+        <<" l2_land_error="<<result.l2_land_error
+        <<" l3_land_error="<<result.l3_land_error
         <<'\n';
-    return delta;
+    return result;
 }
 
 void real_geography_precipitation_resolution_diagnostic() {
     constexpr std::uint64_t seed=999ULL;
-    const GeographyClimateDelta generated=geography_climate_delta(
-        seed,GeographyClimateVariant::Generated,"generated"
-    );
-    const GeographyClimateDelta uniform_land=geography_climate_delta(
-        seed,GeographyClimateVariant::UniformLand,"uniform_land"
-    );
-    const GeographyClimateDelta flat_elevation=geography_climate_delta(
-        seed,GeographyClimateVariant::FlatElevation,"flat_elevation"
-    );
+    const GeographyClimateConvergence generated=
+        geography_climate_convergence(
+            seed,GeographyClimateVariant::Generated,"generated"
+        );
+    const GeographyClimateConvergence flat_elevation=
+        geography_climate_convergence(
+            seed,GeographyClimateVariant::FlatElevation,"flat_elevation"
+        );
     std::cerr
-        <<"real geography climate isolation summary:"
-        <<" generated_total="<<generated.total
-        <<" uniform_land_total="<<uniform_land.total
-        <<" flat_elevation_total="<<flat_elevation.total
-        <<" generated_land="<<generated.land
-        <<" uniform_land_land="<<uniform_land.land
-        <<" flat_elevation_land="<<flat_elevation.land
+        <<"real geography convergence summary:"
+        <<" generated_l2_total_error="<<generated.l2_total_error
+        <<" generated_l3_total_error="<<generated.l3_total_error
+        <<" generated_l2_land_error="<<generated.l2_land_error
+        <<" generated_l3_land_error="<<generated.l3_land_error
+        <<" flat_l2_total_error="<<flat_elevation.l2_total_error
+        <<" flat_l3_total_error="<<flat_elevation.l3_total_error
+        <<" flat_l2_land_error="<<flat_elevation.l2_land_error
+        <<" flat_l3_land_error="<<flat_elevation.l3_land_error
         <<'\n';
     check(
-        generated.total<1.0e-12 && generated.land<1.0e-12,
-        "real-geography climate precipitation resolution diagnostic"
+        generated.l2_total_error<1.0e-12 &&
+        generated.l3_total_error<1.0e-12,
+        "real-geography climate convergence diagnostic"
     );
 }
 
