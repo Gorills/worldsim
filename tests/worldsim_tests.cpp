@@ -314,6 +314,84 @@ void test_adaptive_cover_resolution() {
     );
 }
 
+
+void test_active_face_neighbors_cross_seam_and_multilevel() {
+    WorldState multilevel_world(9);
+    multilevel_world.initialize_cover(1);
+    const CellId source=CellId::make(0,1,0,0);
+    const CellId right=
+        multilevel_world.topology().neighbors4(source)[1];
+    multilevel_world.refine(right);
+    const auto level2_children=right.children();
+    for (CellId child:level2_children)
+        multilevel_world.refine(child);
+
+    const auto multilevel_sides=
+        multilevel_world.active_face_neighbors4(source);
+    check(
+        multilevel_sides[1].size()==4U,
+        "unbalanced face query did not resolve four level-3 subfaces"
+    );
+    double multilevel_length=0.0;
+    for (const ActiveFacePart& part:multilevel_sides[1]) {
+        check(
+            part.cell.level()==3U,
+            "unbalanced face query returned the wrong active level"
+        );
+        CellId ancestor=part.cell;
+        while (ancestor.level()>right.level())
+            ancestor=ancestor.parent();
+        check(
+            ancestor==right,
+            "unbalanced face query escaped the neighboring region"
+        );
+        multilevel_length+=part.interface_length_m;
+    }
+    near(
+        multilevel_length,
+        multilevel_world.topology().shared_boundary_length_m(source,right),
+        1.0e-12,
+        "unbalanced subfaces do not reconstruct the coarse interface"
+    );
+
+    WorldState seam_world(10);
+    seam_world.initialize_cover(1);
+    const CellId seam_source=CellId::make(0,1,0,0);
+    const CellId seam_neighbor=
+        seam_world.topology().neighbors4(seam_source)[0];
+    check(
+        seam_neighbor.face()!=seam_source.face(),
+        "seam fixture did not cross a cube face"
+    );
+    seam_world.refine(seam_neighbor);
+
+    const auto seam_sides=
+        seam_world.active_face_neighbors4(seam_source);
+    check(
+        seam_sides[0].size()==2U,
+        "cube-seam face query did not resolve two refined subfaces"
+    );
+    double seam_length=0.0;
+    for (const ActiveFacePart& part:seam_sides[0]) {
+        CellId ancestor=part.cell;
+        while (ancestor.level()>seam_neighbor.level())
+            ancestor=ancestor.parent();
+        check(
+            ancestor==seam_neighbor,
+            "cube-seam face query escaped the neighboring region"
+        );
+        seam_length+=part.interface_length_m;
+    }
+    near(
+        seam_length,
+        seam_world.topology().shared_boundary_length_m(
+            seam_source,seam_neighbor
+        ),
+        1.0e-12,
+        "cube-seam refined subfaces do not reconstruct interface length"
+    );
+}
+
 void test_lod_conservation() {
     FieldRegistry r;
     const auto ext=r.register_field({"test.mass","kg",FieldSemantics::Extensive,0.0,0.0,1e20});
@@ -2922,6 +3000,7 @@ int main() {
         test_focus_validation();
         test_cube_sphere();
         test_adaptive_cover_resolution();
+        test_active_face_neighbors_cross_seam_and_multilevel();
         test_lod_conservation();
         test_lod_hysteresis();
         test_determinism_and_snapshot();
